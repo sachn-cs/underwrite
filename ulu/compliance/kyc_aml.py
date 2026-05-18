@@ -3,12 +3,47 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
+import datetime
 
 from ulu.api.validators import validate_pan
 from ulu.domain.events import AmlStatusChangeEvent, KycStatusChangeEvent
 from ulu.domain.users import AmlStatus, KycStatus, User
 from ulu.infra.circuit_breaker import kyc_breaker
 from ulu.infra.logging import logger
+
+
+@dataclasses.dataclass
+class AmlAuditRecord:
+    """Persistent record of an AML screening event."""
+
+    record_id: str
+    user_id: str
+    old_status: str
+    new_status: str
+    reason: str
+    screened_at: datetime.datetime
+    watchlist_hit: bool
+
+
+class AmlAuditTrail:
+    """In-memory AML audit trail; production uses append-only DB table."""
+
+    def __init__(self) -> None:
+        self._records: dict[str, list[AmlAuditRecord]] = {}
+
+    def append(self, record: AmlAuditRecord) -> None:
+        self._records.setdefault(record.user_id, []).append(record)
+        logger.info("aml_audit_recorded", record_id=record.record_id, user_id=record.user_id)
+
+    def get_by_user(self, user_id: str) -> list[AmlAuditRecord]:
+        return list(self._records.get(user_id, []))
+
+    def get_all(self) -> list[AmlAuditRecord]:
+        return [r for records in self._records.values() for r in records]
+
+    def count_hits(self, user_id: str) -> int:
+        return sum(1 for r in self.get_by_user(user_id) if r.watchlist_hit)
 
 
 class KycAmlService:
@@ -21,8 +56,9 @@ class KycAmlService:
         KycStatus.EXPIRED: {KycStatus.PENDING},
     }
 
-    def __init__(self, timeout: float = 10.0) -> None:
+    def __init__(self, timeout: float = 10.0, audit_trail: AmlAuditTrail | None = None) -> None:
         self.timeout = timeout
+        self.audit_trail = audit_trail or AmlAuditTrail()
 
     def _verify_kyc_stub(self, user: User, pan_number: str, aadhaar_hash: str) -> KycStatus:
         if not validate_pan(pan_number):
@@ -73,12 +109,24 @@ class KycAmlService:
         return event
 
     def screen_aml(self, user: User, watchlist_hit: bool = False) -> tuple[AmlStatus, AmlStatusChangeEvent | None]:
-        """Screens user against AML watchlists and emits audit event on change."""
+        """Screens user against AML watchlists, emits audit event, and persists audit record."""
         old_status = user.aml_status
         if watchlist_hit:
             user.aml_status = AmlStatus.FROZEN
         else:
             user.aml_status = AmlStatus.CLEAR
+
+        reason = "watchlist_hit" if watchlist_hit else "screening_clear"
+        record = AmlAuditRecord(
+            record_id=f"aml-{user.identifier}-{datetime.datetime.now(tz=datetime.timezone.utc).isoformat()}",
+            user_id=user.identifier,
+            old_status=old_status.value,
+            new_status=user.aml_status.value,
+            reason=reason,
+            screened_at=datetime.datetime.now(tz=datetime.timezone.utc),
+            watchlist_hit=watchlist_hit,
+        )
+        self.audit_trail.append(record)
 
         if old_status == user.aml_status:
             return user.aml_status, None
@@ -89,12 +137,12 @@ class KycAmlService:
                 "user_id": user.identifier,
                 "old_status": old_status.value,
                 "new_status": user.aml_status.value,
-                "reason": "watchlist_hit" if watchlist_hit else "screening_clear",
+                "reason": reason,
             },
             user_id=user.identifier,
             old_status=old_status.value,
             new_status=user.aml_status.value,
-            reason="watchlist_hit" if watchlist_hit else "screening_clear",
+            reason=reason,
         )
         logger.info("aml_status_changed", user_id=user.identifier, old=old_status.value, new=user.aml_status.value)
         return user.aml_status, event
