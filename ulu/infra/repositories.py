@@ -306,6 +306,15 @@ class CollateralEscrowRepository(BaseRepository[CollateralEscrow]):
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
+    async def list_by_loan(self, loan_id: uuid.UUID, offset: int = 0, limit: int = 100) -> Sequence[CollateralEscrow]:
+        stmt = self._paginate(
+            self._active_filter(select(CollateralEscrow).where(CollateralEscrow.loan_id == loan_id)),
+            offset=offset,
+            limit=limit,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
     async def update_lien_status(self, escrow_id: uuid.UUID, lien_status: LienStatus) -> None:
         escrow = await self.get_by_id(escrow_id)
         if escrow is None:

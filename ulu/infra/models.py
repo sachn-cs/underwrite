@@ -217,11 +217,17 @@ class CollateralEscrow(SoftDeleteMixin, Base):
     haircut: Mapped[float] = mapped_column(Float, default=0.0)
     effective_value: Mapped[float] = mapped_column(Float, nullable=False)
     lien_status: Mapped[LienStatus] = mapped_column(Enum(LienStatus), default=LienStatus.FREE, index=True)
+    loan_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("loans.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     owner: Mapped[User] = relationship("User", back_populates="collateral")
 
-    __table_args__ = (Index("ix_collateral_escrows_owner_type", "owner_id", "collateral_type"),)
+    __table_args__ = (
+        Index("ix_collateral_escrows_owner_type", "owner_id", "collateral_type"),
+        Index("ix_collateral_escrows_loan", "loan_id"),
+    )
 
 
 class NpaEvent(SoftDeleteMixin, Base):

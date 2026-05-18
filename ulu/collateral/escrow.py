@@ -14,6 +14,7 @@ class CollateralEscrowService:
         collateral_type: CollateralType,
         nominal_value: float,
         haircut: float = 0.0,
+        loan_id: str | None = None,
     ) -> CollateralEscrow:
         if nominal_value <= 0:
             raise ValueError("nominal_value must be positive")
@@ -22,7 +23,7 @@ class CollateralEscrowService:
         effective_value = nominal_value * (1.0 - haircut)
         if effective_value <= 0:
             raise ValueError("effective_value must be positive after haircut")
-        return CollateralEscrow(owner_id, collateral_type, nominal_value, haircut)
+        return CollateralEscrow(owner_id, collateral_type, nominal_value, haircut, loan_id)
 
     def apply_lien(self, escrow: CollateralEscrow) -> None:
         if escrow.lien_status != LienStatus.FREE:

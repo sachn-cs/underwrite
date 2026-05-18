@@ -27,6 +27,7 @@ class CollateralEscrow:
         collateral_type: CollateralType,
         nominal_value: float,
         haircut: float = 0.0,
+        loan_id: str | None = None,
     ) -> None:
         self.owner_id = owner_id
         self.collateral_type = collateral_type
@@ -34,6 +35,7 @@ class CollateralEscrow:
         self.haircut = haircut
         self.effective_value = nominal_value * (1.0 - haircut)
         self.lien_status = LienStatus.FREE
+        self.loan_id = loan_id
 
     def apply_lien(self) -> None:
         self.lien_status = LienStatus.LIENED
