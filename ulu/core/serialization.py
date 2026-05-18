@@ -49,13 +49,13 @@ class SerializationMixin:
     def from_state(cls, state: ProtocolState, config: ProtocolConfig | None = None):
         """Builds a mechanism instance from a ProtocolState."""
         instance = cls(config=config)
-        instance.seeds = set(state.seeds)
-        instance.parent = dict(state.parent)
-        instance.children = {user: list(child_list) for user, child_list in state.children.items()}
-        instance.delegation = {instance.edge_tuple(key): float(value) for key, value in state.delegation.items()}
-        instance.base_budget = {user: float(value) for user, value in state.base_budget.items()}
-        instance.earned = {user: float(value) for user, value in state.earned.items()}
-        instance.principal = {user: float(value) for user, value in state.principal.items()}
+        instance._seeds = set(state.seeds)
+        instance._parent = dict(state.parent)
+        instance._children = {user: list(child_list) for user, child_list in state.children.items()}
+        instance._delegation = {instance.edge_tuple(key): float(value) for key, value in state.delegation.items()}
+        instance._base_budget = {user: float(value) for user, value in state.base_budget.items()}
+        instance._earned = {user: float(value) for user, value in state.earned.items()}
+        instance._principal = {user: float(value) for user, value in state.principal.items()}
         instance.assert_invariants()
         return instance
 
