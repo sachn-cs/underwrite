@@ -20,6 +20,7 @@ dependencies = [
     "PyJWT>=2.8",
     "orjson>=3.9",
     "redis>=5.0",
+    "alembic>=1.12",
 ]
 
 [project.optional-dependencies]
