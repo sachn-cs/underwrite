@@ -14,7 +14,15 @@ def _get_engine():
     url = settings.database_url
     if not url:
         raise ValueError("DATABASE_URL is not configured")
-    return create_async_engine(url, echo=settings.app_env == "development", future=True)
+    return create_async_engine(
+        url,
+        echo=settings.app_env == "development",
+        future=True,
+        pool_size=10,
+        max_overflow=20,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+    )
 
 
 def _get_session_maker():

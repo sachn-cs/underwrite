@@ -102,8 +102,8 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     identifier: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     user_type: Mapped[UserType] = mapped_column(Enum(UserType), nullable=False, index=True)
-    kyc_status: Mapped[KycStatus] = mapped_column(Enum(KycStatus), default=KycStatus.PENDING)
-    aml_status: Mapped[AmlStatus] = mapped_column(Enum(AmlStatus), default=AmlStatus.CLEAR)
+    kyc_status: Mapped[KycStatus] = mapped_column(Enum(KycStatus), default=KycStatus.PENDING, index=True)
+    aml_status: Mapped[AmlStatus] = mapped_column(Enum(AmlStatus), default=AmlStatus.CLEAR, index=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
@@ -182,7 +182,7 @@ class Repayment(Base):
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     delta_earned: Mapped[float] = mapped_column(Float, default=0.0)
     repayment_type: Mapped[RepaymentType] = mapped_column(Enum(RepaymentType), default=RepaymentType.SCHEDULED)
-    repaid_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    repaid_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
 
     loan: Mapped[Loan] = relationship("Loan", back_populates="repayments")
 
@@ -195,7 +195,7 @@ class Default(Base):
     default_amount: Mapped[float] = mapped_column(Float, nullable=False)
     logical_loss: Mapped[float] = mapped_column(Float, nullable=False)
     physical_recovery: Mapped[float] = mapped_column(Float, default=0.0)
-    defaulted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    defaulted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
 
     loan: Mapped[Loan] = relationship("Loan", back_populates="defaults")
 
@@ -209,7 +209,7 @@ class CollateralEscrow(Base):
     nominal_value: Mapped[float] = mapped_column(Float, nullable=False)
     haircut: Mapped[float] = mapped_column(Float, default=0.0)
     effective_value: Mapped[float] = mapped_column(Float, nullable=False)
-    lien_status: Mapped[LienStatus] = mapped_column(Enum(LienStatus), default=LienStatus.FREE)
+    lien_status: Mapped[LienStatus] = mapped_column(Enum(LienStatus), default=LienStatus.FREE, index=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     owner: Mapped[User] = relationship("User", back_populates="collateral")
@@ -222,7 +222,7 @@ class NpaEvent(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     loan_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("loans.id"), nullable=False, index=True)
-    days_overdue: Mapped[int] = mapped_column(Integer, default=0)
+    days_overdue: Mapped[int] = mapped_column(Integer, default=0, index=True)
     status: Mapped[NpaStatus] = mapped_column(Enum(NpaStatus), default=NpaStatus.STANDARD, index=True)
     dlg_invoked: Mapped[bool] = mapped_column(Boolean, default=False)
     triggered_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
