@@ -65,7 +65,7 @@ async def originate(
         )
 
     with protocol_service.lock:
-        return idempotent_mutation(
+        return await idempotent_mutation(
             "originate", body.model_dump(), action, idempotency_key, protocol_service
         )
 
@@ -83,6 +83,6 @@ async def default(
         return StatusResponse(status="ok")
 
     with protocol_service.lock:
-        return idempotent_mutation(
+        return await idempotent_mutation(
             "default", body.model_dump(), action, idempotency_key, protocol_service
         )

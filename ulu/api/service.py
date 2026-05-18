@@ -20,6 +20,7 @@ from ulu import AppendOnlyLedger, DelegatedUnderwriting
 from ulu.errors import ProtocolError
 from ulu.infra.config import settings
 from ulu.infra.logging import logger
+from ulu.infra.redis_cache import RedisIdempotencyCache
 
 _IDEMPOTENCY_MAX_SIZE = 10_000
 _DATA_DIR = Path(os.environ.get("ULU_DATA_DIR", "/tmp/ulu_data"))
@@ -33,6 +34,7 @@ class ProtocolService:
         self.ledger = AppendOnlyLedger()
         self.engine = DelegatedUnderwriting(ledger=self.ledger)
         self.idempotency_cache: dict[str, tuple[str, dict[str, Any]]] = {}
+        self.redis_cache = RedisIdempotencyCache(redis_url=getattr(settings, "redis_url", None))
 
     def _prune_idempotency_cache(self) -> None:
         if len(self.idempotency_cache) > _IDEMPOTENCY_MAX_SIZE:
@@ -85,7 +87,7 @@ def canonical_request_hash(payload: Mapping[str, Any]) -> str:
     return sha256(blob.encode("utf-8")).hexdigest()
 
 
-def idempotent_mutation(
+async def idempotent_mutation(
     operation_name: str,
     payload: Mapping[str, Any],
     action: Callable[[], Any],
@@ -98,7 +100,9 @@ def idempotent_mutation(
 
     cache_key = f"{operation_name}:{idempotency_key}"
     payload_hash = canonical_request_hash(payload)
-    cached = protocol_service.idempotency_cache.get(cache_key)
+    cached = await protocol_service.redis_cache.get(operation_name, idempotency_key)
+    if cached is None:
+        cached = protocol_service.idempotency_cache.get(cache_key)
     if cached is not None:
         cached_hash, cached_response = cached
         if cached_hash != payload_hash:
@@ -111,6 +115,8 @@ def idempotent_mutation(
     response = action()
     protocol_service._prune_idempotency_cache()
     protocol_service.idempotency_cache[cache_key] = (payload_hash, response)
+    serializable = response.model_dump() if hasattr(response, "model_dump") else response
+    await protocol_service.redis_cache.set(operation_name, idempotency_key, payload_hash, serializable)
     return response
 
 

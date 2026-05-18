@@ -23,6 +23,6 @@ async def add_seed(
         return StatusResponse(status="ok")
 
     with protocol_service.lock:
-        return idempotent_mutation(
+        return await idempotent_mutation(
             "add_seed", body.model_dump(), action, idempotency_key, protocol_service
         )
