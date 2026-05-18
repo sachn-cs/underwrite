@@ -480,3 +480,9 @@ def test_frozen_state_is_immutable():
         frozen.parent["new"] = "value"
     with pytest.raises(TypeError):
         frozen.principal["s"] = 999.0
+
+
+def test_version_is_accessible():
+    from ulu import __version__
+    assert __version__ is not None
+    assert isinstance(__version__, str)
