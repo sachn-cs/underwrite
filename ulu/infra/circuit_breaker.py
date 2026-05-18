@@ -17,7 +17,7 @@ def create_circuit_breaker(name: str) -> pybreaker.CircuitBreaker:
     return pybreaker.CircuitBreaker(
         fail_max=5,
         reset_timeout=60,
-        expected_exception=(Exception,),
+        exclude=(Exception,),
         name=name,
     )
 

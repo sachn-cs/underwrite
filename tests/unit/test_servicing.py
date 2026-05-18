@@ -59,22 +59,35 @@ class TestGenerateSchedule:
 class TestRepaymentService:
     def test_process_repayment_full(self) -> None:
         svc = RepaymentService()
-        interest, principal, excess, event = svc.process_repayment(
+        interest, principal, penalty, excess, event = svc.process_repayment(
             "l1", "b1", 500.0, 1000.0, 100.0, RepaymentType.SCHEDULED
         )
         assert interest == 100.0
         assert principal == 400.0
+        assert penalty == 0.0
         assert excess == 0.0
         assert event.delta_earned == 400.0
 
     def test_process_repayment_partial(self) -> None:
         svc = RepaymentService()
-        interest, principal, excess, event = svc.process_repayment(
+        interest, principal, penalty, excess, event = svc.process_repayment(
             "l1", "b1", 50.0, 1000.0, 100.0, RepaymentType.PARTIAL
         )
         assert interest == 50.0
         assert principal == 0.0
+        assert penalty == 0.0
         assert excess == 0.0
+
+    def test_prepayment_with_penalty(self) -> None:
+        svc = RepaymentService()
+        interest, principal, penalty, excess, event = svc.process_repayment(
+            "l1", "b1", 500.0, 1000.0, 0.0, RepaymentType.PREPAYMENT, prepayment_penalty_rate=0.02
+        )
+        assert interest == 0.0
+        assert pytest.approx(principal, abs=0.01) == 490.196
+        assert pytest.approx(penalty, abs=0.01) == 9.804
+        assert excess == 0.0
+        assert event.payload["penalty"] == pytest.approx(9.804, abs=0.01)
 
     def test_negative_amount_rejected(self) -> None:
         svc = RepaymentService()
@@ -95,6 +108,13 @@ class TestRepaymentService:
         svc = RepaymentService()
         with pytest.raises(ValueError, match="non-negative"):
             svc.process_repayment("l1", "b1", 100.0, 1000.0, -10.0)
+
+    def test_negative_penalty_rate_rejected(self) -> None:
+        svc = RepaymentService()
+        with pytest.raises(ValueError, match="non-negative"):
+            svc.process_repayment(
+                "l1", "b1", 100.0, 1000.0, 0.0, RepaymentType.PREPAYMENT, prepayment_penalty_rate=-0.01
+            )
 
 
 class TestRecoveryService:
