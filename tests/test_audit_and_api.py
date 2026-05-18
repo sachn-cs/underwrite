@@ -52,6 +52,21 @@ def test_append_only_ledger_round_trip(tmp_path: Path):
     assert events[1].event_type == "evt2"
 
 
+def test_stream_jsonl_does_not_load_all_into_memory(tmp_path: Path):
+    ledger = AppendOnlyLedger()
+    for i in range(100):
+        ledger.append("evt", {"i": i})
+
+    p = tmp_path / "big.jsonl"
+    ledger.save_jsonl(p)
+
+    count = 0
+    for event in AppendOnlyLedger.stream_jsonl(p):
+        assert event.event_type == "evt"
+        count += 1
+    assert count == 100
+
+
 def test_api_end_to_end_and_ledger(monkeypatch, tmp_path: Path):
     reset_service()
     monkeypatch.setenv("ULU_DATA_DIR", str(tmp_path))
