@@ -139,7 +139,7 @@ class AlgorandClient:
 
         Returns the transaction ID.
         """
-        from algosdk.future import transaction
+        import algosdk.transaction as transaction
 
         try:
             sp = await self.suggested_params()
@@ -156,6 +156,32 @@ class AlgorandClient:
         except AlgodHTTPError as exc:
             raise BlockchainConnectionError(f"transaction submission failed: {exc}") from exc
 
+    async def submit_app_call(
+        self,
+        sender: str,
+        private_key: str,
+        app_id: int,
+        args: list[bytes],
+        on_complete: int = 0,
+    ) -> str:
+        """Submits an application call transaction. Returns transaction ID."""
+        import algosdk.transaction as transaction
+
+        try:
+            sp = await self.suggested_params()
+            txn = transaction.ApplicationCallTxn(
+                sender=sender,
+                sp=sp,
+                index=app_id,
+                on_complete=on_complete,
+                app_args=args,
+            )
+            signed = txn.sign(private_key)
+            txid = await self._async_call(lambda: self.client.send_transaction(signed))
+            return str(txid)
+        except AlgodHTTPError as exc:
+            raise BlockchainConnectionError(f"application call failed: {exc}") from exc
+
     async def submit_asa_create(
         self,
         sender: str,
@@ -166,7 +192,7 @@ class AlgorandClient:
         decimals: int = 0,
     ) -> str:
         """Submits an ASA creation transaction. Returns asset ID."""
-        from algosdk.future import transaction
+        import algosdk.transaction as transaction
 
         try:
             sp = await self.suggested_params()
