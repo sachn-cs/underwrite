@@ -93,12 +93,18 @@ async def metrics_middleware(request, call_next):
     return response
 
 
-app.include_router(health.router)
-app.include_router(seeds.router)
-app.include_router(users.router)
-app.include_router(loans.router)
-app.include_router(repayments.router)
-app.include_router(revocations.router)
-app.include_router(state.router)
-app.include_router(ledger.router)
-app.include_router(admin.router)
+_routers = [
+    health.router,
+    seeds.router,
+    users.router,
+    loans.router,
+    repayments.router,
+    revocations.router,
+    state.router,
+    ledger.router,
+    admin.router,
+]
+
+for _router in _routers:
+    app.include_router(_router)
+    app.include_router(_router, prefix="/v1")
