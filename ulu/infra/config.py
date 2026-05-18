@@ -12,6 +12,7 @@ class BaseConfig(BaseSettings):
     """Shared configuration loaded from environment and .env files."""
 
     database_url: str = ""
+    read_database_url: str = ""
     algod_token: str = ""
     algod_url: str = "http://localhost:4001"
     app_env: str = "development"

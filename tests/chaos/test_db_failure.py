@@ -23,7 +23,7 @@ class TestDbFailure:
 
         monkeypatch.setattr("ulu.infra.db.create_async_engine", fake_create_async_engine)
         with pytest.raises(DatabaseConnectionError, match="simulated failure"):
-            _create_engine_with_retry(retries=3)
+            _create_engine_with_retry("postgresql+asyncpg://fake", retries=3)
         assert call_count == 3
 
     def test_engine_retry_eventual_success(self, monkeypatch) -> None:
@@ -41,6 +41,6 @@ class TestDbFailure:
             return FakeEngine()
 
         monkeypatch.setattr("ulu.infra.db.create_async_engine", fake_create_async_engine)
-        engine = _create_engine_with_retry(retries=3)
+        engine = _create_engine_with_retry("postgresql+asyncpg://fake", retries=3)
         assert engine is not None
         assert call_count == 2
