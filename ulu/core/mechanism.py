@@ -41,6 +41,10 @@ class DelegatedUnderwriting(GraphMixin, PricingMixin, AccountingMixin, Serializa
         self.base_budget: dict[str, float] = {}
         self.earned: dict[str, float] = {}
         self.principal: dict[str, float] = {}
+        self._graph_cache: dict[str, Any] = {}
+
+    def _clear_graph_cache(self) -> None:
+        self._graph_cache.clear()
 
     def record_event(self, event_type: str, payload: Mapping[str, Any]) -> None:
         if self.ledger is not None:
@@ -64,6 +68,7 @@ class DelegatedUnderwriting(GraphMixin, PricingMixin, AccountingMixin, Serializa
 
     def add_user(self, sponsor: str, user: str, delegation_amount: float) -> None:
         """Adds a non-seed user sponsored with delegated capacity."""
+        self._clear_graph_cache()
         self.require_user(sponsor)
         if user in self.earned:
             raise ProtocolError(f"user already exists: {user}")
@@ -96,6 +101,7 @@ class DelegatedUnderwriting(GraphMixin, PricingMixin, AccountingMixin, Serializa
 
     def revoke(self, sponsor: str, child: str, new_delegation: float) -> None:
         """Sets edge delegation amount if revocation remains solvent."""
+        self._clear_graph_cache()
         self.require_user(sponsor)
         self.require_user(child)
         edge = (sponsor, child)
@@ -136,6 +142,7 @@ class DelegatedUnderwriting(GraphMixin, PricingMixin, AccountingMixin, Serializa
 
     def repay(self, user: str, delta_earned: float) -> None:
         """Applies earned-credit increment from repayment."""
+        self._clear_graph_cache()
         self.require_user(user)
         if delta_earned < 0:
             raise ProtocolError("delta earned must be >= 0")
@@ -143,6 +150,33 @@ class DelegatedUnderwriting(GraphMixin, PricingMixin, AccountingMixin, Serializa
 
         logger.info("repay", user=user, delta_earned=float(delta_earned))
         self.record_event("repay", {"user": user, "delta_earned": float(delta_earned)})
+
+    def quote_loan(
+        self,
+        borrower: str,
+        principal: float,
+        term: float,
+        default_probability: float,
+        protocol_rate: float,
+        max_delegation_rate: float,
+    ) -> LoanQuote:
+        self._clear_graph_cache()
+        return super().quote_loan(
+            borrower=borrower,
+            principal=principal,
+            term=term,
+            default_probability=default_probability,
+            protocol_rate=protocol_rate,
+            max_delegation_rate=max_delegation_rate,
+        )
+
+    def locked_delegation(self, borrower: str, principal: float) -> dict[tuple[str, str], float]:
+        self._clear_graph_cache()
+        return super().locked_delegation(borrower, principal)
+
+    def total_credit_limit(self) -> float:
+        self._clear_graph_cache()
+        return super().total_credit_limit()
 
     def originate_loan(
         self,
@@ -154,6 +188,7 @@ class DelegatedUnderwriting(GraphMixin, PricingMixin, AccountingMixin, Serializa
         max_delegation_rate: float,
     ) -> LoanQuote:
         """Quotes and originates a loan by setting borrower principal."""
+        self._clear_graph_cache()
         quote = self.quote_loan(
             borrower=borrower,
             principal=principal,
@@ -178,6 +213,7 @@ class DelegatedUnderwriting(GraphMixin, PricingMixin, AccountingMixin, Serializa
 
     def default(self, borrower: str) -> None:
         """Applies default loss propagation on borrower sponsor path."""
+        self._clear_graph_cache()
         self.require_user(borrower)
         borrower_principal = self.principal[borrower]
         if borrower_principal <= 0:

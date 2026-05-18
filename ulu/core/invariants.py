@@ -23,7 +23,14 @@ class AccountingMixin:
 
     def credit_limit(self, user: str) -> float:
         """Returns paper-defined credit limit c_u."""
-        return self.budget(user) - self.outgoing_delegation(user)
+        cache_key = f"credit_limit:{user}"
+        cache = getattr(self, "_graph_cache", None)
+        if cache is not None and cache_key in cache:
+            return cache[cache_key]
+        result = self.budget(user) - self.outgoing_delegation(user)
+        if cache is not None:
+            cache[cache_key] = result
+        return result
 
     def total_credit_limit(self) -> float:
         """Returns aggregate credit limit across all users."""
@@ -34,11 +41,23 @@ class AccountingMixin:
         self.require_user(user)
         if user in self.seeds:
             raise ProtocolError("required delegation is defined only for non-seeds")
+        cache_key = f"required_delegation:{user}"
+        cache = getattr(self, "_graph_cache", None)
+        if cache is not None and cache_key in cache:
+            return cache[cache_key]
         child_requirement = sum(self.required_delegation(child) for child in self.children[user])
-        return max(0.0, self.principal[user] + child_requirement - self.earned[user])
+        result = max(0.0, self.principal[user] + child_requirement - self.earned[user])
+        if cache is not None:
+            cache[cache_key] = result
+        return result
 
     def seed_delegation_utilization(self) -> float:
         """Returns U^D for current state."""
+        cache_key = "seed_delegation_utilization"
+        cache = getattr(self, "_graph_cache", None)
+        if cache is not None and cache_key in cache:
+            return cache[cache_key]
+
         denominator = sum(self.budget(seed) for seed in self.seeds)
         if denominator <= 0:
             raise InvariantViolationError("invalid state: non-positive seed budget total")
@@ -52,7 +71,10 @@ class AccountingMixin:
         epsilon = self.config.epsilon
         if utilization < -epsilon or utilization > 1 + epsilon:
             raise InvariantViolationError("invalid state: utilization out of [0,1]")
-        return min(max(utilization, 0.0), 1.0)
+        result = min(max(utilization, 0.0), 1.0)
+        if cache is not None:
+            cache[cache_key] = result
+        return result
 
     def assert_invariants(self) -> None:
         """Raises if accounting or structure invariants are violated."""

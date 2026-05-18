@@ -91,6 +91,20 @@ class RecoveryEvent(DomainEvent):
 
 
 @dataclass(frozen=True)
+class RestructureEvent(DomainEvent):
+    """Emitted when a loan is restructured under RBI guidelines."""
+
+    loan_id: str
+    borrower_id: str
+    restructure_type: str
+    original_term: float
+    new_term: float
+    original_principal: float
+    new_principal: float
+    moratorium_months: int
+
+
+@dataclass(frozen=True)
 class KycStatusChangeEvent(DomainEvent):
     """Emitted when KYC status changes."""
 

@@ -12,6 +12,7 @@ class LoanStatus(enum.Enum):
     DEFAULTED = "defaulted"
     RECOVERED = "recovered"
     WRITTEN_OFF = "written_off"
+    RESTRUCTURED = "restructured"
 
 
 class RepaymentType(enum.Enum):
@@ -25,6 +26,12 @@ class RecoveryType(enum.Enum):
     RESTRUCTURE = "restructure"
     LIQUIDATION = "liquidation"
     WRITE_OFF = "write_off"
+
+
+class RestructureType(enum.Enum):
+    MORATORIUM = "moratorium"
+    TENOR_EXTENSION = "tenor_extension"
+    RATE_REDUCTION = "rate_reduction"
 
 
 class Installment:
