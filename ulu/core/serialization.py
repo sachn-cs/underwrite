@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+
+import orjson
 
 from ulu.core.models import STATE_SCHEMA_VERSION, ProtocolConfig, ProtocolState
 from ulu.errors import ProtocolError
@@ -79,9 +80,12 @@ class SerializationMixin:
         return cls.from_state(state, config=config)
 
     def save_json(self, path: str | Path) -> None:
-        """Writes state payload to a JSON file."""
+        """Writes state payload to a JSON file using orjson."""
         target = Path(path)
-        payload = json.dumps(self.to_dict(), indent=2, sort_keys=True)
+        payload = orjson.dumps(
+            self.to_dict(),
+            option=orjson.OPT_INDENT_2 | orjson.OPT_SORT_KEYS,
+        ).decode("utf-8")
         try:
             target.write_text(payload, encoding="utf-8")
         except OSError as exc:
@@ -89,14 +93,14 @@ class SerializationMixin:
 
     @classmethod
     def load_json(cls, path: str | Path):
-        """Loads a mechanism instance from JSON state file."""
+        """Loads a mechanism instance from JSON state file using orjson."""
         target = Path(path)
         try:
             raw = target.read_text(encoding="utf-8")
         except OSError as exc:
             raise ProtocolError(f"failed to load state from {target}: {exc}") from exc
         try:
-            payload = json.loads(raw)
-        except json.JSONDecodeError as exc:
+            payload = orjson.loads(raw)
+        except orjson.JSONDecodeError as exc:
             raise ProtocolError(f"invalid JSON in state file {target}: {exc}") from exc
         return cls.from_dict(payload)

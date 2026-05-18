@@ -274,11 +274,12 @@ class AuditEventRepository:
         result = await self.session.execute(select(func.max(AuditEvent.seq)))
         return result.scalar() or 0
 
-    async def list_by_type(self, event_type: str, limit: int = 100) -> Sequence[AuditEvent]:
+    async def list_by_type(self, event_type: str, limit: int = 100, offset: int = 0) -> Sequence[AuditEvent]:
         result = await self.session.execute(
             select(AuditEvent)
             .where(AuditEvent.event_type == event_type)
             .order_by(AuditEvent.timestamp_utc.desc())
+            .offset(offset)
             .limit(limit)
         )
         return result.scalars().all()
