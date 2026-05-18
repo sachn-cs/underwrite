@@ -54,3 +54,43 @@ class CspMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none';"
         return response
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Logs all incoming requests and outgoing responses (sanitized)."""
+
+    SENSITIVE_KEYS = {"password", "token", "secret", "jwt", "api_key", "authorization"}
+
+    def _sanitize(self, data: dict) -> dict:
+        """Redacts sensitive fields from logged payloads."""
+        if not isinstance(data, dict):
+            return data
+        sanitized: dict = {}
+        for key, value in data.items():
+            if isinstance(key, str) and key.lower() in self.SENSITIVE_KEYS:
+                sanitized[key] = "***REDACTED***"
+            elif isinstance(value, dict):
+                sanitized[key] = self._sanitize(value)
+            else:
+                sanitized[key] = value
+        return sanitized
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        from ulu.infra.logging import logger
+
+        correlation_id = getattr(request.state, "correlation_id", "")
+        logger.info(
+            "http_request",
+            method=request.method,
+            path=request.url.path,
+            correlation_id=correlation_id,
+        )
+        response = await call_next(request)
+        logger.info(
+            "http_response",
+            method=request.method,
+            path=request.url.path,
+            status=response.status_code,
+            correlation_id=correlation_id,
+        )
+        return response
