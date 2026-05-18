@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from ulu.audit import AppendOnlyLedger
 from ulu.domain.events import DefaultEvent, RecoveryEvent
 from ulu.domain.loans import RecoveryType
+from ulu.infra.logging import logger
 
 
 class RecoveryService:
     """Manages workout, restructuring, liquidation, and write-off workflows."""
+
+    def __init__(self, ledger: AppendOnlyLedger | None = None) -> None:
+        self.ledger = ledger
+
+    def _append_event(self, event_type: str, payload: dict[str, Any]) -> None:
+        if self.ledger is not None:
+            self.ledger.append(event_type=event_type, payload=payload)
+            logger.info("recovery_event_appended", event_type=event_type, loan_id=payload.get("loan_id"))
 
     def initiate_recovery(
         self,
@@ -59,4 +71,6 @@ class RecoveryService:
             recovered_amount=recovered,
             default_amount=default_amount,
         )
+        self._append_event("recovery_initiated", recovery_event.payload)
+        self._append_event("default", default_event.payload)
         return recovered, default_event, recovery_event
