@@ -7,7 +7,7 @@ from fastapi import Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ulu.infra.config import settings
-from ulu.infra.db import get_db_session
+from ulu.infra.db import get_db_read_session, get_db_session
 from ulu.infra.models import UserType
 from ulu.infra.repositories import (
     AuditEventRepository,
@@ -22,6 +22,10 @@ from ulu.infra.repositories import (
 
 
 async def get_user_repo(session: AsyncSession = Depends(get_db_session)) -> UserRepository:
+    return UserRepository(session)
+
+
+async def get_user_repo_read(session: AsyncSession = Depends(get_db_read_session)) -> UserRepository:
     return UserRepository(session)
 
 
