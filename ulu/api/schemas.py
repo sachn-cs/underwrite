@@ -139,5 +139,10 @@ class KycRequest(BaseModel):
         return v
 
 
+class BulkResponse(BaseModel):
+    created: list[dict[str, str]]
+    errors: list[dict[str, str]]
+
+
 class ErrorResponse(BaseModel):
     detail: str
