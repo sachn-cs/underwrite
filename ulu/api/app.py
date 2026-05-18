@@ -11,9 +11,12 @@ from threading import RLock
 from time import perf_counter
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel, Field
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -98,6 +101,65 @@ class LedgerLoadRequest(BaseModel):
     path: str
 
 
+class StatusResponse(BaseModel):
+    status: str
+
+
+class QuoteResponse(BaseModel):
+    borrower: str
+    principal: float
+    term: float
+    protocol_premium: float
+    delegation_premium: float
+    total_interest: float
+    delegation_utilization: float
+    delegation_rate: float
+    locked_by_edge: dict[str, float]
+    delegation_payouts: dict[str, float]
+
+
+class OriginateResponse(BaseModel):
+    borrower: str
+    principal: float
+    term: float
+    total_interest: float
+
+
+class StateResponse(BaseModel):
+    state: dict[str, Any]
+
+
+class LedgerResponse(BaseModel):
+    events: list[dict[str, Any]]
+
+
+class GraphResponse(BaseModel):
+    seeds: list[str]
+    parent: dict[str, str]
+    edges: list[dict[str, Any]]
+
+
+class UtilizationResponse(BaseModel):
+    delegation_utilization: float
+
+
+class SolvencyResponse(BaseModel):
+    invariants: str
+    required_delegation: dict[str, float]
+
+
+class HealthResponse(BaseModel):
+    status: str
+
+
+class ReadyResponse(BaseModel):
+    status: str
+
+
+class LiveResponse(BaseModel):
+    status: str
+
+
 _IDEMPOTENCY_MAX_SIZE = 10_000
 _DATA_DIR = Path(os.environ.get("ULU_DATA_DIR", "/tmp/ulu_data"))
 
@@ -133,7 +195,10 @@ class ProtocolService:
 
 
 service = ProtocolService()
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="ULU API", version="1.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 @app.middleware("http")
@@ -184,9 +249,9 @@ def canonical_request_hash(payload: Mapping[str, Any]) -> str:
 def idempotent_mutation(
     operation_name: str,
     payload: Mapping[str, Any],
-    action: Callable[[], dict[str, Any]],
+    action: Callable[[], Any],
     idempotency_key: str | None,
-) -> dict[str, Any]:
+) -> Any:
     """Executes idempotent mutation when idempotency key is provided."""
     if not idempotency_key:
         return action()
@@ -266,18 +331,18 @@ async def _db_is_healthy() -> bool:
         return False
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+@app.get("/health", response_model=HealthResponse)
+def health() -> HealthResponse:
+    return HealthResponse(status="ok")
 
 
-@app.get("/live")
-def live() -> dict[str, str]:
-    return {"status": "alive"}
+@app.get("/live", response_model=LiveResponse)
+def live() -> LiveResponse:
+    return LiveResponse(status="alive")
 
 
-@app.get("/ready")
-async def ready() -> dict[str, str]:
+@app.get("/ready", response_model=ReadyResponse)
+async def ready() -> ReadyResponse:
     with service.lock:
         try:
             service.engine.assert_invariants()
@@ -285,7 +350,7 @@ async def ready() -> dict[str, str]:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
     if not await _db_is_healthy():
         raise HTTPException(status_code=503, detail="database unreachable")
-    return {"status": "ready"}
+    return ReadyResponse(status="ready")
 
 
 @app.get("/metrics")
@@ -293,35 +358,40 @@ def metrics() -> Response:
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
-@app.get("/state")
+@app.get("/state", response_model=dict[str, Any])
 def get_state() -> dict[str, Any]:
     with service.lock:
         return service.engine.to_dict()
 
 
-@app.get("/ledger")
-def get_ledger() -> dict[str, list[dict[str, Any]]]:
+@app.get("/ledger", response_model=LedgerResponse)
+def get_ledger() -> LedgerResponse:
     with service.lock:
-        return {"events": ledger_events_payload()}
+        return LedgerResponse(events=ledger_events_payload())
 
 
-@app.get("/admin/graph")
-def admin_graph(_: None = Depends(require_admin)) -> dict[str, Any]:
+@app.get("/admin/graph", response_model=GraphResponse)
+def admin_graph(_: None = Depends(require_admin)) -> GraphResponse:
     """Returns the current delegation graph for admin inspection."""
     with service.lock:
-        return graph_payload()
+        payload = graph_payload()
+    return GraphResponse(
+        seeds=payload["seeds"],
+        parent=payload["parent"],
+        edges=payload["edges"],
+    )
 
 
-@app.get("/admin/utilization")
-def admin_utilization(_: None = Depends(require_admin)) -> dict[str, float]:
+@app.get("/admin/utilization", response_model=UtilizationResponse)
+def admin_utilization(_: None = Depends(require_admin)) -> UtilizationResponse:
     """Returns seed delegation utilization metrics."""
     with service.lock:
         util = safe_call(service.engine.seed_delegation_utilization)
-    return {"delegation_utilization": util}
+    return UtilizationResponse(delegation_utilization=util)
 
 
-@app.get("/admin/solvency")
-def admin_solvency(_: None = Depends(require_admin)) -> dict[str, Any]:
+@app.get("/admin/solvency", response_model=SolvencyResponse)
+def admin_solvency(_: None = Depends(require_admin)) -> SolvencyResponse:
     """Returns solvency invariants and required delegation per user."""
     with service.lock:
         safe_call(service.engine.assert_invariants)
@@ -329,153 +399,181 @@ def admin_solvency(_: None = Depends(require_admin)) -> dict[str, Any]:
         for user in sorted(service.engine.earned):
             if user not in service.engine.seeds:
                 required[user] = service.engine.required_delegation(user)
-    return {"invariants": "ok", "required_delegation": required}
+    return SolvencyResponse(invariants="ok", required_delegation=required)
 
 
-@app.post("/admin/reset")
-def admin_reset(_: None = Depends(require_admin)) -> dict[str, str]:
+@app.post("/admin/reset", response_model=StatusResponse)
+@limiter.limit("5/minute")
+def admin_reset(
+    request: Request,
+    _: None = Depends(require_admin),
+) -> StatusResponse:
     """Resets protocol state, ledger, and idempotency cache."""
     with service.lock:
         service.ledger = AppendOnlyLedger()
         service.engine = DelegatedUnderwriting(ledger=service.ledger)
         service.idempotency_cache.clear()
     logger.info("admin_reset_executed")
-    return {"status": "ok"}
+    return StatusResponse(status="ok")
 
 
-@app.post("/seed")
+@app.post("/seed", response_model=StatusResponse)
+@limiter.limit("10/minute")
 def add_seed(
-    request: SeedRequest,
+    request: Request,
+    body: SeedRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-) -> dict[str, Any]:
-    def action() -> dict[str, Any]:
-        safe_call(lambda: service.engine.add_seed(request.user, request.base_budget))
-        return {"status": "ok"}
+) -> StatusResponse:
+    def action() -> StatusResponse:
+        safe_call(lambda: service.engine.add_seed(body.user, body.base_budget))
+        return StatusResponse(status="ok")
 
     with service.lock:
-        return idempotent_mutation("add_seed", request.model_dump(), action, idempotency_key)
+        return idempotent_mutation("add_seed", body.model_dump(), action, idempotency_key)
 
 
-@app.post("/user")
+@app.post("/user", response_model=StatusResponse)
+@limiter.limit("10/minute")
 def add_user(
-    request: UserRequest,
+    request: Request,
+    body: UserRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-) -> dict[str, Any]:
-    def action() -> dict[str, Any]:
+) -> StatusResponse:
+    def action() -> StatusResponse:
         safe_call(
             lambda: service.engine.add_user(
-                request.sponsor,
-                request.user,
-                request.delegation_amount,
+                body.sponsor,
+                body.user,
+                body.delegation_amount,
             )
         )
-        return {"status": "ok"}
+        return StatusResponse(status="ok")
 
     with service.lock:
-        return idempotent_mutation("add_user", request.model_dump(), action, idempotency_key)
+        return idempotent_mutation("add_user", body.model_dump(), action, idempotency_key)
 
 
-@app.post("/repay")
+@app.post("/repay", response_model=StatusResponse)
+@limiter.limit("10/minute")
 def repay(
-    request: RepayRequest,
+    request: Request,
+    body: RepayRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-) -> dict[str, Any]:
-    def action() -> dict[str, Any]:
-        safe_call(lambda: service.engine.repay(request.user, request.delta_earned))
-        return {"status": "ok"}
+) -> StatusResponse:
+    def action() -> StatusResponse:
+        safe_call(lambda: service.engine.repay(body.user, body.delta_earned))
+        return StatusResponse(status="ok")
 
     with service.lock:
-        return idempotent_mutation("repay", request.model_dump(), action, idempotency_key)
+        return idempotent_mutation("repay", body.model_dump(), action, idempotency_key)
 
 
-@app.post("/revoke")
+@app.post("/revoke", response_model=StatusResponse)
+@limiter.limit("10/minute")
 def revoke(
-    request: RevokeRequest,
+    request: Request,
+    body: RevokeRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-) -> dict[str, Any]:
-    def action() -> dict[str, Any]:
+) -> StatusResponse:
+    def action() -> StatusResponse:
         safe_call(
             lambda: service.engine.revoke(
-                request.sponsor,
-                request.child,
-                request.new_delegation,
+                body.sponsor,
+                body.child,
+                body.new_delegation,
             )
         )
-        return {"status": "ok"}
+        return StatusResponse(status="ok")
 
     with service.lock:
-        return idempotent_mutation("revoke", request.model_dump(), action, idempotency_key)
+        return idempotent_mutation("revoke", body.model_dump(), action, idempotency_key)
 
 
-@app.post("/quote")
-def quote(request: QuoteRequest) -> dict[str, Any]:
+@app.post("/quote", response_model=QuoteResponse)
+@limiter.limit("30/minute")
+def quote(
+    request: Request,
+    body: QuoteRequest,
+) -> QuoteResponse:
     with service.lock:
         quote_value = safe_call(
             lambda: service.engine.quote_loan(
-                borrower=request.borrower,
-                principal=request.principal,
-                term=request.term,
-                default_probability=request.default_probability,
-                protocol_rate=request.protocol_rate,
-                max_delegation_rate=request.max_delegation_rate,
+                borrower=body.borrower,
+                principal=body.principal,
+                term=body.term,
+                default_probability=body.default_probability,
+                protocol_rate=body.protocol_rate,
+                max_delegation_rate=body.max_delegation_rate,
             )
         )
-    return quote_response_payload(quote_value)
+    return QuoteResponse(**quote_response_payload(quote_value))
 
 
-@app.post("/originate")
+@app.post("/originate", response_model=OriginateResponse)
+@limiter.limit("10/minute")
 def originate(
-    request: QuoteRequest,
+    request: Request,
+    body: QuoteRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-) -> dict[str, Any]:
-    def action() -> dict[str, Any]:
+) -> OriginateResponse:
+    def action() -> OriginateResponse:
         quote_value = safe_call(
             lambda: service.engine.originate_loan(
-                borrower=request.borrower,
-                principal=request.principal,
-                term=request.term,
-                default_probability=request.default_probability,
-                protocol_rate=request.protocol_rate,
-                max_delegation_rate=request.max_delegation_rate,
+                borrower=body.borrower,
+                principal=body.principal,
+                term=body.term,
+                default_probability=body.default_probability,
+                protocol_rate=body.protocol_rate,
+                max_delegation_rate=body.max_delegation_rate,
             )
         )
-        return {
-            "borrower": quote_value.borrower,
-            "principal": quote_value.principal,
-            "term": quote_value.term,
-            "total_interest": quote_value.total_interest,
-        }
+        return OriginateResponse(
+            borrower=quote_value.borrower,
+            principal=quote_value.principal,
+            term=quote_value.term,
+            total_interest=quote_value.total_interest,
+        )
 
     with service.lock:
-        return idempotent_mutation("originate", request.model_dump(), action, idempotency_key)
+        return idempotent_mutation("originate", body.model_dump(), action, idempotency_key)
 
 
-@app.post("/default")
+@app.post("/default", response_model=StatusResponse)
+@limiter.limit("10/minute")
 def default(
-    request: DefaultRequest,
+    request: Request,
+    body: DefaultRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-) -> dict[str, Any]:
-    def action() -> dict[str, Any]:
-        safe_call(lambda: service.engine.default(request.borrower))
-        return {"status": "ok"}
+) -> StatusResponse:
+    def action() -> StatusResponse:
+        safe_call(lambda: service.engine.default(body.borrower))
+        return StatusResponse(status="ok")
 
     with service.lock:
-        return idempotent_mutation("default", request.model_dump(), action, idempotency_key)
+        return idempotent_mutation("default", body.model_dump(), action, idempotency_key)
 
 
-@app.post("/state/save")
-def save_state(request: SaveRequest) -> dict[str, str]:
+@app.post("/state/save", response_model=StatusResponse)
+@limiter.limit("20/minute")
+def save_state(
+    request: Request,
+    body: SaveRequest,
+) -> StatusResponse:
     """Saves protocol state to a file inside the data directory."""
-    target = _validate_path(request.path)
+    target = _validate_path(body.path)
     with service.lock:
         safe_call(lambda: service.engine.save_json(str(target)))
-    return {"status": "ok"}
+    return StatusResponse(status="ok")
 
 
-@app.post("/state/load")
-def load_state(request: LoadRequest) -> dict[str, str]:
+@app.post("/state/load", response_model=StatusResponse)
+@limiter.limit("20/minute")
+def load_state(
+    request: Request,
+    body: LoadRequest,
+) -> StatusResponse:
     """Loads protocol state from a file inside the data directory."""
-    target = _validate_path(request.path)
+    target = _validate_path(body.path)
 
     def load_action() -> None:
         service.engine = DelegatedUnderwriting.load_json(str(target))
@@ -483,23 +581,31 @@ def load_state(request: LoadRequest) -> dict[str, str]:
 
     with service.lock:
         safe_call(load_action)
-    return {"status": "ok"}
+    return StatusResponse(status="ok")
 
 
-@app.post("/ledger/save")
-def save_ledger(request: LedgerSaveRequest) -> dict[str, str]:
+@app.post("/ledger/save", response_model=StatusResponse)
+@limiter.limit("20/minute")
+def save_ledger(
+    request: Request,
+    body: LedgerSaveRequest,
+) -> StatusResponse:
     """Saves ledger events to a file inside the data directory."""
-    target = _validate_path(request.path)
+    target = _validate_path(body.path)
     with service.lock:
         service.ledger.save_jsonl(str(target))
-    return {"status": "ok"}
+    return StatusResponse(status="ok")
 
 
-@app.post("/ledger/load")
-def load_ledger(request: LedgerLoadRequest) -> dict[str, str]:
+@app.post("/ledger/load", response_model=StatusResponse)
+@limiter.limit("20/minute")
+def load_ledger(
+    request: Request,
+    body: LedgerLoadRequest,
+) -> StatusResponse:
     """Loads ledger events from a file inside the data directory."""
-    target = _validate_path(request.path)
+    target = _validate_path(body.path)
     with service.lock:
         service.ledger = AppendOnlyLedger.load_jsonl(str(target))
         service.engine.ledger = service.ledger
-    return {"status": "ok"}
+    return StatusResponse(status="ok")
