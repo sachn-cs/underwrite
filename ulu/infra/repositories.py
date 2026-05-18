@@ -46,6 +46,12 @@ class BaseRepository(Generic[T]):
         await self.session.refresh(entity)
         return entity
 
+    async def bulk_create(self, entities: Sequence[T]) -> Sequence[T]:
+        """Efficiently inserts multiple entities in a single round-trip."""
+        self.session.add_all(entities)
+        await self.session.flush()
+        return entities
+
     async def get_by_id(self, entity_id: Any) -> T | None:
         return await self.session.get(self.model, entity_id)
 
@@ -60,6 +66,14 @@ class BaseRepository(Generic[T]):
             return stmt.where(self.model.deleted_at.is_(None))
         return stmt
 
+    @staticmethod
+    def _paginate(stmt, offset: int = 0, limit: int = 100):
+        if offset < 0:
+            raise ValueError("offset must be non-negative")
+        if limit < 1:
+            raise ValueError("limit must be positive")
+        return stmt.offset(offset).limit(limit)
+
 
 class UserRepository(BaseRepository[User]):
     """Repository for User entity persistence."""
@@ -72,13 +86,15 @@ class UserRepository(BaseRepository[User]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_by_type(self, user_type: str) -> Sequence[User]:
-        stmt = self._active_filter(select(User).where(User.user_type == user_type))
+    async def list_by_type(self, user_type: str, offset: int = 0, limit: int = 100) -> Sequence[User]:
+        stmt = self._paginate(
+            self._active_filter(select(User).where(User.user_type == user_type)), offset=offset, limit=limit
+        )
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def list_active(self) -> Sequence[User]:
-        stmt = self._active_filter(select(User))
+    async def list_active(self, offset: int = 0, limit: int = 100) -> Sequence[User]:
+        stmt = self._paginate(self._active_filter(select(User)), offset=offset, limit=limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -113,13 +129,17 @@ class SponsorEdgeRepository(BaseRepository[SponsorEdge]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_by_sponsor(self, sponsor_id: uuid.UUID) -> Sequence[SponsorEdge]:
-        stmt = self._active_filter(select(SponsorEdge).where(SponsorEdge.sponsor_id == sponsor_id))
+    async def list_by_sponsor(self, sponsor_id: uuid.UUID, offset: int = 0, limit: int = 100) -> Sequence[SponsorEdge]:
+        stmt = self._paginate(
+            self._active_filter(select(SponsorEdge).where(SponsorEdge.sponsor_id == sponsor_id)),
+            offset=offset,
+            limit=limit,
+        )
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def list_active(self) -> Sequence[SponsorEdge]:
-        stmt = self._active_filter(select(SponsorEdge))
+    async def list_active(self, offset: int = 0, limit: int = 100) -> Sequence[SponsorEdge]:
+        stmt = self._paginate(self._active_filter(select(SponsorEdge)), offset=offset, limit=limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -140,8 +160,8 @@ class UserBalanceRepository(BaseRepository[UserBalance]):
     async def get_by_user_id(self, user_id: uuid.UUID) -> UserBalance | None:
         return await self.get_by_id(user_id)
 
-    async def list_active(self) -> Sequence[UserBalance]:
-        stmt = self._active_filter(select(UserBalance))
+    async def list_active(self, offset: int = 0, limit: int = 100) -> Sequence[UserBalance]:
+        stmt = self._paginate(self._active_filter(select(UserBalance)), offset=offset, limit=limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -173,13 +193,15 @@ class LoanRepository(BaseRepository[Loan]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, Loan)
 
-    async def list_by_borrower(self, borrower_id: uuid.UUID) -> Sequence[Loan]:
-        stmt = self._active_filter(select(Loan).where(Loan.borrower_id == borrower_id))
+    async def list_by_borrower(self, borrower_id: uuid.UUID, offset: int = 0, limit: int = 100) -> Sequence[Loan]:
+        stmt = self._paginate(
+            self._active_filter(select(Loan).where(Loan.borrower_id == borrower_id)), offset=offset, limit=limit
+        )
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def list_active(self) -> Sequence[Loan]:
-        stmt = self._active_filter(select(Loan))
+    async def list_active(self, offset: int = 0, limit: int = 100) -> Sequence[Loan]:
+        stmt = self._paginate(self._active_filter(select(Loan)), offset=offset, limit=limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -197,13 +219,15 @@ class RepaymentRepository(BaseRepository[Repayment]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, Repayment)
 
-    async def list_by_loan(self, loan_id: uuid.UUID) -> Sequence[Repayment]:
-        stmt = self._active_filter(select(Repayment).where(Repayment.loan_id == loan_id))
+    async def list_by_loan(self, loan_id: uuid.UUID, offset: int = 0, limit: int = 100) -> Sequence[Repayment]:
+        stmt = self._paginate(
+            self._active_filter(select(Repayment).where(Repayment.loan_id == loan_id)), offset=offset, limit=limit
+        )
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def list_active(self) -> Sequence[Repayment]:
-        stmt = self._active_filter(select(Repayment))
+    async def list_active(self, offset: int = 0, limit: int = 100) -> Sequence[Repayment]:
+        stmt = self._paginate(self._active_filter(select(Repayment)), offset=offset, limit=limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -214,13 +238,15 @@ class DefaultRepository(BaseRepository[Default]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, Default)
 
-    async def list_by_loan(self, loan_id: uuid.UUID) -> Sequence[Default]:
-        stmt = self._active_filter(select(Default).where(Default.loan_id == loan_id))
+    async def list_by_loan(self, loan_id: uuid.UUID, offset: int = 0, limit: int = 100) -> Sequence[Default]:
+        stmt = self._paginate(
+            self._active_filter(select(Default).where(Default.loan_id == loan_id)), offset=offset, limit=limit
+        )
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def list_active(self) -> Sequence[Default]:
-        stmt = self._active_filter(select(Default))
+    async def list_active(self, offset: int = 0, limit: int = 100) -> Sequence[Default]:
+        stmt = self._paginate(self._active_filter(select(Default)), offset=offset, limit=limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -231,13 +257,17 @@ class CollateralEscrowRepository(BaseRepository[CollateralEscrow]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, CollateralEscrow)
 
-    async def list_by_owner(self, owner_id: uuid.UUID) -> Sequence[CollateralEscrow]:
-        stmt = self._active_filter(select(CollateralEscrow).where(CollateralEscrow.owner_id == owner_id))
+    async def list_by_owner(self, owner_id: uuid.UUID, offset: int = 0, limit: int = 100) -> Sequence[CollateralEscrow]:
+        stmt = self._paginate(
+            self._active_filter(select(CollateralEscrow).where(CollateralEscrow.owner_id == owner_id)),
+            offset=offset,
+            limit=limit,
+        )
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def list_active(self) -> Sequence[CollateralEscrow]:
-        stmt = self._active_filter(select(CollateralEscrow))
+    async def list_active(self, offset: int = 0, limit: int = 100) -> Sequence[CollateralEscrow]:
+        stmt = self._paginate(self._active_filter(select(CollateralEscrow)), offset=offset, limit=limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -260,18 +290,22 @@ class NpaEventRepository(BaseRepository[NpaEvent]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_pending_dlg(self) -> Sequence[NpaEvent]:
-        stmt = self._active_filter(
-            select(NpaEvent).where(
-                NpaEvent.status.in_([NpaStatus.SUBSTANDARD, NpaStatus.DOUBTFUL, NpaStatus.LOSS]),
-                NpaEvent.dlg_invoked.is_(False),
-            )
+    async def list_pending_dlg(self, offset: int = 0, limit: int = 100) -> Sequence[NpaEvent]:
+        stmt = self._paginate(
+            self._active_filter(
+                select(NpaEvent).where(
+                    NpaEvent.status.in_([NpaStatus.SUBSTANDARD, NpaStatus.DOUBTFUL, NpaStatus.LOSS]),
+                    NpaEvent.dlg_invoked.is_(False),
+                )
+            ),
+            offset=offset,
+            limit=limit,
         )
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def list_active(self) -> Sequence[NpaEvent]:
-        stmt = self._active_filter(select(NpaEvent))
+    async def list_active(self, offset: int = 0, limit: int = 100) -> Sequence[NpaEvent]:
+        stmt = self._paginate(self._active_filter(select(NpaEvent)), offset=offset, limit=limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -304,8 +338,8 @@ class AuditEventRepository(BaseRepository[AuditEvent]):
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def list_active(self) -> Sequence[AuditEvent]:
-        stmt = self._active_filter(select(AuditEvent))
+    async def list_active(self, offset: int = 0, limit: int = 100) -> Sequence[AuditEvent]:
+        stmt = self._paginate(self._active_filter(select(AuditEvent)), offset=offset, limit=limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -322,8 +356,8 @@ class IdempotencyRepository(BaseRepository[IdempotencyRecord]):
             return None
         return record
 
-    async def list_active(self) -> Sequence[IdempotencyRecord]:
-        stmt = self._active_filter(select(IdempotencyRecord))
+    async def list_active(self, offset: int = 0, limit: int = 100) -> Sequence[IdempotencyRecord]:
+        stmt = self._paginate(self._active_filter(select(IdempotencyRecord)), offset=offset, limit=limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -339,7 +373,7 @@ class ProtocolSnapshotRepository(BaseRepository[ProtocolSnapshot]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_active(self) -> Sequence[ProtocolSnapshot]:
-        stmt = self._active_filter(select(ProtocolSnapshot))
+    async def list_active(self, offset: int = 0, limit: int = 100) -> Sequence[ProtocolSnapshot]:
+        stmt = self._paginate(self._active_filter(select(ProtocolSnapshot)), offset=offset, limit=limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()

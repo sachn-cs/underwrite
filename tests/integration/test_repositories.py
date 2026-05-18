@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ulu.infra.models import (
@@ -64,6 +65,26 @@ class TestUserRepository:
         fetched = await repo.get_by_id(created.id)
         assert fetched is not None
         assert fetched.kyc_status == KycStatus.VERIFIED
+
+    async def test_list_active_pagination(self, async_session: AsyncSession) -> None:
+        repo = UserRepository(async_session)
+        for i in range(5):
+            await repo.create(User(identifier=f"up{i}", user_type=UserType.BORROWER))
+        all_users = await repo.list_active(offset=0, limit=100)
+        assert len(all_users) == 5
+        page = await repo.list_active(offset=2, limit=2)
+        assert len(page) == 2
+        assert page[0].identifier == "up2"
+
+    async def test_pagination_negative_offset_rejected(self, async_session: AsyncSession) -> None:
+        repo = UserRepository(async_session)
+        with pytest.raises(ValueError, match="offset"):
+            await repo.list_active(offset=-1, limit=10)
+
+    async def test_pagination_zero_limit_rejected(self, async_session: AsyncSession) -> None:
+        repo = UserRepository(async_session)
+        with pytest.raises(ValueError, match="limit"):
+            await repo.list_active(offset=0, limit=0)
 
 
 class TestSponsorEdgeRepository:
@@ -180,6 +201,17 @@ class TestAuditEventRepository:
         events = await repo.list_by_type("test_event")
         assert len(events) == 1
         assert events[0].payload == {"key": "value"}
+
+    async def test_bulk_create(self, async_session: AsyncSession) -> None:
+        repo = AuditEventRepository(async_session)
+        events = [
+            AuditEvent(seq=1, event_type="bulk_a", payload={"i": i})
+            for i in range(3)
+        ]
+        created = await repo.bulk_create(events)
+        assert len(created) == 3
+        fetched = await repo.list_by_type("bulk_a")
+        assert len(fetched) == 3
 
     async def test_max_seq(self, async_session: AsyncSession) -> None:
         repo = AuditEventRepository(async_session)

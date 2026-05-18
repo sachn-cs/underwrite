@@ -470,3 +470,13 @@ def test_quote_does_not_mutate_principal():
     )
     assert m.principal["a"] == 0.0
     m.assert_invariants()
+
+
+def test_frozen_state_is_immutable():
+    m = build_network()
+    frozen = m.to_frozen_state()
+    assert tuple(frozen.seeds) == ("s",)
+    with pytest.raises(TypeError):
+        frozen.parent["new"] = "value"
+    with pytest.raises(TypeError):
+        frozen.principal["s"] = 999.0

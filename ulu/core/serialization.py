@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import orjson
@@ -27,6 +28,23 @@ class SerializationMixin:
             base_budget=dict(self.base_budget),
             earned=dict(self.earned),
             principal=dict(self.principal),
+        )
+
+    def to_frozen_state(self) -> ProtocolState:
+        """Returns an immutable snapshot of current state.
+
+        Collections are wrapped in MappingProxyType or tuple so that
+        consumers cannot accidentally mutate internal state.
+        """
+        state = self.to_state()
+        return ProtocolState(
+            seeds=tuple(state.seeds),
+            parent=MappingProxyType(state.parent),
+            children=MappingProxyType({k: tuple(v) for k, v in state.children.items()}),
+            delegation=MappingProxyType(state.delegation),
+            base_budget=MappingProxyType(state.base_budget),
+            earned=MappingProxyType(state.earned),
+            principal=MappingProxyType(state.principal),
         )
 
     @classmethod
