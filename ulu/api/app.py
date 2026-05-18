@@ -21,6 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from ulu import AppendOnlyLedger, DelegatedUnderwriting
+from ulu.api.deps import require_admin
 from ulu.errors import ProtocolError
 from ulu.infra.config import settings
 from ulu.infra.logging import logger
@@ -274,18 +275,6 @@ def idempotent_mutation(
     service._prune_idempotency_cache()
     service.idempotency_cache[cache_key] = (payload_hash, response)
     return response
-
-
-def require_admin(authorization: str | None = Header(default=None, alias="Authorization")) -> None:
-    """Validates admin bearer token for sensitive endpoints."""
-    admin_token = os.environ.get("ULU_ADMIN_TOKEN", "")
-    if not admin_token:
-        raise HTTPException(status_code=503, detail="admin token not configured")
-    if not authorization:
-        raise HTTPException(status_code=401, detail="missing authorization header")
-    parts = authorization.split(" ")
-    if len(parts) != 2 or parts[0].lower() != "bearer" or parts[1] != admin_token:
-        raise HTTPException(status_code=403, detail="invalid admin token")
 
 
 def quote_response_payload(quote: Any) -> dict[str, Any]:

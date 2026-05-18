@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     dlg_cap_ratio: float = 0.05
     npa_trigger_days: int = 120
     collateral_min_ratio: float = 0.05
+    jwt_secret: str = "change-me-in-production-32byte-secret"
+    jwt_algorithm: str = "HS256"
+    jwt_expiry_minutes: int = 60
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

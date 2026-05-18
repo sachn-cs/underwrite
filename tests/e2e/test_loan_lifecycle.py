@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import jwt
 import pytest
 
 pytest.importorskip("fastapi")
@@ -12,9 +13,21 @@ from fastapi.testclient import TestClient
 
 from ulu.api.app import app, limiter, service
 from ulu.audit import AppendOnlyLedger
+from ulu.infra.config import settings
 
 client = TestClient(app)
-_ADMIN_HEADERS = {"Authorization": "Bearer test-admin-token"}
+
+
+def _admin_jwt() -> str:
+    token = jwt.encode(
+        {"role": "admin"},
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+    return f"Bearer {token}"
+
+
+_ADMIN_HEADERS = {"Authorization": _admin_jwt()}
 
 
 def reset_service() -> None:
@@ -26,7 +39,6 @@ def reset_service() -> None:
 def test_full_lifecycle(monkeypatch, tmp_path: Path) -> None:
     """Seed -> delegate -> quote -> originate -> repay -> default."""
     reset_service()
-    monkeypatch.setenv("ULU_ADMIN_TOKEN", "test-admin-token")
     monkeypatch.setenv("ULU_DATA_DIR", str(tmp_path))
 
     # Health probes
@@ -121,7 +133,6 @@ def test_full_lifecycle(monkeypatch, tmp_path: Path) -> None:
 def test_idempotency_and_rate_limit_replay(monkeypatch, tmp_path: Path) -> None:
     """Idempotency replay works; rate limit accumulates."""
     reset_service()
-    monkeypatch.setenv("ULU_ADMIN_TOKEN", "test-admin-token")
     monkeypatch.setenv("ULU_DATA_DIR", str(tmp_path))
 
     headers = {"Idempotency-Key": "e2e-seed-1"}
@@ -144,7 +155,6 @@ def test_idempotency_and_rate_limit_replay(monkeypatch, tmp_path: Path) -> None:
 
 def test_path_traversal_and_validation(monkeypatch, tmp_path: Path) -> None:
     """Path traversal rejected; invalid payloads return 400."""
-    monkeypatch.setenv("ULU_ADMIN_TOKEN", "test-admin-token")
     monkeypatch.setenv("ULU_DATA_DIR", str(tmp_path))
     reset_service()
 

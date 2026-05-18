@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import jwt
 import pytest
 
 pytest.importorskip("fastapi")
@@ -10,10 +11,21 @@ from fastapi.testclient import TestClient
 
 from ulu.api.app import app, limiter, service
 from ulu.audit import AppendOnlyLedger
+from ulu.infra.config import settings
 
 client = TestClient(app)
 
-_ADMIN_HEADERS = {"Authorization": "Bearer test-admin-token"}
+
+def _admin_jwt() -> str:
+    token = jwt.encode(
+        {"role": "admin"},
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+    return f"Bearer {token}"
+
+
+_ADMIN_HEADERS = {"Authorization": _admin_jwt()}
 
 
 def reset_service() -> None:
@@ -40,7 +52,6 @@ def test_append_only_ledger_round_trip(tmp_path: Path):
 
 def test_api_end_to_end_and_ledger(monkeypatch, tmp_path: Path):
     reset_service()
-    monkeypatch.setenv("ULU_ADMIN_TOKEN", "test-admin-token")
     monkeypatch.setenv("ULU_DATA_DIR", str(tmp_path))
 
     assert client.get("/health").status_code == 200
@@ -117,7 +128,6 @@ def test_api_end_to_end_and_ledger(monkeypatch, tmp_path: Path):
 
 
 def test_path_traversal_rejected(monkeypatch, tmp_path: Path):
-    monkeypatch.setenv("ULU_ADMIN_TOKEN", "test-admin-token")
     monkeypatch.setenv("ULU_DATA_DIR", str(tmp_path))
     reset_service()
 
@@ -170,15 +180,16 @@ def test_idempotent_mutation_replay_and_conflict():
     assert conflict.status_code == 409
 
 
-def test_admin_reset_requires_auth(monkeypatch):
-    monkeypatch.setenv("ULU_ADMIN_TOKEN", "")
+def test_admin_reset_requires_auth():
     reset_service()
-    resp = client.post("/admin/reset")
-    assert resp.status_code == 503
+    # Missing auth
+    assert client.post("/admin/reset").status_code == 401
+    # Invalid token
+    bad_headers = {"Authorization": "Bearer invalid-token"}
+    assert client.post("/admin/reset", headers=bad_headers).status_code == 401
 
 
 def test_admin_endpoints_and_reset(monkeypatch, tmp_path: Path):
-    monkeypatch.setenv("ULU_ADMIN_TOKEN", "test-admin-token")
     monkeypatch.setenv("ULU_DATA_DIR", str(tmp_path))
     reset_service()
     client.post("/seed", json={"user": "s", "base_budget": 100.0})
