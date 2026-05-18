@@ -7,18 +7,18 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from ulu.api.schemas import SeedRequest
+from ulu.api.schemas import BulkResponse, SeedRequest
 from ulu.api.service import ProtocolService, get_protocol_service
 from ulu.errors import InfeasibleOperationError, ProtocolError
 
 router = APIRouter()
 
 
-@router.post("/bulk/seeds")
+@router.post("/bulk/seeds", response_model=BulkResponse)
 async def bulk_create_seeds(
     requests: list[SeedRequest],
     protocol_service: ProtocolService = Depends(get_protocol_service),
-) -> dict[str, list[dict[str, str]]]:
+) -> BulkResponse:
     """Creates multiple seeds in a single request.
 
     Stops on first failure and returns partial results.
@@ -32,14 +32,14 @@ async def bulk_create_seeds(
                 created.append({"user": req.user, "status": "created"})
             except ProtocolError as exc:
                 errors.append({"user": req.user, "error": str(exc)})
-    return {"created": created, "errors": errors}
+    return BulkResponse(created=created, errors=errors)
 
 
-@router.post("/bulk/users")
+@router.post("/bulk/users", response_model=BulkResponse)
 async def bulk_create_users(
     payloads: list[dict],
     protocol_service: ProtocolService = Depends(get_protocol_service),
-) -> dict[str, list[dict[str, str]]]:
+) -> BulkResponse:
     """Onboards multiple users with delegation in a single request.
 
     Each payload must contain: sponsor, user, delegation_amount.
@@ -59,4 +59,4 @@ async def bulk_create_users(
                 created.append({"user": str(user), "status": "created"})
             except (ProtocolError, InfeasibleOperationError) as exc:
                 errors.append({"user": str(payload.get("user")), "error": str(exc)})
-    return {"created": created, "errors": errors}
+    return BulkResponse(created=created, errors=errors)
