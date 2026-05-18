@@ -18,6 +18,7 @@ dependencies = [
     "slowapi>=0.1",
     "pybreaker>=1.0",
     "PyJWT>=2.8",
+    "orjson>=3.9",
 ]
 
 [project.optional-dependencies]

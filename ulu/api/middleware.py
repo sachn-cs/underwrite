@@ -45,3 +45,12 @@ class PayloadSizeMiddleware(BaseHTTPMiddleware):
         if content_length and int(content_length) > self.MAX_CONTENT_LENGTH:
             return Response(status_code=413, content=b"payload too large")
         return await call_next(request)
+
+
+class CspMiddleware(BaseHTTPMiddleware):
+    """Adds Content-Security-Policy header to all responses."""
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none';"
+        return response
