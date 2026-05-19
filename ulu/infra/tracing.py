@@ -84,3 +84,24 @@ class NoOpTracer(Tracer):
     @contextmanager
     def span(self, name: str, attributes: dict[str, Any] | None = None) -> Generator[Span, None, None]:
         yield self.start_span(name, attributes)
+
+
+def instrument_engine_for_tracing(engine: Any, tracer: Tracer | None = None) -> None:
+    """Attaches SQLAlchemy before/after cursor execute listeners for tracing.
+
+    Item 60 from production roadmap.
+    """
+    from sqlalchemy import event
+
+    _tracer = tracer or Tracer()
+
+    @event.listens_for(engine.sync_engine, "before_cursor_execute")
+    def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        span = _tracer.start_span("sql_execute", attributes={"sql.statement": statement[:200]})
+        context._ulu_trace_span = span
+
+    @event.listens_for(engine.sync_engine, "after_cursor_execute")
+    def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        span = getattr(context, "_ulu_trace_span", None)
+        if span is not None:
+            span.end()
