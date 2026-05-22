@@ -12,7 +12,7 @@ class IdentityService(NanoService):
     """Manages nano-service identities: registration and key rotation."""
 
     def handle(self, event: Event) -> None:
-        if event.event_type == "identity_register":
+        if event.event_type == EventType.IDENTITY_REGISTER:
             service_id: str = get_non_empty(event.payload, "service_id")
             identity: Identity = Identity.create(service_id)
             self.store.set(f"identity:{service_id}", {
@@ -24,7 +24,7 @@ class IdentityService(NanoService):
                 "public_key": identity.public_key,
             },
                       correlation_id=event.correlation_id)
-        elif event.event_type == "identity_rotate":
+        elif event.event_type == EventType.IDENTITY_ROTATE:
             service_id = get_non_empty(event.payload, "service_id")
             identity = Identity.create(service_id)
             self.store.set(f"identity:{service_id}", {

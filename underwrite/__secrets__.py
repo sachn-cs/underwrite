@@ -85,8 +85,8 @@ class AwsSecretsBackend(SecretsBackend):
         return boto3.client("secretsmanager", region_name=self.__region)
 
     def get(self, key: str) -> str | None:
+        client = self._client()
         try:
-            client = self._client()
             resp = client.get_secret_value(SecretId=key)
             return resp.get("SecretString")
         except client.exceptions.ResourceNotFoundException:

@@ -201,7 +201,7 @@ class FileStore(Store):
             path.parent.mkdir(parents=True, exist_ok=True)
             with self.__lock:
                 with open(path, "w") as fh:
-                    json.dump(value, fh)
+                    json.dump(value, fh, default=str)
                     if self.__fsync:
                         fh.flush()
                         os.fsync(fh.fileno())
@@ -339,13 +339,14 @@ class PostgresStore(Store):
             f"INSERT INTO {self.__table} (key, value, updated_at) "
             f"VALUES (%s, %s, NOW()) "
             f"ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-            (key, json.dumps(value)),
+            (key, json.dumps(value, default=str)),
         )
 
     def delete(self, key: str) -> bool:
         """Removes *key*.  Returns ``True`` if it existed."""
-        rows = self.__execute(f"DELETE FROM {self.__table} WHERE key = %s",
-                              (key,))
+        rows = self.__execute(
+            f"DELETE FROM {self.__table} WHERE key = %s RETURNING *",
+            (key,))
         return rows is not None and len(rows) > 0
 
     def exists(self, key: str) -> bool:

@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+import pytest
+
 from underwrite.__config__ import (
     AuthzConfig,
     BusConfig,
@@ -155,5 +160,118 @@ class TestConfiguration:
             config = Configuration.load(p)
             assert config.identity.key_ttl == 43200.0
             assert config.identity.key_grace == 1800.0
+        finally:
+            Path(p).unlink()
+
+    def test_schema_rejects_invalid_backend(self) -> None:
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                         delete=False) as f:
+            json.dump({"store": {"backend": "invalid_backend"}}, f)
+            p = f.name
+        try:
+            with pytest.raises(ConfigurationError) as exc:
+                Configuration.load(p)
+            assert "invalid_backend" in str(exc.value)
+        finally:
+            Path(p).unlink()
+
+    def test_schema_rejects_invalid_tracing_exporter(self) -> None:
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                         delete=False) as f:
+            json.dump({"tracing": {"exporter": "invalid_exporter"}}, f)
+            p = f.name
+        try:
+            with pytest.raises(ConfigurationError) as exc:
+                Configuration.load(p)
+            assert "invalid_exporter" in str(exc.value)
+        finally:
+            Path(p).unlink()
+
+    def test_schema_rejects_invalid_logging_level(self) -> None:
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                         delete=False) as f:
+            json.dump({"logging": {"level": "INVALID_LEVEL"}}, f)
+            p = f.name
+        try:
+            with pytest.raises(ConfigurationError) as exc:
+                Configuration.load(p)
+            assert "INVALID_LEVEL" in str(exc.value)
+        finally:
+            Path(p).unlink()
+
+    def test_schema_rejects_invalid_logging_format(self) -> None:
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                         delete=False) as f:
+            json.dump({"logging": {"format": "invalid_format"}}, f)
+            p = f.name
+        try:
+            with pytest.raises(ConfigurationError) as exc:
+                Configuration.load(p)
+            assert "invalid_format" in str(exc.value)
+        finally:
+            Path(p).unlink()
+
+    def test_schema_rejects_unknown_field(self) -> None:
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                         delete=False) as f:
+            json.dump({"bus": {"unknown_field": 1}}, f)
+            p = f.name
+        try:
+            with pytest.raises(ConfigurationError) as exc:
+                Configuration.load(p)
+            assert "unknown_field" in str(exc.value)
+        finally:
+            Path(p).unlink()
+
+    def test_schema_rejects_invalid_data_type(self) -> None:
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                         delete=False) as f:
+            json.dump({"bus": {"rate_limit": "not_a_number"}}, f)
+            p = f.name
+        try:
+            with pytest.raises(ConfigurationError) as exc:
+                Configuration.load(p)
+            assert "rate_limit" in str(exc.value)
+        finally:
+            Path(p).unlink()
+
+    def test_schema_rejects_negative_export_interval(self) -> None:
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                         delete=False) as f:
+            json.dump({"metrics": {"export_interval": -1}}, f)
+            p = f.name
+        try:
+            with pytest.raises(ConfigurationError) as exc:
+                Configuration.load(p)
+            assert "export_interval" in str(exc.value)
+        finally:
+            Path(p).unlink()
+
+    def test_valid_config_passes_schema(self) -> None:
+        import tempfile
+        valid = {
+            "bus": {"backend": "local", "rate_limit": 100, "max_workers": 4},
+            "store": {"backend": "filesystem"},
+            "logging": {"level": "INFO", "format": "text"},
+            "metrics": {"enabled": True, "export_interval": 60},
+            "tracing": {"enabled": False, "exporter": "console"},
+            "saga": {"enabled": True},
+            "data_dir": "./data",
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                         delete=False) as f:
+            json.dump(valid, f)
+            p = f.name
+        try:
+            config = Configuration.load(p)
+            assert config.bus.backend == "local"
+            assert config.bus.rate_limit == 100
         finally:
             Path(p).unlink()

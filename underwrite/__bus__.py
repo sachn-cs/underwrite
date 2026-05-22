@@ -321,10 +321,14 @@ class LocalBus(EventBus):
             self.__handlers.clear()
             self.__buffer.clear()
         if self.__executor:
-            try:
-                self.__executor.shutdown(wait=True, timeout=30)  # type: ignore[call-arg]
-            except TimeoutError:
-                logger.warning("executor shutdown timed out after 30s")
+            for f in self.__futures:
+                if not f.done():
+                    try:
+                        f.result(timeout=5)
+                    except Exception:
+                        logger.debug("future %s timed out on stop", f)
+                        logger.debug("future details", exc_info=True)
+            self.__executor.shutdown(wait=True)
         self.__futures.clear()
 
     def __flush(self) -> None:

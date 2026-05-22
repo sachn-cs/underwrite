@@ -18,7 +18,7 @@ class UnderwriterService(NanoService):
     """Evaluates loan applications against risk policies."""
 
     def handle(self, event: Event) -> None:
-        if event.event_type != "underwrite.request":
+        if event.event_type != EventType.UNDERWRITE_REQUEST:
             return
         p = event.payload
         borrower: str = get_non_empty(p, "borrower")

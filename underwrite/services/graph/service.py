@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from underwrite.__events__ import Event
+from underwrite.__events__ import Event, EventType
 from underwrite.services import NanoService
 
 
@@ -16,11 +16,11 @@ class GraphService(NanoService):
     """
 
     def handle(self, event: Event) -> None:
-        if event.event_type == "graph_path":
+        if event.event_type == EventType.GRAPH_PATH:
             self.__query_path(event)
-        elif event.event_type == "graph_credit_limit":
+        elif event.event_type == EventType.GRAPH_CREDIT_LIMIT:
             self.__query_credit_limit(event)
-        elif event.event_type == "graph_users":
+        elif event.event_type == EventType.GRAPH_USERS:
             self.__query_users(event)
 
     def __query_path(self, event: Event) -> None:
@@ -36,7 +36,7 @@ class GraphService(NanoService):
             current = parent[current]
             path.append(current)
         path.reverse()
-        self.emit("graph_path_result", {
+        self.emit(EventType.GRAPH_PATH_RESULT, {
             "user": user,
             "path": path
         },
@@ -60,7 +60,7 @@ class GraphService(NanoService):
         outgoing: float = sum(
             delegation_raw.get(f"{user}->{child}", 0.0)
             for child in children_raw.get(user, []))
-        self.emit("graph_credit_limit_result", {
+        self.emit(EventType.GRAPH_CREDIT_LIMIT_RESULT, {
             "user": user,
             "credit_limit": budget - outgoing,
         },
@@ -69,5 +69,5 @@ class GraphService(NanoService):
     def __query_users(self, event: Event) -> None:
         state: dict[str, Any] = self.store.get("protocol:state") or {}
         earned: dict[str, float] = state.get("earned", {})
-        self.emit("graph_users_result", {"users": sorted(earned.keys())},
+        self.emit(EventType.GRAPH_USERS_RESULT, {"users": sorted(earned.keys())},
                   correlation_id=event.correlation_id)

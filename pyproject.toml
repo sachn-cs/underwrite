@@ -40,17 +40,21 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
 ]
+gcs = [
+    "google-cloud-storage>=2.10",
+]
+otlp = [
+    "opentelemetry-api>=1.20",
+    "opentelemetry-sdk>=1.20",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.20",
+    "opentelemetry-instrumentation-fastapi>=0.41b0",
+]
 risk = [
     "numpy>=1.26",
     "scikit-learn>=1.5",
 ]
 postgres = [
     "psycopg2-binary>=2.9",
-]
-otlp = [
-    "opentelemetry-api>=1.20",
-    "opentelemetry-sdk>=1.20",
-    "opentelemetry-exporter-otlp-proto-grpc>=1.20",
 ]
 serve = ["uvicorn[standard]>=0.24", "fastapi>=0.104"]
 vault = ["hvac>=2.0"]
@@ -61,6 +65,7 @@ all = [
     "underwrite[serve]",
     "underwrite[vault]",
     "underwrite[aws]",
+    "underwrite[gcs]",
 ]
 
 [project.urls]

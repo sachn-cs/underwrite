@@ -7,18 +7,26 @@ when a statement is produced.
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
 from typing import Any
 
 from underwrite.__events__ import Event, EventType
 from underwrite.services.base import NanoService
+from underwrite.validate import require_finite
 
 
 class StatementService(NanoService):
     """Generates account statements showing loan activity and current status."""
 
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.__lock: threading.RLock = threading.RLock()
+        self.__statements: dict[str, dict[str, Any]] = {}
+        self.__load_store()
+
     def handle(self, event: Event) -> None:
-        if event.event_type == "statement.generate":
+        if event.event_type == EventType.STATEMENT_GENERATE:
             loan_id: str = event.payload.get("loan_id", "")
             period_start: str = event.payload.get("period_start", "")
             period_end: str = event.payload.get("period_end", "")
@@ -35,11 +43,11 @@ class StatementService(NanoService):
                 if payment:
                     transactions.append(payment)
             total_paid: float = sum(
-                float(t.get("amount", 0)) for t in transactions)
+                require_finite(t.get("amount", 0), "amount") for t in transactions)
 
             loan = self.store.get(f"loan:{loan_id}")
-            outstanding: float = float(loan.get("outstanding",
-                                                0)) if loan else 0.0
+            outstanding: float = require_finite(
+                loan.get("outstanding", 0), "outstanding") if loan else 0.0
 
             statement: dict[str, Any] = {
                 "statement_id":
@@ -60,6 +68,8 @@ class StatementService(NanoService):
                     datetime.now(timezone.utc).isoformat(),
             }
             self.store.set(f"statement:{statement_id}", statement)
+            self.__statements[f"statement:{statement_id}"] = dict(statement)
+            self.__sync_store()
             self.emit(EventType.STATEMENT_GENERATED, {
                 "statement_id": statement_id,
                 "loan_id": loan_id,
@@ -87,3 +97,17 @@ class StatementService(NanoService):
                         "loan_id": loan_id,
                         "trigger": "payment",
                     })
+
+    # -- state persistence ---------------------------------------------------
+
+    def __load_store(self) -> None:
+        """Restore statement records from the store, if present."""
+        with self.__lock:
+            raw = self.store.get(f"{self.service_id}:statements")
+            if raw is not None and isinstance(raw, dict):
+                self.__statements = dict(raw)
+
+    def __sync_store(self) -> None:
+        """Persist the current statement records to the store."""
+        with self.__lock:
+            self.store.set(f"{self.service_id}:statements", dict(self.__statements))

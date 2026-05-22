@@ -6,6 +6,7 @@ and emits ``document.generated``.
 
 from __future__ import annotations
 
+import threading
 import uuid
 from typing import Any
 
@@ -19,7 +20,9 @@ class DocumentService(NanoService):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
+        self.__lock: threading.RLock = threading.RLock()
         self.__documents: dict[str, list[dict[str, Any]]] = {}
+        self.__load_store()
 
     def handle(self, event: Event) -> None:
         if event.event_type != EventType.UNDERWRITER_APPROVED:
@@ -36,6 +39,7 @@ class DocumentService(NanoService):
             "status": "generated",
         }
         self.__documents.setdefault(borrower, []).append(record)
+        self.__sync_store()
 
         self.emit(EventType.DOCUMENT_GENERATED, {
             "borrower": borrower,
@@ -54,3 +58,17 @@ class DocumentService(NanoService):
             List of document records for the borrower.
         """
         return list(self.__documents.get(borrower, []))
+
+    # -- state persistence ---------------------------------------------------
+
+    def __load_store(self) -> None:
+        """Restore document records from the store, if present."""
+        with self.__lock:
+            raw = self.store.get(f"{self.service_id}:documents")
+            if raw is not None and isinstance(raw, dict):
+                self.__documents = dict(raw)
+
+    def __sync_store(self) -> None:
+        """Persist the current document records to the store."""
+        with self.__lock:
+            self.store.set(f"{self.service_id}:documents", dict(self.__documents))

@@ -114,13 +114,15 @@ class TestValidationFaults:
 
 class TestRiskModelFaults:
 
-    def test_model_no_joblib_fallback_to_pickle(self, tmp_path: Any) -> None:
-        import pickle
-        model_path = str(tmp_path / "model.pkl")
-        with open(model_path, "wb") as fh:
-            pickle.dump({"dummy": "model"}, fh)
+    def test_model_no_joblib_fallback_to_json(self, tmp_path: Any) -> None:
+        import json
+        model_path = str(tmp_path / "model.json")
+        with open(model_path, "w") as fh:
+            json.dump({"coef_": [5e-7, 0.01], "intercept_": 0.02}, fh)
         rm = RiskModel(model_path)
         assert rm is not None
+        result = rm.predict(100_000, 12)
+        assert 0.0 <= result <= 1.0
 
     def test_model_empty_path_uses_heuristic(self) -> None:
         rm = RiskModel(model_path="")
