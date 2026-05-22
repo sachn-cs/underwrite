@@ -31,14 +31,14 @@ class WorkflowService(NanoService):
     """Manages business process state machines for origination, recovery, etc."""
 
     def handle(self, event: Event) -> None:
-        if event.event_type == "workflow.start":
+        if event.event_type == EventType.WORKFLOW_START:
             self.__start_workflow(
                 event.payload.get("type", ""),
                 event.payload.get("entity_id", ""),
                 event.correlation_id,
             )
 
-        elif event.event_type == "workflow.advance":
+        elif event.event_type == EventType.WORKFLOW_ADVANCE:
             self.__advance_workflow(
                 event.payload.get("entity_id", ""),
                 event.correlation_id,

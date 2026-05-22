@@ -7,7 +7,9 @@ when a fee is applied to a loan.
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
+from typing import Any
 
 from underwrite.__events__ import Event, EventType
 from underwrite.services.base import NanoService
@@ -24,6 +26,12 @@ FEE_SCHEDULES: dict[str, float] = {
 class FeeService(NanoService):
     """Manages fee assessment, tracking, and lifecycle."""
 
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.__lock: threading.RLock = threading.RLock()
+        self.__fees: dict[str, dict[str, Any]] = {}
+        self.__load_store()
+
     def handle(self, event: Event) -> None:
         """Assess and pay fees based on incoming events.
 
@@ -33,7 +41,7 @@ class FeeService(NanoService):
         Args:
             event: The incoming event.
         """
-        if event.event_type == "fee.assess":
+        if event.event_type == EventType.FEE_ASSESS:
             loan_id: str = event.payload.get("loan_id", "")
             fee_type: str = event.payload.get("fee_type", "")
             if not loan_id or fee_type not in FEE_SCHEDULES:
@@ -44,14 +52,16 @@ class FeeService(NanoService):
                 amount = principal * FEE_SCHEDULES["origination"]
 
             fee_id: str = f"fee_{loan_id}_{fee_type}_{int(datetime.now(timezone.utc).timestamp())}"
-            self.store.set(
-                f"fee:{fee_id}", {
-                    "loan_id": loan_id,
-                    "fee_type": fee_type,
-                    "amount": amount,
-                    "assessed_at": datetime.now(timezone.utc).isoformat(),
-                    "paid": False,
-                })
+            fee_record = {
+                "loan_id": loan_id,
+                "fee_type": fee_type,
+                "amount": amount,
+                "assessed_at": datetime.now(timezone.utc).isoformat(),
+                "paid": False,
+            }
+            self.store.set(f"fee:{fee_id}", fee_record)
+            self.__fees[f"fee:{fee_id}"] = fee_record
+            self.__sync_store()
             self.emit(EventType.FEE_ASSESSED, {
                 "fee_id": fee_id,
                 "loan_id": loan_id,
@@ -60,22 +70,35 @@ class FeeService(NanoService):
             },
                       correlation_id=event.correlation_id)
 
-        elif event.event_type == "fee.pay":
+        elif event.event_type == EventType.FEE_PAY:
             fee_id = event.payload.get("fee_id", "")
             record = self.store.get(f"fee:{fee_id}")
             if record and not record["paid"]:
                 record["paid"] = True
                 record["paid_at"] = datetime.now(timezone.utc).isoformat()
                 self.store.set(f"fee:{fee_id}", record)
+                self.__fees[f"fee:{fee_id}"] = dict(record)
+                self.__sync_store()
 
         elif event.event_type == EventType.PAYMENT_OVERDUE:
             loan_id = event.payload.get("loan_id", "")
             if loan_id:
-                self.handle(
-                    Event(event_type="fee.assess",
-                          source=self.service_id,
-                          payload={
-                              "loan_id": loan_id,
-                              "fee_type": "late_payment"
-                          },
-                          correlation_id=event.correlation_id))
+                self.emit("fee.assess", {
+                    "loan_id": loan_id,
+                    "fee_type": "late_payment",
+                },
+                          correlation_id=event.correlation_id)
+
+    # -- state persistence ---------------------------------------------------
+
+    def __load_store(self) -> None:
+        """Restore fee records from the store, if present."""
+        with self.__lock:
+            raw = self.store.get(f"{self.service_id}:fees")
+            if raw is not None and isinstance(raw, dict):
+                self.__fees = dict(raw)
+
+    def __sync_store(self) -> None:
+        """Persist the current fee records to the store."""
+        with self.__lock:
+            self.store.set(f"{self.service_id}:fees", dict(self.__fees))

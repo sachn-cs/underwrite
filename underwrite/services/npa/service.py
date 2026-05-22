@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import threading
 from typing import Any
 
 from underwrite.__events__ import Event, EventType
 from underwrite.services import NanoService
-from underwrite.validate import get_non_empty
+from underwrite.validate import get_finite, get_non_empty
 
 
 class NPAService(NanoService):
@@ -22,8 +23,10 @@ class NPAService(NanoService):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
+        self.__lock: threading.RLock = threading.RLock()
         self.__accounts: dict[str, dict[str, Any]] = {}
         self.__trigger_days: int = 120
+        self.__load_store()
 
     def handle(self, event: Event) -> None:
         if event.event_type == EventType.LOAN_ORIGINATED:
@@ -33,6 +36,7 @@ class NPAService(NanoService):
                 "days_overdue": 0,
                 "dlg_invoked": False,
             }
+            self.__sync_store()
         elif event.event_type == EventType.DEFAULT_OCCURRED:
             borrower = event.payload.get("borrower", "")
             record = self.__accounts.get(borrower, {})
@@ -46,9 +50,10 @@ class NPAService(NanoService):
             if borrower in self.__accounts and days >= self.__trigger_days and not record.get(
                     "dlg_invoked", False):
                 self.__accounts[borrower]["dlg_invoked"] = True
+                self.__sync_store()
                 self.emit(EventType.DLG_TRIGGERED, {
                     "loan_id": borrower,
-                    "recovery_amount": float(event.payload.get("principal", 0)),
+                    "recovery_amount": get_finite(event.payload, "principal", 0.0),
                 },
                           correlation_id=event.correlation_id)
 
@@ -61,6 +66,21 @@ class NPAService(NanoService):
         """
         if borrower in self.__accounts:
             self.__accounts[borrower]["days_overdue"] = days
+            self.__sync_store()
+
+    # -- state persistence ---------------------------------------------------
+
+    def __load_store(self) -> None:
+        """Restore NPA accounts from the store, if present."""
+        with self.__lock:
+            raw = self.store.get(f"{self.service_id}:accounts")
+            if raw is not None and isinstance(raw, dict):
+                self.__accounts = dict(raw)
+
+    def __sync_store(self) -> None:
+        """Persist the current NPA accounts to the store."""
+        with self.__lock:
+            self.store.set(f"{self.service_id}:accounts", dict(self.__accounts))
 
     @staticmethod
     def classify_overdue_days(days: int) -> str:

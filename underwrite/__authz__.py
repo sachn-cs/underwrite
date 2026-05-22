@@ -8,6 +8,7 @@ from __future__ import annotations
 
 __all__ = [
     "AccessControl",
+    "HAS_CRYPTO",
     "Policy",
 ]
 
@@ -16,8 +17,12 @@ import json
 import logging
 import threading
 
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric import ed25519
+try:
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    HAS_CRYPTO: bool = True
+except ImportError:
+    HAS_CRYPTO = False
 
 from underwrite.__events__ import Event
 from underwrite.__exceptions__ import AuthzError
@@ -152,7 +157,13 @@ class AccessControl:
         return False
 
     def verify_signature(self, event: Event) -> bool:
-        """Verifies an event's Ed25519 signature against the issuer's trusted key."""
+        """Verifies an event's Ed25519 signature against the issuer's trusted key.
+
+        When the ``cryptography`` library is not installed, all
+        signatures are accepted (insecure — for development only).
+        """
+        if not HAS_CRYPTO:
+            return True  # dev mode: trust everything
         with self.__lock:
             public_key_b64 = self.__trusted_keys.get(event.source)
         if not public_key_b64:

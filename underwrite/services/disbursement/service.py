@@ -6,6 +6,7 @@ Listens for ``document.generated`` events and emits
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
 from typing import Any
 
@@ -19,7 +20,9 @@ class DisbursementService(NanoService):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
+        self.__lock: threading.RLock = threading.RLock()
         self.__disbursements: dict[str, dict[str, Any]] = {}
+        self.__load_store()
 
     def handle(self, event: Event) -> None:
         if event.event_type != EventType.DOCUMENT_GENERATED:
@@ -29,14 +32,16 @@ class DisbursementService(NanoService):
         principal: float = get_finite(p, "principal")
         doc_id: str = p.get("doc_id", "")
 
-        record = {
-            "borrower": borrower,
-            "principal": principal,
-            "doc_id": doc_id,
-            "disbursed_at": datetime.now(timezone.utc).isoformat(),
-            "status": "disbursed",
-        }
-        self.__disbursements[borrower] = record
+        with self.__lock:
+            record = {
+                "borrower": borrower,
+                "principal": principal,
+                "doc_id": doc_id,
+                "disbursed_at": datetime.now(timezone.utc).isoformat(),
+                "status": "disbursed",
+            }
+            self.__disbursements[borrower] = record
+            self.__sync_store()
 
         self.emit(EventType.DISBURSEMENT_PROCESSED, {
             "borrower": borrower,
@@ -54,4 +59,20 @@ class DisbursementService(NanoService):
         Returns:
             Disbursement record dict or None if not yet disbursed.
         """
-        return self.__disbursements.get(borrower)
+        with self.__lock:
+            return self.__disbursements.get(borrower)
+
+    # -- state persistence ---------------------------------------------------
+
+    def __sync_store(self) -> None:
+        """Persist the in-memory disbursements to the shared store."""
+        with self.__lock:
+            self.store.set(f"{self.service_id}:disbursements",
+                           dict(self.__disbursements))
+
+    def __load_store(self) -> None:
+        """Restore the disbursements from the shared store on startup."""
+        raw = self.store.get(f"{self.service_id}:disbursements")
+        if raw is None or not isinstance(raw, dict):
+            return
+        self.__disbursements = dict(raw)

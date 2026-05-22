@@ -170,6 +170,221 @@ class Configuration:
         return config
 
     @classmethod
+    def _schema(cls) -> dict[str, Any]:
+        """Return a JSON Schema dict for validating loaded configuration."""
+        return {
+            "type": "object",
+            "properties": {
+                "bus": {
+                    "type": "object",
+                    "properties": {
+                        "backend": {"type": "string", "enum": ["local", "sqs", "modal"]},
+                        "rate_limit": {"type": "number", "minimum": 0},
+                        "max_workers": {"type": "integer", "minimum": 0},
+                    },
+                    "additionalProperties": False,
+                },
+                "store": {
+                    "type": "object",
+                    "properties": {
+                        "backend": {"type": "string", "enum": ["memory", "filesystem", "postgres"]},
+                        "dsn": {"type": "string"},
+                        "pool_size": {"type": "integer", "minimum": 1},
+                        "read_backend": {"type": "string"},
+                        "read_dsn": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                },
+                "logging": {
+                    "type": "object",
+                    "properties": {
+                        "level": {"type": "string", "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]},
+                        "output": {"type": "string"},
+                        "format": {"type": "string", "enum": ["text", "json"]},
+                    },
+                    "additionalProperties": False,
+                },
+                "identity": {
+                    "type": "object",
+                    "properties": {
+                        "public_key": {"type": "string"},
+                        "key_ttl": {"type": "number", "minimum": 0},
+                        "key_grace": {"type": "number", "minimum": 0},
+                    },
+                    "additionalProperties": False,
+                },
+                "authz": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                        "policy_file": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                },
+                "metrics": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                        "export_interval": {"type": "integer", "minimum": 0},
+                    },
+                    "additionalProperties": False,
+                },
+                "migration": {
+                    "type": "object",
+                    "properties": {
+                        "auto_migrate": {"type": "boolean"},
+                    },
+                    "additionalProperties": False,
+                },
+                "tracing": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                        "exporter": {"type": "string", "enum": ["console", "otlp", "noop"]},
+                    },
+                    "additionalProperties": False,
+                },
+                "saga": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                    },
+                    "additionalProperties": False,
+                },
+                "services": {
+                    "type": "object",
+                    "patternProperties": {
+                        "^[a-z_]+$": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {"type": "boolean"},
+                                "priority": {"type": "integer"},
+                            },
+                            "additionalProperties": False,
+                        },
+                    },
+                    "additionalProperties": False,
+                },
+                "secrets": {
+                    "type": "object",
+                    "properties": {
+                        "backend": {"type": "string"},
+                        "url": {"type": "string"},
+                        "token": {"type": "string"},
+                        "region": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                },
+                "recovery": {
+                    "type": "object",
+                    "properties": {
+                        "auto_restart": {"type": "boolean"},
+                        "max_restarts": {"type": "integer", "minimum": 0},
+                        "backoff_seconds": {"type": "number", "minimum": 0},
+                    },
+                    "additionalProperties": False,
+                },
+                "data_dir": {"type": "string"},
+            },
+            "additionalProperties": False,
+        }
+
+    @classmethod
+    def _validate(cls, data: dict[str, Any]) -> None:
+        """Validate a parsed config dict against the JSON Schema.
+
+        Args:
+            data: Parsed JSON config data.
+
+        Raises:
+            ConfigurationError: If validation fails with details about
+                which field is invalid and what was expected.
+        """
+        schema = cls._schema()
+        errors: list[str] = []
+
+        def _validate_value(value: Any, schema_node: dict[str, Any],
+                            path: str) -> None:
+            if "enum" in schema_node:
+                if value not in schema_node["enum"]:
+                    errors.append(
+                        f"{path}: expected one of {schema_node['enum']!r}, got {value!r}"
+                    )
+            if schema_node.get("type") == "string":
+                if not isinstance(value, str):
+                    errors.append(
+                        f"{path}: expected string, got {type(value).__name__}")
+            elif schema_node.get("type") == "number":
+                if not isinstance(value, (int, float)):
+                    errors.append(
+                        f"{path}: expected number, got {type(value).__name__}")
+                elif isinstance(value, (int, float)):
+                    if "minimum" in schema_node and value < schema_node["minimum"]:
+                        errors.append(
+                            f"{path}: value {value} is below minimum {schema_node['minimum']}"
+                        )
+            elif schema_node.get("type") == "integer":
+                if not isinstance(value, int):
+                    errors.append(
+                        f"{path}: expected integer, got {type(value).__name__}")
+                elif "minimum" in schema_node and value < schema_node["minimum"]:
+                    errors.append(
+                        f"{path}: value {value} is below minimum {schema_node['minimum']}"
+                    )
+            elif schema_node.get("type") == "boolean":
+                if not isinstance(value, bool):
+                    errors.append(
+                        f"{path}: expected boolean, got {type(value).__name__}")
+
+        def _walk(data_node: Any, schema_node: dict[str, Any],
+                  path: str) -> None:
+            if "properties" in schema_node:
+                if not isinstance(data_node, dict):
+                    errors.append(
+                        f"{path}: expected object, got {type(data_node).__name__}")
+                    return
+                if schema_node.get("additionalProperties") is False:
+                    extra = set(data_node.keys()) - set(
+                        schema_node.get("properties", {}).keys())
+                    for k in sorted(extra):
+                        errors.append(
+                            f"{path}.{k}: unknown field (not in schema)")
+                for key, prop_schema in schema_node.get("properties",
+                                                         {}).items():
+                    if key in data_node:
+                        _walk(data_node[key], prop_schema,
+                              f"{path}.{key}" if path else key)
+            elif "patternProperties" in schema_node:
+                if not isinstance(data_node, dict):
+                    errors.append(
+                        f"{path}: expected object, got {type(data_node).__name__}")
+                    return
+                if schema_node.get("additionalProperties") is False:
+                    for k in data_node:
+                        matched = any(k.startswith(p.rstrip("$")) for p in
+                                      schema_node.get("patternProperties", {}))
+                        if not matched and not any(
+                                True for p in schema_node.get(
+                                    "patternProperties", {})
+                                if __import__("re").match(p, k)):
+                            errors.append(
+                                f"{path}.{k}: unknown service name")
+                for key, value in data_node.items():
+                    for pattern, prop_schema in schema_node.get(
+                            "patternProperties", {}).items():
+                        if __import__("re").match(pattern, key):
+                            _walk(value, prop_schema,
+                                  f"{path}.{key}" if path else key)
+                            break
+            elif "type" in schema_node:
+                _validate_value(data_node, schema_node, path)
+
+        _walk(data, schema, "")
+        if errors:
+            raise ConfigurationError(
+                "Configuration validation failed:\n" + "\n".join(errors))
+
+    @classmethod
     def load(cls, path: str | None = None) -> Configuration:
         """Loads configuration from a JSON file, env vars, or returns defaults."""
         config = cls.default()
@@ -181,6 +396,7 @@ class Configuration:
                     data = json.load(fh)
                 if not isinstance(data, dict):
                     raise ConfigurationError("config root must be a JSON object")
+                cls._validate(data)
                 config = cls.__merge(config, data)
                 break
         else:
@@ -192,6 +408,7 @@ class Configuration:
                         data = json.load(fh)
                     if not isinstance(data, dict):
                         raise ConfigurationError("config root must be a JSON object")
+                    cls._validate(data)
                     config = cls.__merge(config, data)
         config = cls.__apply_env_overrides(config)
         return config
@@ -225,7 +442,7 @@ class Configuration:
             "identity": {
                 "public_key": self.identity.public_key,
                 "key_ttl": self.identity.key_ttl,
-                "key_grace": self.identity.key_grace
+                "key_grace": self.identity.key_grace,
             },
             "authz": {
                 "enabled": self.authz.enabled,
@@ -305,8 +522,8 @@ class Configuration:
             config.logging.log_format = data["logging"].get(
                 "format", config.logging.log_format)
         if "identity" in data:
-            config.identity.private_key = data["identity"].get(
-                "private_key", config.identity.private_key)
+            # private_key must NOT be loaded from JSON config; only
+            # from env vars or a secrets backend.
             config.identity.public_key = data["identity"].get(
                 "public_key", config.identity.public_key)
             config.identity.key_ttl = data["identity"].get(

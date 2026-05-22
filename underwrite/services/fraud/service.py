@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
 from typing import Any
 
@@ -20,7 +21,9 @@ class FraudService(NanoService):
             **kwargs: Forwarded to NanoService.__init__.
         """
         super().__init__(**kwargs)
+        self.__lock: threading.RLock = threading.RLock()
         self.__records: dict[str, list[dict[str, Any]]] = {}
+        self.__load_store()
 
     def handle(self, event: Event) -> None:
         """Check loan origination and repayment events against fraud rules.
@@ -51,11 +54,13 @@ class FraudService(NanoService):
             self.__check_wash(user, event.correlation_id)
 
     def __record(self, borrower: str, event_type: str, amount: float) -> None:
-        self.__records.setdefault(borrower, []).append({
-            "event_type": event_type,
-            "amount": amount,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        with self.__lock:
+            self.__records.setdefault(borrower, []).append({
+                "event_type": event_type,
+                "amount": amount,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+            self.__sync_store()
 
     def __check_wash(self, borrower: str, correlation_id: str) -> None:
         records = self.__records.get(borrower, [])
@@ -85,3 +90,18 @@ class FraudService(NanoService):
                 "count": len(recent),
             },
                       correlation_id=correlation_id)
+
+    # -- state persistence ---------------------------------------------------
+
+    def __sync_store(self) -> None:
+        """Persist the in-memory records to the shared store."""
+        with self.__lock:
+            self.store.set(f"{self.service_id}:records",
+                           dict(self.__records))
+
+    def __load_store(self) -> None:
+        """Restore the records from the shared store on startup."""
+        raw = self.store.get(f"{self.service_id}:records")
+        if raw is None or not isinstance(raw, dict):
+            return
+        self.__records = dict(raw)

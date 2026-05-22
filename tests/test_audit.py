@@ -127,3 +127,36 @@ class TestAuditService:
         assert len(svc.ledger) == 5
         assert svc.ledger[0]["payload"] == {"i": 5}
         assert svc.ledger[-1]["payload"] == {"i": 9}
+
+    def test_export_noop_without_url(self) -> None:
+        svc = AuditService(service_id="audit")
+        svc.handle(Event(event_type="ev", source="s"))
+        svc.export()  # should not raise
+
+    def test_export_s3_calls_boto3(self) -> None:
+        from unittest.mock import patch, MagicMock
+        put_called = [False]
+
+        mock_s3 = MagicMock()
+        mock_s3.put_object = MagicMock(
+            side_effect=lambda **kw: put_called.__setitem__(0, True))
+
+        mock_boto3_mod = MagicMock()
+        mock_boto3_mod.client = MagicMock(return_value=mock_s3)
+
+        with patch.dict("sys.modules", {"boto3": mock_boto3_mod}):
+            if "underwrite.services.audit.service" in __import__(
+                    "sys").modules:
+                __import__("sys").modules.pop(
+                    "underwrite.services.audit.service", None)
+            from underwrite.services.audit.service import AuditService as AuditSvc2
+            svc2 = AuditSvc2(service_id="audit",
+                             export_url="s3://bucket/path.jsonl")
+            svc2.handle(Event(event_type="ev", source="s"))
+            svc2.export()
+        assert put_called[0]
+
+    def test_export_gcs_noop_without_library(self) -> None:
+        svc = AuditService(service_id="audit", export_url="gs://bucket/path.jsonl")
+        svc.handle(Event(event_type="ev", source="s"))
+        svc.export()  # should log warning, not raise

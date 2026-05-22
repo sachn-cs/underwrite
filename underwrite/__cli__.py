@@ -16,7 +16,6 @@ from __future__ import annotations
 import signal
 import time
 from pathlib import Path
-from typing import Any
 
 import typer
 
@@ -208,60 +207,37 @@ def serve(
         "mechanism,audit", help="Comma-separated list of services to start"),
     rate_limit: int = typer.Option(
         100, help="Max requests per second for health/metrics endpoints"),
+    require_auth: bool = typer.Option(
+        False, help="Require bearer token (UNDERWRITE_API_TOKEN env var)"),
 ) -> None:
-    """Starts the Runtime as an HTTP daemon with health/metrics endpoints."""
+    """Starts the Runtime as an HTTP daemon with health/metrics endpoints.
+
+    If ``--require-auth`` is used, ``UNDERWRITE_API_TOKEN`` must be set
+    and every request must include ``Authorization: Bearer <token>``.
+    """
     try:
         import uvicorn
-        from fastapi import FastAPI, Request
-        from fastapi.responses import JSONResponse
     except ImportError:
         typer.secho(
-            "serve requires uvicorn and fastapi; install with: pip install underwrite[serve]",
+            "serve requires uvicorn; install with: pip install underwrite[serve]",
             err=True, fg=typer.colors.RED)
         raise typer.Exit(code=1) from None
 
-    import time as _time
-
     config = _load_config()
     rt = Runtime(config)
-    app_fastapi = FastAPI(title="underwrite", version="0.1.0")
 
-    # Token-bucket rate limiter
-    _bucket_tokens: float = float(rate_limit)
-    _bucket_last: float = _time.monotonic()
+    from underwrite.__serve__ import create_app
 
-    @app_fastapi.middleware("http")
-    async def _rate_limit_middleware(request: Request,
-                                     call_next: Any) -> JSONResponse:
-        nonlocal _bucket_tokens, _bucket_last  # noqa: F824
-        now = _time.monotonic()
-        elapsed = now - _bucket_last
-        _bucket_last = now
-        _bucket_tokens = min(float(rate_limit),
-                             _bucket_tokens + elapsed * rate_limit)
-        if _bucket_tokens < 1.0:
-            return JSONResponse(status_code=429,
-                                content={"error": "rate limit exceeded"})
-        _bucket_tokens -= 1.0
-        return await call_next(request)
-
-    @app_fastapi.on_event("startup")
-    async def startup() -> None:
-        svc_list = [s.strip() for s in services.split(",") if s.strip()]
-        rt.start(svc_list)
-
-    @app_fastapi.on_event("shutdown")
-    async def shutdown() -> None:
-        rt.stop()
-
-    @app_fastapi.get("/health")
-    async def health_endpoint() -> dict:
-        return rt.health.status()
-
-    @app_fastapi.get("/metrics")
-    async def metrics_endpoint() -> dict:
-        mc = rt.metrics
-        return mc.snapshot() if mc else {"disabled": True}
+    try:
+        app_fastapi = create_app(
+            runtime=rt,
+            services=services,
+            rate_limit=rate_limit,
+            require_auth=require_auth,
+        )
+    except ValueError as exc:
+        typer.secho(str(exc), err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=1) from None
 
     typer.echo(f"Serving on http://{host}:{port}")
     uvicorn.run(app_fastapi, host=host, port=port, log_level="info")

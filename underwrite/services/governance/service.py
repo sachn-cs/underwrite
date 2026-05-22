@@ -7,6 +7,7 @@ processes GOVERNANCE_PROPOSAL events to update them.
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from underwrite.__events__ import Event, EventType
@@ -40,7 +41,9 @@ class GovernanceService(NanoService):
             **kwargs: Forwarded to NanoService.__init__.
         """
         super().__init__(**kwargs)
+        self.__lock: threading.RLock = threading.RLock()
         self.__params: dict[str, float] = dict(PARAM_DEFAULTS)
+        self.__load_store()
 
     def handle(self, event: Event) -> None:
         """Process a governance proposal to update a protocol parameter.
@@ -60,11 +63,26 @@ class GovernanceService(NanoService):
             if not (lo <= value <= hi):
                 return
             self.__params[param] = value
+            self.__sync_store()
             self.emit(EventType.GOVERNANCE_EXECUTED, {
                 "param": param,
                 "value": value,
             },
                       correlation_id=event.correlation_id)
+
+    # -- state persistence ---------------------------------------------------
+
+    def __load_store(self) -> None:
+        """Restore protocol parameters from the store, if present."""
+        with self.__lock:
+            raw = self.store.get(f"{self.service_id}:params")
+            if raw is not None and isinstance(raw, dict):
+                self.__params = dict(raw)
+
+    def __sync_store(self) -> None:
+        """Persist the current protocol parameters to the store."""
+        with self.__lock:
+            self.store.set(f"{self.service_id}:params", dict(self.__params))
 
     @property
     def params(self) -> dict[str, float]:

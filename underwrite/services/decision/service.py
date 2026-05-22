@@ -13,6 +13,7 @@ from typing import Any
 
 from underwrite.__events__ import Event, EventType
 from underwrite.services.base import NanoService
+from underwrite.validate import get_finite
 
 
 class DecisionService(NanoService):
@@ -24,8 +25,9 @@ class DecisionService(NanoService):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self.__lock: threading.Lock = threading.Lock()
+        self.__lock: threading.RLock = threading.RLock()
         self.__signals: dict[str, list[dict[str, Any]]] = {}
+        self.__load_store()
 
     def handle(self, event: Event) -> None:
         entity_id: str = event.payload.get(
@@ -41,9 +43,10 @@ class DecisionService(NanoService):
                     "severity": event.payload.get("severity", "high"),
                     "detail": event.payload.get("reason", ""),
                 })
+                self.__sync_store()
 
         elif event.event_type == EventType.RISK_SCORED:
-            score: float = float(event.payload.get("score", 0))
+            score: float = get_finite(event.payload, "score", 0.0)
             signal: dict[str, Any] = {
                 "source": "risk",
                 "type": "score",
@@ -57,10 +60,12 @@ class DecisionService(NanoService):
                 signal["severity"] = "low"
             with self.__lock:
                 self.__signals.setdefault(entity_id, []).append(signal)
+                self.__sync_store()
 
-        elif event.event_type == "decision.evaluate":
+        elif event.event_type == EventType.DECISION_EVALUATE:
             with self.__lock:
                 signals = self.__signals.pop(entity_id, [])
+                self.__sync_store()
             high_signals: int = sum(
                 1 for s in signals if s.get("severity") == "high")
             medium_signals: int = sum(
@@ -88,3 +93,18 @@ class DecisionService(NanoService):
                 "signal_count": len(signals),
             },
                       correlation_id=event.correlation_id)
+
+    # -- state persistence ---------------------------------------------------
+
+    def __sync_store(self) -> None:
+        """Persist the in-memory signals to the shared store."""
+        with self.__lock:
+            self.store.set(f"{self.service_id}:signals",
+                           dict(self.__signals))
+
+    def __load_store(self) -> None:
+        """Restore the signals from the shared store on startup."""
+        raw = self.store.get(f"{self.service_id}:signals")
+        if raw is None or not isinstance(raw, dict):
+            return
+        self.__signals = dict(raw)
