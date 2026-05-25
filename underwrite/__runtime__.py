@@ -10,6 +10,10 @@ Usage:
 
 from __future__ import annotations
 
+__all__ = [
+    "Runtime",
+]
+
 import importlib
 import logging
 import threading
@@ -33,28 +37,54 @@ from underwrite.__tracer__ import Tracer
 from underwrite._service_registry import SERVICE_CLASSES, SERVICE_MAP, WIRING
 from underwrite.services import NanoService
 
-logger = logging.getLogger("underwrite")
+logger = logging.getLogger(__name__)
 
 
 class Runtime:
     """Manages lifecycle of all nano services with health, metrics, authz, migration, tracing, and saga."""
 
-    def __init__(self, config: Configuration | None = None) -> None:
+    def __init__(self, config: Configuration | None = None,
+                 readonly: bool = False) -> None:
+        """Initialises the Runtime.
+
+        Args:
+            config: Runtime configuration. Loaded from defaults if omitted.
+            readonly: If ``True``, skip side-effecting initialisation
+                (migrations, metrics export, saga loading, supervisor,
+                tracer, authz).  Intended for CLI commands that only
+                read state.
+        """
         self.__config: Configuration = config or Configuration.load()
+        Configuration._validate(self.__config.to_dict())
         self.__configure_logging()
-        self.__tracer: Tracer | None = self.__build_tracer()
-        self.__saga: SagaOrchestrator | None = SagaOrchestrator(
-        ) if self.__config.saga.enabled else None
-        self.__bus: EventBus = self.__build_bus()
-        self.__secrets: SecretsManager | None = self.__build_secrets()
         self.__store: Store = self.__build_store()
         self.__read_store: Store | None = self.__build_read_store()
+        self.__services: dict[str, NanoService] = {}
+        if readonly:
+            self.__bus = LocalBus(store=self.__store)
+            self.__health = HealthRegistry()
+            self.__tracer = None
+            self.__secrets = None
+            self.__saga = None
+            self.__metrics = None
+            self.__authz = None
+            self.__supervisor = None
+            self.__metrics_thread = None
+            self.__metrics_stop = None
+            self.__register_subsystem_health()
+            return
+        self.__tracer: Tracer | None = self.__build_tracer()
+        self.__bus: EventBus = self.__build_bus()
+        self.__secrets: SecretsManager | None = self.__build_secrets()
+        self.__saga: SagaOrchestrator | None = (
+            SagaOrchestrator(store=self.__store)
+            if self.__config.saga.enabled else None
+        )
         self.__health: HealthRegistry = HealthRegistry()
         self.__metrics: MetricsCollector | None = MetricsCollector(
         ) if self.__config.metrics.enabled else None
         self.__authz: AccessControl | None = self.__build_authz()
         self.__supervisor: ServiceSupervisor | None = self.__build_supervisor()
-        self.__services: dict[str, NanoService] = {}
         self.__metrics_thread: threading.Thread | None = None
         self.__metrics_stop: threading.Event | None = None
 
@@ -82,21 +112,36 @@ class Runtime:
             class _JsonFormatter(_logging.Formatter):
 
                 def format(self, record: _logging.LogRecord) -> str:
-                    return _json.dumps({
+                    data: dict[str, object] = {
                         "timestamp": self.formatTime(record),
                         "level": record.levelname,
                         "logger": record.name,
                         "message": record.getMessage(),
                         "module": record.module,
                         "line": record.lineno,
-                    })
+                    }
+                    corr_id = getattr(record, "correlation_id", None)
+                    if corr_id:
+                        data["correlation_id"] = corr_id
+                    return _json.dumps(data)
 
             handler.setFormatter(_JsonFormatter())
         else:
             handler.setFormatter(
                 _logging.Formatter(
-                    "%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+                    "%(asctime)s [%(levelname)s] %(correlation_id)s %(name)s: %(message)s"))
+
         root = _logging.getLogger("underwrite")
+
+        class _CorrelationFilter(_logging.Filter):
+
+            def filter(self, record: _logging.LogRecord) -> bool:
+                if not hasattr(record, "correlation_id"):
+                    from underwrite.services.base import get_log_correlation_id
+                    record.correlation_id = get_log_correlation_id()  # type: ignore[attr-defined]
+                return True
+
+        root.addFilter(_CorrelationFilter())
         root.setLevel(level)
         root.addHandler(handler)
 
@@ -131,6 +176,7 @@ class Runtime:
         return LocalBus(
             rate_limit=self.__config.bus.rate_limit,
             max_workers=self.__config.bus.max_workers,
+            store=self.__store,
         )
 
     def __build_store(self) -> Store:
@@ -325,6 +371,17 @@ class Runtime:
                                issubclass(cls, NanoService)):
             raise ServiceNotFoundError(
                 f"class {class_name} not found in {module_path}")
+        extra: dict[str, Any] = {}
+        if service_name == "fee":
+            extra["fee_schedules"] = dict(self.__config.fee.schedules)
+        elif service_name == "governance":
+            extra["param_ranges"] = {
+                k: list(v) for k, v in self.__config.governance.param_ranges.items()
+            }
+            extra["param_defaults"] = dict(self.__config.governance.param_defaults)
+        elif service_name == "audit":
+            extra["max_ledger"] = self.__config.audit.max_ledger
+            extra["export_url"] = self.__config.audit.export_url
         svc = cls(
             service_id=service_name,
             identity=identity,
@@ -335,6 +392,7 @@ class Runtime:
             authz=self.__authz,
             tracer=self.__tracer,
             saga=self.__saga,
+            **extra,
         )
         self.__services[service_name] = svc
         if self.__health:
@@ -379,6 +437,9 @@ class Runtime:
         for svc in self.__services.values():
             svc.stop()
         self.__bus.stop()
+        self.__store.shutdown()
+        if self.__read_store is not None:
+            self.__read_store.shutdown()
 
     def get(self, service_name: str) -> NanoService | None:
         """Returns a registered service by name, or ``None``."""
@@ -397,3 +458,13 @@ class Runtime:
             correlation_id=correlation_id or "",
         )
         return self.__bus.publish(event)
+
+    def replay_saga(self, saga_id: str) -> bool:
+        """Replays an incomplete saga for crash recovery.
+
+        Delegates to ``SagaOrchestrator.replay_saga``.
+        """
+        if self.__saga is None:
+            logger.warning("replay_saga: sagas are disabled")
+            return False
+        return self.__saga.replay_saga(saga_id)

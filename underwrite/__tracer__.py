@@ -22,7 +22,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-logger = logging.getLogger("underwrite")
+logger = logging.getLogger(__name__)
 
 
 @dataclass

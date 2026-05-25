@@ -1,6 +1,8 @@
 """Exhaustive tests for FeeService."""
 from __future__ import annotations
 
+import pytest
+
 from underwrite.__bus__ import LocalBus
 from underwrite.__events__ import Event, EventType
 from underwrite.services.fee.service import FeeService
@@ -163,3 +165,36 @@ class TestFeeService:
                           "fee_type": ft
                       }))
         assert len(svc.store.keys("fee:fee_L9_")) == 3
+
+    def test_non_finite_principal_safe(self) -> None:
+        from underwrite.__exceptions__ import ProtocolError
+        svc = FeeService(service_id="fee")
+        with pytest.raises(ProtocolError, match="must be finite"):
+            svc.handle(
+                Event(event_type="fee.assess",
+                      source="test",
+                      payload={
+                          "loan_id": "L10",
+                          "fee_type": "origination",
+                          "principal": float("nan")
+                      }))
+
+    def test_payment_overdue_without_loan_id_noop(self) -> None:
+        svc = FeeService(service_id="fee")
+        svc.handle(
+            Event(event_type=EventType.PAYMENT_OVERDUE,
+                  source="test",
+                  payload={}))
+        assert len(svc.store.keys("fee:")) == 0
+
+    def test_payment_overdue_assesses_late_fee(self) -> None:
+        svc = FeeService(service_id="fee")
+        svc.handle(
+            Event(event_type=EventType.PAYMENT_OVERDUE,
+                  source="test",
+                  payload={"loan_id": "L11"}))
+        keys = svc.store.keys("fee:fee_L11_late_payment_")
+        assert len(keys) >= 1
+        rec = svc.store.get(keys[0])
+        assert rec["fee_type"] == "late_payment"
+        assert rec["amount"] == 25.0

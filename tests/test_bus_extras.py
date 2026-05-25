@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import time
 
-from underwrite.__bus__ import DeadLetterQueue, LocalBus, RateLimiter
+from underwrite.__bus__ import DeadLetterQueue, DistributedRateLimiter, LocalBus, RateLimiter
 from underwrite.__events__ import Event
 from underwrite.__exceptions__ import RateLimitError
+from underwrite.__store__ import MemoryStore
 
 
 class TestDeadLetterQueue:
@@ -105,3 +106,84 @@ class TestLocalBusDLQ:
         bus.publish(Event(event_type="test.ok", source="s"))
         assert bus.dlq.count == 0
         assert results == [1]
+
+
+class TestDeadLetterQueuePersistence:
+
+    def test_put_persists_to_store(self) -> None:
+        store = MemoryStore()
+        dlq = DeadLetterQueue(store=store, sync_interval=1)
+        dlq.put(Event(event_type="t", source="s", payload={"k": "v"}), "err",
+                "sub1")
+        raw = store.get("bus:dlq")
+        assert raw is not None
+        assert isinstance(raw, list)
+        assert len(raw) == 1
+        assert raw[0]["error"] == "err"
+        assert raw[0]["subscriber_id"] == "sub1"
+        assert raw[0]["event"]["event_type"] == "t"
+
+    def test_loads_from_store_on_init(self) -> None:
+        store = MemoryStore()
+        dlq1 = DeadLetterQueue(store=store, sync_interval=1)
+        dlq1.put(Event(event_type="t1", source="s"), "err1", "sub1")
+        dlq1.put(Event(event_type="t2", source="s"), "err2", "sub2")
+
+        dlq2 = DeadLetterQueue(store=store, sync_interval=1)
+        assert dlq2.count == 2
+        types = [r.event.event_type for r in dlq2.records]
+        assert "t1" in types
+        assert "t2" in types
+
+    def test_clear_removes_from_store(self) -> None:
+        store = MemoryStore()
+        dlq = DeadLetterQueue(store=store, sync_interval=1)
+        dlq.put(Event(event_type="t", source="s"), "err", "sub1")
+        dlq.clear()
+        raw = store.get("bus:dlq")
+        assert raw == []
+
+    def test_replay_removes_from_store(self) -> None:
+        store = MemoryStore()
+        bus = LocalBus()
+        dlq = DeadLetterQueue(store=store, sync_interval=1)
+        dlq.put(Event(event_type="t", source="s"), "err", "sub1")
+        dlq.replay(bus)
+        raw = store.get("bus:dlq")
+        assert raw == []
+
+
+class TestDistributedRateLimiter:
+
+    def test_falls_back_to_in_memory_without_store(self) -> None:
+        rl = DistributedRateLimiter(max_rate=1000)
+        assert rl.check("key") is True
+
+    def test_store_backed_allows_first_call(self) -> None:
+        store = MemoryStore()
+        rl = DistributedRateLimiter(max_rate=10, store=store)
+        assert rl.check("key") is True
+
+    def test_store_backed_blocks_excessive_calls(self) -> None:
+        store = MemoryStore()
+        rl = DistributedRateLimiter(max_rate=1000, store=store)
+        rl.check("key")
+        allowed = [rl.check("key") for _ in range(10)]
+        assert not all(allowed)
+
+    def test_store_backed_shares_state(self) -> None:
+        store = MemoryStore()
+        rl1 = DistributedRateLimiter(max_rate=1000, store=store, prefix="shared")
+        rl2 = DistributedRateLimiter(max_rate=1000, store=store, prefix="shared")
+        rl1.check("k")
+        # rl2 sees the same rate-limit state from the store
+        allowed = [rl2.check("k") for _ in range(10)]
+        assert not all(allowed)
+
+    def test_respects_custom_prefix(self) -> None:
+        store = MemoryStore()
+        rl1 = DistributedRateLimiter(max_rate=1000, store=store, prefix="p1")
+        rl2 = DistributedRateLimiter(max_rate=1000, store=store, prefix="p2")
+        rl1.check("k")
+        # Different prefix = independent bucket
+        assert rl2.check("k") is True

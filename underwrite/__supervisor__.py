@@ -10,7 +10,7 @@ import logging
 import threading
 from typing import Any
 
-logger = logging.getLogger("underwrite")
+logger = logging.getLogger(__name__)
 
 
 class ServiceSupervisor:

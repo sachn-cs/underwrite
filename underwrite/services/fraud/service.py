@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from collections import deque
 from datetime import datetime, timezone
 from typing import Any
 
@@ -22,7 +23,7 @@ class FraudService(NanoService):
         """
         super().__init__(**kwargs)
         self.__lock: threading.RLock = threading.RLock()
-        self.__records: dict[str, list[dict[str, Any]]] = {}
+        self.__records: dict[str, deque[dict[str, Any]]] = {}
         self.__load_store()
 
     def handle(self, event: Event) -> None:
@@ -55,7 +56,8 @@ class FraudService(NanoService):
 
     def __record(self, borrower: str, event_type: str, amount: float) -> None:
         with self.__lock:
-            self.__records.setdefault(borrower, []).append({
+            records = self.__records.setdefault(borrower, deque(maxlen=1000))
+            records.append({
                 "event_type": event_type,
                 "amount": amount,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -63,7 +65,7 @@ class FraudService(NanoService):
             self.__sync_store()
 
     def __check_wash(self, borrower: str, correlation_id: str) -> None:
-        records = self.__records.get(borrower, [])
+        records = self.__records.get(borrower, deque())
         cycles: int = 0
         i: int = 0
         while i < len(records) - 1:
@@ -82,7 +84,7 @@ class FraudService(NanoService):
                       correlation_id=correlation_id)
 
     def __check_burst(self, borrower: str, correlation_id: str) -> None:
-        records = self.__records.get(borrower, [])
+        records = self.__records.get(borrower, deque())
         recent = [r for r in records if r["event_type"] == "origination"]
         if len(recent) > 3:
             self.emit(EventType.VELOCITY_FLAG, {
@@ -96,12 +98,16 @@ class FraudService(NanoService):
     def __sync_store(self) -> None:
         """Persist the in-memory records to the shared store."""
         with self.__lock:
-            self.store.set(f"{self.service_id}:records",
-                           dict(self.__records))
+            serializable: dict[str, list[dict[str, Any]]] = {
+                k: list(v) for k, v in self.__records.items()
+            }
+            self.store.set(f"{self.service_id}:records", serializable)
 
     def __load_store(self) -> None:
         """Restore the records from the shared store on startup."""
         raw = self.store.get(f"{self.service_id}:records")
         if raw is None or not isinstance(raw, dict):
             return
-        self.__records = dict(raw)
+        self.__records = {
+            k: deque(v, maxlen=1000) for k, v in raw.items()
+        }

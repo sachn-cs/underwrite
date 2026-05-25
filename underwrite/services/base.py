@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from abc import ABC, abstractmethod
 from typing import Any
@@ -30,7 +31,14 @@ from underwrite.__saga__ import SagaOrchestrator
 from underwrite.__store__ import MemoryStore, Store
 from underwrite.__tracer__ import Span, Tracer
 
-logger = logging.getLogger("underwrite")
+logger = logging.getLogger(__name__)
+
+_log_context = threading.local()
+
+
+def get_log_correlation_id() -> str:
+    """Returns the correlation_id for the current thread, or empty string."""
+    return getattr(_log_context, "correlation_id", "")
 
 
 class NanoService(ABC):
@@ -77,6 +85,9 @@ class NanoService(ABC):
         self.__saga: SagaOrchestrator | None = saga
         self.__subscriptions: list[str] = []
         self.__running: bool = False
+        self.__events_handled: int = 0
+        self.__events_failed: int = 0
+        self.__last_event_time: float = 0.0
 
         if self.__saga:
             self.__saga.register_emitter(self.__service_id, self)
@@ -184,7 +195,10 @@ class NanoService(ABC):
                 },
             )
         try:
+            _log_context.correlation_id = event.correlation_id or ""
             self.handle(event)
+            self.__events_handled += 1
+            self.__last_event_time = start
             if self.__metrics:
                 elapsed = (time.perf_counter() - start) * 1000.0
                 self.__metrics.timer("handle.duration", elapsed, {
@@ -196,6 +210,7 @@ class NanoService(ABC):
                     "event_type": event.event_type,
                 })
         except Exception:
+            self.__events_failed += 1
             logger.exception("handler %s failed processing %s",
                              self.__service_id, event.event_type)
             if self.__metrics:
@@ -203,6 +218,7 @@ class NanoService(ABC):
                     "service": self.__service_id,
                     "event_type": event.event_type,
                 })
+            raise
         finally:
             if span is not None and self.__tracer is not None:
                 self.__tracer.end_span(span)
@@ -213,4 +229,10 @@ class NanoService(ABC):
 
     def health_check(self) -> dict[str, Any]:
         """Health check for this service.  Override to add service-specific checks."""
-        return {"ok": self.__running, "service_id": self.__service_id}
+        return {
+            "ok": self.__running,
+            "service_id": self.__service_id,
+            "events_handled": self.__events_handled,
+            "events_failed": self.__events_failed,
+            "last_event_time": self.__last_event_time,
+        }

@@ -6,11 +6,18 @@ optional bearer token authentication.
 
 from __future__ import annotations
 
+__all__ = [
+    "create_app",
+]
+
+import logging
 import os
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
+
+logger = logging.getLogger(__name__)
 
 
 def _try_instrument_fastapi(app: FastAPI) -> None:
@@ -18,7 +25,7 @@ def _try_instrument_fastapi(app: FastAPI) -> None:
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
         FastAPIInstrumentor().instrument(app=app)
     except ImportError:
-        pass
+        logger.warning("opentelemetry-instrumentation-fastapi not installed; skipping OTel instrumentation")
 
 
 def _try_register_prometheus(app: FastAPI, runtime: Any) -> None:
@@ -26,7 +33,7 @@ def _try_register_prometheus(app: FastAPI, runtime: Any) -> None:
         from underwrite.prometheus_export import PrometheusMiddleware
         app.add_middleware(PrometheusMiddleware, runtime=runtime)
     except ImportError:
-        pass
+        logger.warning("prometheus_export module not found; Prometheus metrics disabled (install underwrite[serve])")
 
 
 def create_app(
@@ -110,16 +117,12 @@ def create_app(
         return runtime.health.status()
 
     @app.get("/metrics")
-    async def metrics_endpoint() -> dict:
-        mc = runtime.metrics
-        return mc.snapshot() if mc else {"disabled": True}
-
-    @app.get("/metrics-prometheus")
-    async def prometheus_endpoint() -> JSONResponse:
+    async def metrics_endpoint() -> JSONResponse | PlainTextResponse:
         try:
             from underwrite.prometheus_export import metrics_as_text
-            return JSONResponse(
-                content={"metrics": metrics_as_text(runtime)},
+            return PlainTextResponse(
+                metrics_as_text(runtime),
+                media_type="text/plain; version=0.0.4",
             )
         except ImportError:
             return JSONResponse(

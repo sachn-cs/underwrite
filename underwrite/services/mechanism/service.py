@@ -129,11 +129,13 @@ class MechanismService(NanoService):
     def __total_credit_limit(self) -> float:
         return sum(self.credit_limit(u) for u in self.__earned)
 
-    def __required_delegation(self, user: str) -> float:
+    def __required_delegation(self, user: str, _depth: int = 0) -> float:
+        if _depth > 50:
+            raise ProtocolError(f"delegation chain too deep for {user}")
         if user in self.__seeds:
             return 0.0
         child_req = sum(
-            self.__required_delegation(c)
+            self.__required_delegation(c, _depth + 1)
             for c in self.__children.get(user, []))
         return max(
             0.0,
@@ -316,8 +318,9 @@ class MechanismService(NanoService):
             raise ProtocolError("default probability must be in (0,1)")
         clamped_dp: float = max(dp, EPSILON)
         clamped_term: float = max(term, EPSILON)
+        one_minus_dp: float = max(1.0 - clamped_dp, EPSILON)
         break_even: float = min(
-            clamped_dp / ((1.0 - clamped_dp) * clamped_term), 1e6)
+            clamped_dp / (one_minus_dp * clamped_term), 1e6)
         protocol_premium: float = pr * principal * term
         self.emit(EventType.QUOTE_CALCULATED, {
             "borrower": borrower,

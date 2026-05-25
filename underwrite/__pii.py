@@ -37,7 +37,8 @@ PII_FIELD_PATTERNS: list[str] = [
 PII_VALUE_PATTERNS: list[str] = [
     r"\b\d{4}\s?\d{4}\s?\d{4}\b",  # Aadhaar-like (12 digits)
     r"\b[A-Z]{5}[0-9]{4}[A-Z]\b",  # PAN-like (10 chars)
-    r"\b\d{3}-\d{2}-\d{4}\b",  # SSN-like
+    r"\b\d{3}-\d{2}-\d{4}\b",  # SSN-like (with dashes)
+    r"\b\d{9}\b",  # SSN-like (undashed, 9 digits)
     r"\b[A-Z]{1,2}\d{6,9}\b",  # Passport-like
 ]
 

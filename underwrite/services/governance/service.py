@@ -7,6 +7,7 @@ processes GOVERNANCE_PROPOSAL events to update them.
 
 from __future__ import annotations
 
+import logging
 import threading
 from typing import Any
 
@@ -14,7 +15,9 @@ from underwrite.__events__ import Event, EventType
 from underwrite.services import NanoService
 from underwrite.validate import get_finite, get_non_empty
 
-PARAM_RANGES: dict[str, tuple[float, float]] = {
+logger = logging.getLogger(__name__)
+
+DEFAULT_PARAM_RANGES: dict[str, tuple[float, float]] = {
     "protocol_rate": (0.0, 1.0),
     "max_delegation_rate": (0.0, 1.0),
     "dlg_cap_ratio": (0.0, 1.0),
@@ -22,7 +25,7 @@ PARAM_RANGES: dict[str, tuple[float, float]] = {
     "min_base_budget": (0.0, float("inf")),
 }
 
-PARAM_DEFAULTS: dict[str, float] = {
+DEFAULT_PARAM_DEFAULTS: dict[str, float] = {
     "protocol_rate": 0.10,
     "max_delegation_rate": 0.05,
     "dlg_cap_ratio": 0.05,
@@ -40,9 +43,16 @@ class GovernanceService(NanoService):
         Args:
             **kwargs: Forwarded to NanoService.__init__.
         """
+        raw_ranges: dict[str, list[float]] = kwargs.pop("param_ranges", {})
+        raw_defaults: dict[str, float] = kwargs.pop("param_defaults", {})
+        self.__ranges: dict[str, tuple[float, float]] = {
+            k: (float(v[0]), float(v[1]))
+            for k, v in raw_ranges.items()
+            if isinstance(v, (list, tuple)) and len(v) == 2
+        } if raw_ranges else dict(DEFAULT_PARAM_RANGES)
         super().__init__(**kwargs)
         self.__lock: threading.RLock = threading.RLock()
-        self.__params: dict[str, float] = dict(PARAM_DEFAULTS)
+        self.__params: dict[str, float] = dict(raw_defaults) if raw_defaults else dict(DEFAULT_PARAM_DEFAULTS)
         self.__load_store()
 
     def handle(self, event: Event) -> None:
@@ -58,8 +68,9 @@ class GovernanceService(NanoService):
             param: str = get_non_empty(p, "param")
             value: float = get_finite(p, "value")
             if param not in self.__params:
+                logger.warning("governance proposal for unknown param %r ignored", param)
                 return
-            lo, hi = PARAM_RANGES[param]
+            lo, hi = self.__ranges[param]
             if not (lo <= value <= hi):
                 return
             self.__params[param] = value
@@ -88,3 +99,10 @@ class GovernanceService(NanoService):
     def params(self) -> dict[str, float]:
         """Return a snapshot of all current protocol parameters."""
         return dict(self.__params)
+
+    def health_check(self) -> dict[str, Any]:
+        """Governance-specific health: reports active param count."""
+        return {
+            **super().health_check(),
+            "param_count": len(self.__params),
+        }

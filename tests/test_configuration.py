@@ -275,3 +275,42 @@ class TestConfiguration:
             assert config.bus.rate_limit == 100
         finally:
             Path(p).unlink()
+
+    def test_to_dict_excludes_token(self) -> None:
+        config = Configuration.default()
+        config.secrets.token = "s3kr1t"
+        d = config.to_dict()
+        assert "secrets" in d
+        assert "token" not in d["secrets"]
+
+    def test_to_dict_includes_other_secret_fields(self) -> None:
+        config = Configuration.default()
+        config.secrets.backend = "vault"
+        config.secrets.url = "https://vault.example.com"
+        config.secrets.region = "us-east-1"
+        d = config.to_dict()
+        assert d["secrets"]["backend"] == "vault"
+        assert d["secrets"]["url"] == "https://vault.example.com"
+        assert d["secrets"]["region"] == "us-east-1"
+
+    def test_env_override_coerces_int(self, monkeypatch) -> None:
+        monkeypatch.setenv("UNDERWRITE_BUS_MAX_WORKERS", "8")
+        config = Configuration.load()
+        assert isinstance(config.bus.max_workers, int)
+        assert config.bus.max_workers == 8
+
+    def test_env_override_coerces_float(self, monkeypatch) -> None:
+        monkeypatch.setenv("UNDERWRITE_BUS_RATE_LIMIT", "150.5")
+        config = Configuration.load()
+        assert isinstance(config.bus.rate_limit, float)
+        assert config.bus.rate_limit == 150.5
+
+    def test_env_override_coerces_bool(self, monkeypatch) -> None:
+        monkeypatch.setenv("UNDERWRITE_AUTHZ_ENABLED", "true")
+        config = Configuration.load()
+        assert config.authz.enabled is True
+
+    def test_env_override_bool_false(self, monkeypatch) -> None:
+        monkeypatch.setenv("UNDERWRITE_AUTHZ_ENABLED", "false")
+        config = Configuration.load()
+        assert config.authz.enabled is False

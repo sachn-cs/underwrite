@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from underwrite.__circuit__ import CircuitBreaker, RetryPolicy
+from underwrite.__exceptions__ import MigrationError, StoreError
 
 if TYPE_CHECKING:
     from underwrite.__migrate__ import MigrationPlan
@@ -66,8 +67,17 @@ class Store(ABC):
         """Returns ``True`` if *key* is present."""
 
     @abstractmethod
-    def keys(self, pattern: str | None = None) -> list[str]:
-        """Returns all keys, optionally filtered by a simple substring pattern."""
+    def keys(self, pattern: str | None = None, limit: int = 0, offset: int = 0) -> list[str]:
+        """Returns all keys, optionally filtered by a simple substring pattern.
+
+        Args:
+            pattern: Optional substring pattern to filter keys.
+            limit: Max results (0 = unlimited).
+            offset: Number of results to skip.
+        """
+
+    def shutdown(self) -> None:  # noqa: B027
+        """Release any resources held by the store.  No-op in base class."""
 
     def health(self) -> dict[str, Any]:
         """Returns a health-check dict.  Subclasses may override."""
@@ -90,8 +100,11 @@ class ReadStore(ABC):
         """Returns ``True`` if *key* is present."""
 
     @abstractmethod
-    def keys(self, pattern: str | None = None) -> list[str]:
+    def keys(self, pattern: str | None = None, limit: int = 0, offset: int = 0) -> list[str]:
         """Returns all keys, optionally filtered by a substring pattern."""
+
+    def shutdown(self) -> None:  # noqa: B027
+        """Release any resources held by the store.  No-op in base class."""
 
     def health(self) -> dict[str, Any]:
         """Returns a health-check dict.  Subclasses may override."""
@@ -125,12 +138,15 @@ class MemoryStore(Store):
         with self.__lock:
             return key in self.__data
 
-    def keys(self, pattern: str | None = None) -> list[str]:
+    def keys(self, pattern: str | None = None, limit: int = 0, offset: int = 0) -> list[str]:
         """Returns all keys, optionally filtered by a substring pattern."""
         with self.__lock:
-            if pattern:
-                return [k for k in self.__data if pattern.rstrip("*") in k]
-            return list(self.__data.keys())
+            all_keys = [k for k in self.__data if pattern is None or pattern.rstrip("*") in k]
+            if offset > 0:
+                all_keys = all_keys[offset:]
+            if limit > 0:
+                all_keys = all_keys[:limit]
+            return all_keys
 
 
 class FileStore(Store):
@@ -152,7 +168,7 @@ class FileStore(Store):
         self.__data_dir: Path = Path(data_dir)
         self.__data_dir.mkdir(parents=True, exist_ok=True)
         self.__lock: threading.Lock = threading.Lock()
-        self.__logger = logging.getLogger("underwrite")
+        self.__logger = logging.getLogger(__name__)
         self.__operation_timeout: float = operation_timeout
         self.__executor: concurrent.futures.ThreadPoolExecutor | None = (
             concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -162,6 +178,15 @@ class FileStore(Store):
                            recovery_timeout=30.0,
                            name="filestore") if use_circuit_breaker else None)
         self.__fsync: bool = fsync
+
+    def shutdown(self, wait: bool = True) -> None:
+        """Shuts down the internal thread-pool executor if present."""
+        if self.__executor is not None:
+            self.__executor.shutdown(wait=wait)
+            self.__executor = None
+
+    def __del__(self) -> None:
+        self.shutdown(wait=False)
 
     def __timeout(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
         """Runs *fn* with the configured timeout via the executor."""
@@ -227,15 +252,27 @@ class FileStore(Store):
 
         return self.__circuit_call(_exists)
 
-    def keys(self, pattern: str | None = None) -> list[str]:
-        """Returns all keys, optionally filtered by a substring pattern."""
+    def keys(self, pattern: str | None = None, limit: int = 0, offset: int = 0) -> list[str]:
+        """Returns all keys, optionally filtered by a substring pattern.
+
+        Args:
+            pattern: Optional substring pattern to filter keys.
+            limit: Max results (0 = unlimited).
+            offset: Number of results to skip before returning.
+        """
         def _keys() -> list[str]:
             result: list[str] = []
+            count: int = 0
             for path in self.__data_dir.rglob("*.json"):
                 rel = str(path.relative_to(self.__data_dir))
                 key = rel.replace(".json", "").replace("/", ":")
                 if pattern is None or pattern.rstrip("*") in key:
+                    if offset > 0 and count < offset:
+                        count += 1
+                        continue
                     result.append(key)
+                    if limit > 0 and len(result) >= limit:
+                        break
             return result
 
         return self.__circuit_call(_keys)
@@ -243,18 +280,14 @@ class FileStore(Store):
     def __path(self, key: str) -> Path:
         safe = key.replace(":", "/")
         if ".." in safe or safe.startswith("/"):
-            from underwrite.__exceptions__ import StoreError
             raise StoreError(f"invalid store key: {key}")
         full = (self.__data_dir / f"{safe}.json").resolve()
         data_dir = self.__data_dir.resolve()
-        if not str(full).startswith(str(data_dir)):
-            from underwrite.__exceptions__ import StoreError
-            raise StoreError(f"key {key} resolves outside data directory")
+        try:
+            full.relative_to(data_dir)
+        except ValueError:
+            raise StoreError(f"key {key} resolves outside data directory") from None
         return full
-
-
-from underwrite.__exceptions__ import MigrationError, StoreError  # noqa: E402
-from underwrite.__migrate__ import MigrationPlan  # noqa: E402
 
 
 class PostgresStore(Store):
@@ -269,6 +302,9 @@ class PostgresStore(Store):
                  pool_size: int = 5,
                  operation_timeout: float = 30.0) -> None:
         self.__dsn: str = dsn
+        import re as _re
+        if not _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
+            raise StoreError(f"invalid table name: {table!r}")
         self.__table: str = table
         self.__pool_size: int = pool_size
         self.__operation_timeout: float = operation_timeout
@@ -355,14 +391,20 @@ class PostgresStore(Store):
                               (key,))
         return bool(rows)
 
-    def keys(self, pattern: str | None = None) -> list[str]:
+    def keys(self, pattern: str | None = None, limit: int = 0, offset: int = 0) -> list[str]:
         """Returns all keys, optionally filtered by a LIKE pattern."""
         if pattern:
             like = f"%{pattern.rstrip('*')}%"
-            rows = self.__execute(
-                f"SELECT key FROM {self.__table} WHERE key LIKE %s", (like,))
+            sql = f"SELECT key FROM {self.__table} WHERE key LIKE %s"
+            params: tuple[Any, ...] = (like,)
         else:
-            rows = self.__execute(f"SELECT key FROM {self.__table}")
+            sql = f"SELECT key FROM {self.__table}"
+            params = ()
+        if limit > 0:
+            sql += f" LIMIT {int(limit)}"
+        if offset > 0:
+            sql += f" OFFSET {int(offset)}"
+        rows = self.__execute(sql, params)
         return [row[0] for row in (rows or [])]
 
     def health(self) -> dict[str, Any]:
@@ -441,13 +483,18 @@ class CQRSStore(Store):
         """Checks the read store for *key*."""
         return self.__read.exists(key)
 
-    def keys(self, pattern: str | None = None) -> list[str]:
+    def keys(self, pattern: str | None = None, limit: int = 0, offset: int = 0) -> list[str]:
         """Returns keys from the read store, optionally filtered."""
-        return self.__read.keys(pattern)
+        return self.__read.keys(pattern, limit=limit, offset=offset)
 
     def health(self) -> dict[str, Any]:
         """Returns the read store's health status."""
         return self.__read.health()
+
+    def shutdown(self) -> None:
+        """Shuts down both write and read stores."""
+        self.__write.shutdown()
+        self.__read.shutdown()
 
     def migrate(self, plan: MigrationPlan) -> None:
         """Applies migrations against the write store."""

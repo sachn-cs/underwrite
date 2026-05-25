@@ -6,7 +6,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from underwrite.__store__ import CQRSStore, FileStore, MemoryStore, ReadStore, Store
+import pytest
+
+from underwrite.__exceptions__ import StoreError
+from underwrite.__store__ import CQRSStore, FileStore, MemoryStore, PostgresStore, ReadStore, Store
 
 
 class TestFileStoreCorruption:
@@ -153,3 +156,57 @@ class TestCQRSStore:
         read = MockReadStore()
         cqrs = CQRSStore(write, read)
         assert cqrs.health() == {"ok": True}
+
+
+class TestFileStorePathTraversal:
+
+    def test_rejects_dotdot_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(tmp)
+            with pytest.raises(StoreError, match="invalid store key"):
+                store.get("foo:..:..:etc:passwd")
+
+    def test_rejects_absolute_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(tmp)
+            with pytest.raises(StoreError, match="invalid store key"):
+                store.get("/etc/passwd")
+
+    def test_rejects_key_resolving_outside_data_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(tmp)
+            with pytest.raises(StoreError):
+                store.set("..:etc:passwd", "value")
+
+    def test_normal_key_allowed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(tmp)
+            store.set("test:key", {"hello": "world"})
+            assert store.get("test:key") == {"hello": "world"}
+
+    def test_keys_with_pagination(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(tmp)
+            for i in range(10):
+                store.set(f"k:{i}", i)
+            all_keys = store.keys()
+            assert len(all_keys) == 10
+            limited = store.keys(limit=3)
+            assert len(limited) == 3
+            with_offset = store.keys(limit=3, offset=5)
+            assert len(with_offset) == 3
+
+
+class TestPostgresStoreTableName:
+
+    def test_rejects_invalid_table_name(self) -> None:
+        with pytest.raises(StoreError, match="invalid table name"):
+            PostgresStore(dsn="", table="store; DROP TABLE migrations")
+
+    def test_rejects_table_with_spaces(self) -> None:
+        with pytest.raises(StoreError, match="invalid table name"):
+            PostgresStore(dsn="", table="my table")
+
+    def test_accepts_valid_table_name(self) -> None:
+        store = PostgresStore(dsn="", table="valid_table_1")
+        assert store is not None

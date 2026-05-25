@@ -9,6 +9,8 @@ Tests verify behavior through emitted events only:
 
 from __future__ import annotations
 
+from collections import deque
+
 from underwrite.__bus__ import LocalBus
 from underwrite.__events__ import Event, EventType
 from underwrite.__exceptions__ import ProtocolError
@@ -245,3 +247,19 @@ class TestEdgeCases:
                       payload={}))
         except ProtocolError:
             pass
+
+    def test_records_use_deque_maxlen(self) -> None:
+        svc = fraud()
+        # Access private __records to verify deque maxlen
+        records = svc._FraudService__records
+        borrower = "maxlen_test"
+        for i in range(2000):
+            svc.handle(
+                Event(event_type=EventType.LOAN_ORIGINATED,
+                      source="test",
+                      payload={"borrower": borrower, "principal": 100}))
+        recs = records.get(borrower)
+        assert recs is not None
+        assert isinstance(recs, deque)
+        assert recs.maxlen == 1000
+        assert len(recs) == 1000

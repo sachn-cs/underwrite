@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import threading
 from collections import deque
 from datetime import datetime, timezone
@@ -19,7 +18,7 @@ from underwrite.__events__ import Event
 from underwrite.__pii import redact_payload
 from underwrite.services import NanoService
 
-logger = logging.getLogger("underwrite")
+logger = logging.getLogger(__name__)
 
 
 class AuditService(NanoService):

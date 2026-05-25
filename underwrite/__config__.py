@@ -16,8 +16,11 @@ from __future__ import annotations
 
 __all__ = [
     "AuthzConfig",
+    "AuditConfig",
     "BusConfig",
     "Configuration",
+    "FeeConfig",
+    "GovernanceConfig",
     "IdentityConfig",
     "LoggingConfig",
     "MetricsConfig",
@@ -32,12 +35,15 @@ __all__ = [
 ]
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from underwrite.__exceptions__ import ConfigurationError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -143,6 +149,48 @@ class RecoveryConfig:
 
 
 @dataclass
+class FeeConfig:
+    """Fee schedule configuration.
+
+    Each key is a fee type name; each value is the flat amount (for
+    flat-rate fees) or the rate (for percentage-based fees like
+    origination).
+    """
+    schedules: dict[str, float] = field(default_factory=lambda: {
+        "late_payment": 25.0,
+        "origination": 0.01,
+        "prepayment": 0.005,
+        "service": 5.0,
+    })
+
+
+@dataclass
+class GovernanceConfig:
+    """Governance parameter ranges and defaults configuration."""
+    param_ranges: dict[str, list[float]] = field(default_factory=lambda: {
+        "protocol_rate": [0.0, 1.0],
+        "max_delegation_rate": [0.0, 1.0],
+        "dlg_cap_ratio": [0.0, 1.0],
+        "ltv_ratio": [0.0, 1.0],
+        "min_base_budget": [0.0, 1e18],
+    })
+    param_defaults: dict[str, float] = field(default_factory=lambda: {
+        "protocol_rate": 0.10,
+        "max_delegation_rate": 0.05,
+        "dlg_cap_ratio": 0.05,
+        "ltv_ratio": 0.75,
+        "min_base_budget": 1000.0,
+    })
+
+
+@dataclass
+class AuditConfig:
+    """Audit service configuration."""
+    max_ledger: int = 100000
+    export_url: str = ""
+
+
+@dataclass
 class Configuration:
     """Root configuration object."""
 
@@ -159,6 +207,9 @@ class Configuration:
     data_dir: str = "./data"
     secrets: SecretsConfig = field(default_factory=SecretsConfig)
     recovery: RecoveryConfig = field(default_factory=RecoveryConfig)
+    fee: FeeConfig = field(default_factory=FeeConfig)
+    governance: GovernanceConfig = field(default_factory=GovernanceConfig)
+    audit: AuditConfig = field(default_factory=AuditConfig)
 
     @classmethod
     def default(cls) -> Configuration:
@@ -169,10 +220,17 @@ class Configuration:
             config.services[service_name] = ServiceConfig(enabled=False)
         return config
 
+    _SCHEMA_CACHE: dict[str, Any] | None = None
+
     @classmethod
     def _schema(cls) -> dict[str, Any]:
-        """Return a JSON Schema dict for validating loaded configuration."""
-        return {
+        """Return a JSON Schema dict for validating loaded configuration.
+
+        The schema is built once and cached as a class-level attribute.
+        """
+        if cls._SCHEMA_CACHE is not None:
+            return cls._SCHEMA_CACHE
+        cls._SCHEMA_CACHE = {
             "type": "object",
             "properties": {
                 "bus": {
@@ -284,10 +342,57 @@ class Configuration:
                     },
                     "additionalProperties": False,
                 },
+                "fee": {
+                    "type": "object",
+                    "properties": {
+                        "schedules": {
+                            "type": "object",
+                            "patternProperties": {
+                                "^[a-z_]+$": {"type": "number"},
+                            },
+                            "additionalProperties": False,
+                        },
+                    },
+                    "additionalProperties": False,
+                },
+                "governance": {
+                    "type": "object",
+                    "properties": {
+                        "param_ranges": {
+                            "type": "object",
+                            "patternProperties": {
+                                "^[a-z_]+$": {
+                                    "type": "array",
+                                    "items": {"type": "number"},
+                                    "minItems": 2,
+                                    "maxItems": 2,
+                                },
+                            },
+                            "additionalProperties": False,
+                        },
+                        "param_defaults": {
+                            "type": "object",
+                            "patternProperties": {
+                                "^[a-z_]+$": {"type": "number"},
+                            },
+                            "additionalProperties": False,
+                        },
+                    },
+                    "additionalProperties": False,
+                },
+                "audit": {
+                    "type": "object",
+                    "properties": {
+                        "max_ledger": {"type": "integer", "minimum": 1},
+                        "export_url": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                },
                 "data_dir": {"type": "string"},
             },
             "additionalProperties": False,
         }
+        return cls._SCHEMA_CACHE
 
     @classmethod
     def _validate(cls, data: dict[str, Any]) -> None:
@@ -414,10 +519,12 @@ class Configuration:
         return config
 
     def save(self, path: str) -> None:
-        """Persists configuration to a JSON file."""
+        """Persists configuration to a JSON file after schema validation."""
+        data = self.to_dict()
+        self._validate(data)
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as fh:
-            json.dump(self.to_dict(), fh, indent=2)
+            json.dump(data, fh, indent=2)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialises configuration to a dictionary."""
@@ -465,7 +572,6 @@ class Configuration:
             "secrets": {
                 "backend": self.secrets.backend,
                 "url": self.secrets.url,
-                "token": self.secrets.token,
                 "region": self.secrets.region,
             },
             "recovery": {
@@ -479,6 +585,17 @@ class Configuration:
                     "priority": svc.priority
                 } for name, svc in self.services.items()
             },
+            "fee": {
+                "schedules": dict(self.fee.schedules),
+            },
+            "governance": {
+                "param_ranges": {k: list(v) for k, v in self.governance.param_ranges.items()},
+                "param_defaults": dict(self.governance.param_defaults),
+            },
+            "audit": {
+                "max_ledger": self.audit.max_ledger,
+                "export_url": self.audit.export_url,
+            },
             "data_dir": self.data_dir,
         }
 
@@ -488,11 +605,13 @@ class Configuration:
 
     @classmethod
     def __merge(cls, config: Configuration, data: dict[str,
-                                                       Any]) -> Configuration:
+                                                        Any]) -> Configuration:
+        import copy
+        config = copy.deepcopy(config)
         known_keys = {
             "bus", "store", "logging", "identity", "data_dir", "services",
             "authz", "metrics", "migration", "tracing", "saga", "secrets",
-            "recovery"
+            "recovery", "fee", "governance", "audit",
         }
         unknown = set(data.keys()) - known_keys
         if unknown:
@@ -554,12 +673,32 @@ class Configuration:
         if "secrets" in data:
             config.secrets.backend = data["secrets"].get("backend", config.secrets.backend)
             config.secrets.url = data["secrets"].get("url", config.secrets.url)
-            config.secrets.token = data["secrets"].get("token", config.secrets.token)
+            # token must NOT be loaded from JSON; only from env vars
             config.secrets.region = data["secrets"].get("region", config.secrets.region)
         if "recovery" in data:
             config.recovery.auto_restart = data["recovery"].get("auto_restart", config.recovery.auto_restart)
             config.recovery.max_restarts = data["recovery"].get("max_restarts", config.recovery.max_restarts)
             config.recovery.backoff_seconds = data["recovery"].get("backoff_seconds", config.recovery.backoff_seconds)
+        if "fee" in data:
+            schedules = data["fee"].get("schedules")
+            if schedules is not None and isinstance(schedules, dict):
+                config.fee.schedules.update(schedules)
+        if "governance" in data:
+            ranges = data["governance"].get("param_ranges")
+            if ranges is not None and isinstance(ranges, dict):
+                for k, v in ranges.items():
+                    if isinstance(v, (list, tuple)) and len(v) == 2:
+                        config.governance.param_ranges[k] = [float(v[0]), float(v[1])]
+            defaults = data["governance"].get("param_defaults")
+            if defaults is not None and isinstance(defaults, dict):
+                config.governance.param_defaults.update(defaults)
+        if "audit" in data:
+            audit_data = data["audit"]
+            if isinstance(audit_data, dict):
+                if "max_ledger" in audit_data:
+                    config.audit.max_ledger = int(audit_data["max_ledger"])
+                if "export_url" in audit_data:
+                    config.audit.export_url = str(audit_data["export_url"])
         if "data_dir" in data:
             config.data_dir = data["data_dir"]
         if "services" in data:
@@ -573,44 +712,54 @@ class Configuration:
     @classmethod
     def __apply_env_overrides(cls, config: Configuration) -> Configuration:
         overrides = {
-            "UNDERWRITE_BUS_BACKEND": ("bus", "backend"),
-            "UNDERWRITE_BUS_RATE_LIMIT": ("bus", "rate_limit"),
-            "UNDERWRITE_BUS_MAX_WORKERS": ("bus", "max_workers"),
-            "UNDERWRITE_STORE_BACKEND": ("store", "backend"),
-            "UNDERWRITE_STORE_DSN": ("store", "dsn"),
-            "UNDERWRITE_STORE_POOL_SIZE": ("store", "pool_size"),
-            "UNDERWRITE_STORE_READ_BACKEND": ("store", "read_backend"),
-            "UNDERWRITE_STORE_READ_DSN": ("store", "read_dsn"),
-            "UNDERWRITE_LOG_LEVEL": ("logging", "level"),
-            "UNDERWRITE_LOG_OUTPUT": ("logging", "output"),
-            "UNDERWRITE_LOG_FORMAT": ("logging", "log_format"),
-            "UNDERWRITE_DATA_DIR": ("data_dir",),
-            "UNDERWRITE_AUTHZ_ENABLED": ("authz", "enabled"),
-            "UNDERWRITE_AUTHZ_POLICY_FILE": ("authz", "policy_file"),
-            "UNDERWRITE_METRICS_ENABLED": ("metrics", "enabled"),
-            "UNDERWRITE_METRICS_EXPORT_INTERVAL": ("metrics", "export_interval"),
-            "UNDERWRITE_TRACING_ENABLED": ("tracing", "enabled"),
-            "UNDERWRITE_TRACING_EXPORTER": ("tracing", "exporter"),
-            "UNDERWRITE_SAGA_ENABLED": ("saga", "enabled"),
-            "UNDERWRITE_IDENTITY_KEY_TTL": ("identity", "key_ttl"),
-            "UNDERWRITE_IDENTITY_KEY_GRACE": ("identity", "key_grace"),
-            "UNDERWRITE_SECRETS_BACKEND": ("secrets", "backend"),
-            "UNDERWRITE_SECRETS_VAULT_URL": ("secrets", "url"),
-            "UNDERWRITE_SECRETS_VAULT_TOKEN": ("secrets", "token"),
-            "UNDERWRITE_SECRETS_AWS_REGION": ("secrets", "region"),
-            "UNDERWRITE_RECOVERY_AUTO_RESTART": ("recovery", "auto_restart"),
-            "UNDERWRITE_RECOVERY_MAX_RESTARTS": ("recovery", "max_restarts"),
-            "UNDERWRITE_RECOVERY_BACKOFF": ("recovery", "backoff_seconds"),
+            "UNDERWRITE_BUS_BACKEND": ("bus", "backend", str),
+            "UNDERWRITE_BUS_RATE_LIMIT": ("bus", "rate_limit", float),
+            "UNDERWRITE_BUS_MAX_WORKERS": ("bus", "max_workers", int),
+            "UNDERWRITE_STORE_BACKEND": ("store", "backend", str),
+            "UNDERWRITE_STORE_DSN": ("store", "dsn", str),
+            "UNDERWRITE_STORE_POOL_SIZE": ("store", "pool_size", int),
+            "UNDERWRITE_STORE_READ_BACKEND": ("store", "read_backend", str),
+            "UNDERWRITE_STORE_READ_DSN": ("store", "read_dsn", str),
+            "UNDERWRITE_LOG_LEVEL": ("logging", "level", str),
+            "UNDERWRITE_LOG_OUTPUT": ("logging", "output", str),
+            "UNDERWRITE_LOG_FORMAT": ("logging", "log_format", str),
+            "UNDERWRITE_DATA_DIR": ("data_dir", None, str),
+            "UNDERWRITE_AUTHZ_ENABLED": ("authz", "enabled", bool),
+            "UNDERWRITE_AUTHZ_POLICY_FILE": ("authz", "policy_file", str),
+            "UNDERWRITE_METRICS_ENABLED": ("metrics", "enabled", bool),
+            "UNDERWRITE_METRICS_EXPORT_INTERVAL": ("metrics", "export_interval", int),
+            "UNDERWRITE_TRACING_ENABLED": ("tracing", "enabled", bool),
+            "UNDERWRITE_TRACING_EXPORTER": ("tracing", "exporter", str),
+            "UNDERWRITE_SAGA_ENABLED": ("saga", "enabled", bool),
+            "UNDERWRITE_IDENTITY_KEY_TTL": ("identity", "key_ttl", float),
+            "UNDERWRITE_IDENTITY_KEY_GRACE": ("identity", "key_grace", float),
+            "UNDERWRITE_SECRETS_BACKEND": ("secrets", "backend", str),
+            "UNDERWRITE_SECRETS_VAULT_URL": ("secrets", "url", str),
+            "UNDERWRITE_SECRETS_VAULT_TOKEN": ("secrets", "token", str),
+            "UNDERWRITE_SECRETS_AWS_REGION": ("secrets", "region", str),
+            "UNDERWRITE_RECOVERY_AUTO_RESTART": ("recovery", "auto_restart", bool),
+            "UNDERWRITE_RECOVERY_MAX_RESTARTS": ("recovery", "max_restarts", int),
+            "UNDERWRITE_RECOVERY_BACKOFF": ("recovery", "backoff_seconds", float),
+            "UNDERWRITE_AUDIT_MAX_LEDGER": ("audit", "max_ledger", int),
+            "UNDERWRITE_AUDIT_EXPORT_URL": ("audit", "export_url", str),
         }
-        for env_var, attrs in overrides.items():
+        for env_var, (section_attr, field_attr, typ) in overrides.items():
             val = os.environ.get(env_var)
             if val is None:
                 continue
-            if len(attrs) == 1:
-                setattr(config, attrs[0], val)
+            try:
+                if typ is bool:
+                    coerced = val.lower() in ("1", "true", "yes")
+                else:
+                    coerced = typ(val)
+            except (ValueError, TypeError):
+                logger.warning("failed to coerce %s=%r to %s, skipping", env_var, val, typ.__name__)
+                continue
+            if field_attr is None:
+                setattr(config, section_attr, coerced)
             else:
-                section = getattr(config, attrs[0])
-                setattr(section, attrs[1], val)
+                section = getattr(config, section_attr)
+                setattr(section, field_attr, coerced)
         return config
 
 

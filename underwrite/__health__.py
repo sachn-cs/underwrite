@@ -18,7 +18,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("underwrite")
+logger = logging.getLogger(__name__)
 
 HealthCheck = Callable[[], dict[str, Any]]
 

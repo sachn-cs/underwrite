@@ -14,7 +14,7 @@ from underwrite.__events__ import Event, EventType
 from underwrite.services import NanoService
 from underwrite.validate import get_finite, get_non_empty
 
-logger = logging.getLogger("underwrite")
+logger = logging.getLogger(__name__)
 
 try:
     from underwrite.services.risk.model import RiskModel
@@ -74,3 +74,10 @@ class RiskService(NanoService):
                 except Exception as exc:
                     logger.exception("risk scoring failed for %s: %s", borrower,
                                      exc)
+
+    def health_check(self) -> dict[str, Any]:
+        """Risk-specific health: reports model presence."""
+        return {
+            **super().health_check(),
+            "model_present": self.__model is not None,
+        }

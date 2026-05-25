@@ -7,7 +7,7 @@ import os
 from abc import ABC, abstractmethod
 from typing import Any
 
-logger = logging.getLogger("underwrite")
+logger = logging.getLogger(__name__)
 
 
 class SecretsBackend(ABC):

@@ -23,7 +23,7 @@ from typing import Any
 
 from underwrite.__exceptions__ import IdentityError
 
-logger = logging.getLogger("underwrite")
+logger = logging.getLogger(__name__)
 
 try:
     from cryptography.exceptions import InvalidSignature

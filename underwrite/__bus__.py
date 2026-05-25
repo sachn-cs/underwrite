@@ -10,6 +10,7 @@ from __future__ import annotations
 __all__ = [
     "DeadLetterQueue",
     "DeadLetterRecord",
+    "DistributedRateLimiter",
     "EventBus",
     "IdempotencyGuard",
     "LocalBus",
@@ -25,11 +26,13 @@ import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 from underwrite.__events__ import Event
 from underwrite.__exceptions__ import RateLimitError
+from underwrite.__store__ import Store
 
-logger = logging.getLogger("underwrite")
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -46,18 +49,92 @@ class DeadLetterQueue:
     """Captures events that failed processing.
 
     Evicts oldest entries when *max_records* is exceeded to prevent
-    unbounded memory growth.
+    unbounded memory growth.  Optionally persists to a ``Store`` for
+    durability across restarts.  Persistence is batched — the store is
+    only written every *sync_interval* ``put()`` calls to avoid
+    O(n) serialisation overhead on every event.
     """
 
-    def __init__(self, max_records: int = 10000) -> None:
+    def __init__(self, max_records: int = 10000, store: Store | None = None,
+                 sync_interval: int = 10) -> None:
         """Initialises a bounded dead-letter queue.
 
         Args:
             max_records: Maximum entries before oldest are evicted.
+            store: Optional Store backend for persistence.
+            sync_interval: Persist to store only every N puts (1 = every put).
         """
         self.__lock: threading.Lock = threading.Lock()
         self.__records: list[DeadLetterRecord] = []
         self.__max_records: int = max_records
+        self.__store: Store | None = store
+        self.__sync_interval: int = max(sync_interval, 1)
+        self.__sync_counter: int = 0
+        if store is not None:
+            self.__load_store()
+
+    # -- serialisation helpers -----------------------------------------------
+
+    @staticmethod
+    def _event_to_dict(event: Event) -> dict[str, Any]:
+        return {
+            "event_id": event.event_id,
+            "event_type": event.event_type,
+            "source": event.source,
+            "source_key": event.source_key,
+            "timestamp": event.timestamp,
+            "payload": event.payload,
+            "correlation_id": event.correlation_id,
+            "signature": event.signature,
+        }
+
+    @staticmethod
+    def _event_from_dict(d: dict[str, Any]) -> Event:
+        return Event(**d)
+
+    @staticmethod
+    def _record_to_dict(r: DeadLetterRecord) -> dict[str, Any]:
+        return {
+            "event": DeadLetterQueue._event_to_dict(r.event),
+            "error": r.error,
+            "subscriber_id": r.subscriber_id,
+            "timestamp": r.timestamp,
+        }
+
+    @staticmethod
+    def _record_from_dict(d: dict[str, Any]) -> DeadLetterRecord:
+        return DeadLetterRecord(
+            event=DeadLetterQueue._event_from_dict(d["event"]),
+            error=d["error"],
+            subscriber_id=d["subscriber_id"],
+            timestamp=d["timestamp"],
+        )
+
+    # -- persistence ----------------------------------------------------------
+
+    def __load_store(self) -> None:
+        store = self.__store
+        if store is None:
+            return
+        raw = store.get("bus:dlq")
+        if raw is not None and isinstance(raw, list):
+            self.__records = [self._record_from_dict(r) for r in raw
+                              if isinstance(r, dict) and "event" in r]
+
+    def __sync_store(self) -> None:
+        store = self.__store
+        if store is None:
+            return
+        store.set("bus:dlq", [self._record_to_dict(r) for r in self.__records])
+
+    def __should_sync(self) -> bool:
+        self.__sync_counter += 1
+        if self.__sync_counter >= self.__sync_interval:
+            self.__sync_counter = 0
+            return True
+        return False
+
+    # -- public API -----------------------------------------------------------
 
     def put(self, event: Event, error: str, subscriber_id: str) -> None:
         """Records a failed event.
@@ -76,6 +153,8 @@ class DeadLetterQueue:
                     error=error,
                     subscriber_id=subscriber_id,
                 ))
+            if self.__should_sync():
+                self.__sync_store()
 
     @property
     def records(self) -> list[DeadLetterRecord]:
@@ -93,6 +172,8 @@ class DeadLetterQueue:
         """Removes all dead-letter records."""
         with self.__lock:
             self.__records.clear()
+            self.__sync_counter = 0
+            self.__sync_store()
 
     def replay(self, bus: EventBus, max_count: int = 0) -> int:
         """Re-publishes dead-letter events to a bus.
@@ -109,6 +190,8 @@ class DeadLetterQueue:
             if max_count > 0:
                 to_replay = to_replay[:max_count]
             self.__records = self.__records[len(to_replay):]
+            self.__sync_counter = 0
+            self.__sync_store()
         for record in to_replay:
             bus.publish(record.event)
         return len(to_replay)
@@ -124,10 +207,10 @@ class RateLimiter:
             max_rate: Maximum operations per *interval*.
             interval: Time window in seconds.
         """
-        self.__max_rate: float = max_rate
-        self.__interval: float = interval
-        self.__lock: threading.Lock = threading.Lock()
-        self.__buckets: dict[str, float] = {}
+        self._max_rate: float = max_rate
+        self._interval: float = interval
+        self._lock: threading.Lock = threading.Lock()
+        self._buckets: dict[str, float] = {}
 
     def check(self, key: str) -> bool:
         """Checks whether *key* is allowed under the rate limit.
@@ -138,12 +221,14 @@ class RateLimiter:
         Returns:
             True if the operation is allowed, False otherwise.
         """
+        if self._max_rate == 0:
+            return True
         now = time.monotonic()
-        with self.__lock:
-            last = self.__buckets.get(key, 0.0)
-            if now - last < self.__interval / self.__max_rate:
+        with self._lock:
+            last = self._buckets.get(key, 0.0)
+            if now - last < self._interval / self._max_rate:
                 return False
-            self.__buckets[key] = now
+            self._buckets[key] = now
             return True
 
     def assert_allowed(self, key: str) -> None:
@@ -157,6 +242,46 @@ class RateLimiter:
         """
         if not self.check(key):
             raise RateLimitError(f"rate limit exceeded for {key}")
+
+
+class DistributedRateLimiter(RateLimiter):
+    """Store-backed distributed token-bucket rate limiter.
+
+    Shares state through a common ``Store`` so that multiple processes
+    (or hosts) respect the same rate limit.  Falls back to the in-memory
+    parent implementation when no store is provided.
+    """
+
+    def __init__(
+        self,
+        max_rate: float = 100.0,
+        interval: float = 1.0,
+        store: Store | None = None,
+        prefix: str = "ratelimit",
+    ) -> None:
+        """Initialises a distributed rate limiter.
+
+        Args:
+            max_rate: Maximum operations per *interval*.
+            interval: Time window in seconds.
+            store: Shared store for cross-process coordination.
+            prefix: Key prefix in the store.
+        """
+        super().__init__(max_rate=max_rate, interval=interval)
+        self.__store: Store | None = store
+        self.__prefix: str = prefix
+
+    def check(self, key: str) -> bool:
+        if self.__store is None:
+            return super().check(key)
+        now = time.time()
+        store_key = f"{self.__prefix}:{key}"
+        raw = self.__store.get(store_key)
+        last: float = raw if isinstance(raw, (int, float)) else 0.0
+        if now - last < self._interval / self._max_rate:
+            return False
+        self.__store.set(store_key, now)
+        return True
 
 
 class IdempotencyGuard:
@@ -229,19 +354,20 @@ class EventBus(ABC):
 class LocalBus(EventBus):
     """Thread-safe in-process event bus with async dispatch and idempotency."""
 
-    def __init__(self, rate_limit: float = 0.0, max_workers: int = 0) -> None:
+    def __init__(self, rate_limit: float = 0.0, max_workers: int = 0, store: Store | None = None) -> None:
         """Initialises the local bus.
 
         Args:
             rate_limit: Max events per second per subscriber (0 = unlimited).
             max_workers: Thread pool size (0 = synchronous dispatch).
+            store: Optional Store for DLQ persistence.
         """
         self.__lock: threading.RLock = threading.RLock()
         self.__handlers: dict[str, list[tuple[str, Callable[[Event],
                                                             None]]]] = {}
         self.__buffer: list[Event] = []
         self.__running: bool = False
-        self.__dlq: DeadLetterQueue = DeadLetterQueue()
+        self.__dlq: DeadLetterQueue = DeadLetterQueue(store=store)
         self.__idempotency: IdempotencyGuard = IdempotencyGuard()
         self.__rate_limiter: RateLimiter | None = RateLimiter(
             rate_limit) if rate_limit > 0 else None

@@ -27,7 +27,7 @@ except ImportError:
 from underwrite.__events__ import Event
 from underwrite.__exceptions__ import AuthzError
 
-logger = logging.getLogger("underwrite")
+logger = logging.getLogger(__name__)
 
 
 class Policy:

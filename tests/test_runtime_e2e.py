@@ -24,7 +24,7 @@ def _memory_runtime(enable_metrics: bool = True) -> Runtime:
 class TestPublishFlow:
 
     def test_publish_through_runtime_delivers_to_service(self) -> None:
-        rt = Runtime()
+        rt = _memory_runtime()
         bus = rt.bus
         rt.register("audit")
         rt.wire("audit")

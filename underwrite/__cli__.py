@@ -6,7 +6,7 @@ Usage:
     underwrite list                     List all available services
     underwrite identity <service>       Generate identity for a service
     underwrite health                   Show system health status
-    underwrite dlq                      Show dead-letter queue info
+    underwrite dlq [--replay] [--max N] Show or replay dead-letter queue
     underwrite metrics                  Show metrics snapshot
     underwrite migrate                  Run pending schema migrations
 """
@@ -147,7 +147,7 @@ def identity(
 def health() -> None:
     """Shows system health status."""
     config = _load_config()
-    runtime = Runtime(config)
+    runtime = Runtime(config, readonly=True)
     status = runtime.health.status()
     typer.echo(f"Status: {status['status']}")
     typer.echo(f"OK: {status['ok']}")
@@ -165,25 +165,32 @@ def health() -> None:
 
 
 @app.command()
-def dlq() -> None:
-    """Shows dead-letter queue info."""
+def dlq(
+    replay: bool = typer.Option(False, "--replay", help="Re-publish all dead-letter events"),
+    max_count: int = typer.Option(0, "--max", help="Max events to replay (0 = all)"),
+) -> None:
+    """Shows dead-letter queue info, or replays dead-letter events."""
     config = _load_config()
-    runtime = Runtime(config)
-    records = runtime.bus.dlq
-    typer.echo(f"Dead-letter queue: {records.count} entries")
-    for r in records.records[:20]:
+    runtime = Runtime(config, readonly=True)
+    dq = runtime.bus.dlq
+    if replay:
+        replayed = dq.replay(runtime.bus, max_count=max_count)
+        typer.echo(f"Replayed {replayed} dead-letter event(s)")
+        return
+    typer.echo(f"Dead-letter queue: {dq.count} entries")
+    for r in dq.records[:20]:
         typer.echo(
             f"  [{r.timestamp:.1f}] {r.subscriber_id}: "
             f"{r.event.event_type} — {r.error[:60]}",)
-    if records.count > 20:
-        typer.echo(f"  ... and {records.count - 20} more")
+    if dq.count > 20:
+        typer.echo(f"  ... and {dq.count - 20} more")
 
 
 @app.command()
 def metrics() -> None:
     """Shows a metrics snapshot."""
     config = _load_config()
-    runtime = Runtime(config)
+    runtime = Runtime(config, readonly=True)
     mc = runtime.metrics
     if not mc:
         typer.echo("Metrics disabled")

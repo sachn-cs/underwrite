@@ -7,8 +7,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from underwrite.__bus__ import LocalBus
 from underwrite.__events__ import Event, EventType
+from underwrite.__exceptions__ import ProtocolError
 from underwrite.__store__ import MemoryStore
 from underwrite.services.mechanism.service import MechanismService
 
@@ -649,6 +652,26 @@ class TestEdgeCases:
         svc.start()
         command(svc, "nonexistent_cmd", {})
         assert len(svc.earned) == 0
+
+    def test_deep_delegation_chain_raises(self) -> None:
+        svc = make_svc()
+        svc.start()
+        # Build chain root → u0 → u1 → ... → u54 (55 non-seed users).
+        # Each user delegates 1 less than they receive so credit_limit passes.
+        command(svc, "add_seed", {"user": "root", "base_budget": 10_000_000})
+        prev = "root"
+        for i in range(55):
+            user = f"u{i}"
+            amt = 200_000 - i
+            command(svc, "add_user", {
+                "sponsor": prev, "user": user, "delegation_amount": amt,
+            })
+            prev = user
+        # __required_delegation("u0") traverses 0→1→…→54, hitting depth 54 > 50.
+        # Access via an internal call since handle propagates ProtocolError to the bus DLQ.
+        with pytest.raises(ProtocolError, match="delegation chain too deep"):
+            with svc._MechanismService__lock:
+                svc._MechanismService__required_delegation("u0")
 
 
 class TestMechanismStoreLoad:
