@@ -40,7 +40,7 @@ class VaultSecretsBackend(SecretsBackend):
     """HashiCorp Vault KV v2 backend."""
 
     def __init__(self,
-                 url: str = "http://localhost:8200",
+                 url: str = "https://localhost:8200",
                  token: str | None = None,
                  mount_point: str = "secret",
                  metrics_collector: Any | None = None) -> None:
@@ -91,7 +91,7 @@ class AwsSecretsBackend(SecretsBackend):
         self.__region = region
         self.__metrics: Any | None = metrics_collector
 
-    def _client(self):
+    def client(self):
         try:
             import boto3
         except ImportError:
@@ -100,7 +100,7 @@ class AwsSecretsBackend(SecretsBackend):
         return boto3.client("secretsmanager", region_name=self.__region)
 
     def get(self, key: str) -> str | None:
-        client = self._client()
+        client = self.client()
         try:
             resp = client.get_secret_value(SecretId=key)
             return resp.get("SecretString")
@@ -116,7 +116,7 @@ class AwsSecretsBackend(SecretsBackend):
             raise
 
     def set(self, key: str, value: str) -> None:
-        client = self._client()
+        client = self.client()
         try:
             client.put_secret_value(SecretId=key, SecretString=value)
         except client.exceptions.ResourceNotFoundException:
@@ -131,13 +131,18 @@ class SecretsManager:
                  config: Any | None = None) -> None:
         self.__backend = backend or self.__build_backend(config)
 
+    @property
+    def backend(self) -> SecretsBackend:
+        """Returns the active backend (test-accessible hook)."""
+        return self.__backend
+
     @staticmethod
     def __build_backend(config: Any) -> SecretsBackend:
         if config is None:
             return EnvSecretsBackend()
         if config.backend == "vault":
             return VaultSecretsBackend(
-                url=config.url or "http://localhost:8200",
+                url=config.url or "https://localhost:8200",
                 token=getattr(config, "token", None),
             )
         if config.backend == "aws":

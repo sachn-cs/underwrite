@@ -100,8 +100,6 @@ class NPAService(NanoService):
     @staticmethod
     def classify_overdue_days(days: int) -> str:
         """Classify days-past-due into RBI NPA bucket."""
-        if days <= 0:
-            return "standard"
         if days <= 90:
             return "standard"
         if days <= 180:

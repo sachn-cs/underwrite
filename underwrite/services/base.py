@@ -14,6 +14,7 @@ Each service:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import threading
@@ -30,16 +31,17 @@ from underwrite.__metrics__ import MetricsCollector
 from underwrite.__saga__ import SagaOrchestrator
 from underwrite.__store__ import MemoryStore, Store
 from underwrite.__supervisor__ import ServiceSupervisor
-from underwrite.__tracer__ import Span, Tracer
+from underwrite.__tracer__ import Tracer
+from underwrite.validate import PayloadValidator
 
 logger = logging.getLogger(__name__)
 
-_log_context = threading.local()
+log_context = threading.local()
 
 
 def get_log_correlation_id() -> str:
     """Returns the correlation_id for the current thread, or empty string."""
-    return getattr(_log_context, "correlation_id", "")
+    return getattr(log_context, "correlation_id", "")
 
 
 class BatchPersistenceMixin:
@@ -47,7 +49,7 @@ class BatchPersistenceMixin:
 
     Instead of writing to the store on every event, accumulates a counter
     and only triggers the actual sync every *sync_interval* calls.
-    Subclasses must implement ``_do_sync_store()`` to perform the actual write.
+    Subclasses must implement ``do_sync_store()`` to perform the actual write.
     """
 
     def __init__(self, sync_interval: int = 10) -> None:
@@ -55,33 +57,34 @@ class BatchPersistenceMixin:
         self.__sync_interval: int = max(sync_interval, 1)
         self.__sync_counter: int = 0
 
-    def _incr_and_maybe_sync(self) -> bool:
+    def incr_and_maybe_sync(self) -> bool:
         """Increments the counter and triggers sync if threshold reached.
 
         Returns:
             True if a sync was triggered, False otherwise.
         """
+        should_sync = False
         with self.__batch_lock:
             self.__sync_counter += 1
             if self.__sync_counter >= self.__sync_interval:
                 self.__sync_counter = 0
-            else:
-                return False
-        self._do_sync_store()
+                should_sync = True
+        if should_sync:
+            self.do_sync_store()
         return True
 
-    def _force_sync(self) -> None:
+    def force_sync(self) -> None:
         """Immediately triggers a sync regardless of the counter."""
         with self.__batch_lock:
             self.__sync_counter = 0
-        self._do_sync_store()
+        self.do_sync_store()
 
-    def _reset_counter(self) -> None:
+    def reset_counter(self) -> None:
         with self.__batch_lock:
             self.__sync_counter = 0
 
     @abstractmethod
-    def _do_sync_store(self) -> None:
+    def do_sync_store(self) -> None:
         """Subclasses must implement this to perform the actual store write."""
 
 
@@ -136,6 +139,8 @@ class NanoService(ABC):
         self.__events_failed: int = 0
         self.__last_event_time: float = 0.0
 
+        self.__validator: PayloadValidator = PayloadValidator()
+
         if self.__saga:
             self.__saga.register_emitter(self.__service_id, self)
 
@@ -158,6 +163,11 @@ class NanoService(ABC):
     def metrics_collector(self) -> MetricsCollector | None:
         """Return the metrics collector for this service, or None if disabled."""
         return self.__metrics
+
+    @property
+    def validator(self) -> PayloadValidator:
+        """Return the payload validator for extracting typed values from events."""
+        return self.__validator
 
     def safe_store_get(self, key: str, default: Any = None) -> Any | None:
         """Get a value from the store, logging and returning *default* on failure.
@@ -221,12 +231,18 @@ class NanoService(ABC):
              payload: dict[str, Any],
              correlation_id: str = "") -> Event:
         """Creates, signs, publishes and returns a new event."""
+        trace_id: str = ""
+        parent_span_id: str = ""
+        if self.__tracer:
+            trace_id = correlation_id or ""
         event: Event = Event(
             event_type=event_type,
             source=self.__service_id,
             source_key=self.__identity.public_key,
             payload=payload,
             correlation_id=correlation_id or "",
+            trace_id=trace_id,
+            parent_span_id=parent_span_id,
         )
         payload_str: str = json.dumps(payload, sort_keys=True, default=str)
         to_sign: str = f"{event.event_id}:{event.timestamp}:{event.event_type}:{payload_str}"
@@ -277,50 +293,50 @@ class NanoService(ABC):
                          self.__service_id)
             return
         start = time.perf_counter()
-        span: Span | None = None
-        if self.__tracer:
-            span = self.__tracer.start_span(
+        with (self.__tracer.trace(
                 f"handle.{event.event_type}",
-                trace_id=event.correlation_id or event.event_id,
+                trace_id=event.trace_id or event.correlation_id or
+                event.event_id,
+                parent_span_id=event.parent_span_id,
                 tags={
                     "service": self.__service_id,
                     "event_type": event.event_type
                 },
-            )
-        try:
-            _log_context.correlation_id = event.correlation_id or ""
-            self.handle(event)
-            with self.__counter_lock:
-                self.__events_handled += 1
-                self.__last_event_time = start
-            if self.__supervisor:
-                self.__supervisor.record_success(self.__service_id)
-            if self.__metrics:
-                elapsed = (time.perf_counter() - start) * 1000.0
-                self.__metrics.timer("handle.duration", elapsed, {
-                    "service": self.__service_id,
-                    "event_type": event.event_type,
-                })
-                self.__metrics.increment("events.handled", {
-                    "service": self.__service_id,
-                    "event_type": event.event_type,
-                })
-        except Exception:
-            with self.__counter_lock:
-                self.__events_failed += 1
-            if self.__supervisor:
-                self.__supervisor.record_failure(self.__service_id)
-            logger.exception("handler %s failed processing %s",
-                             self.__service_id, event.event_type)
-            if self.__metrics:
-                self.__metrics.increment("events.failed", {
-                    "service": self.__service_id,
-                    "event_type": event.event_type,
-                })
-            raise
-        finally:
-            if span is not None and self.__tracer is not None:
-                self.__tracer.end_span(span)
+        ) if self.__tracer else contextlib.nullcontext()):
+            try:
+                log_context.correlation_id = event.correlation_id or ""
+                self.handle(event)
+                with self.__counter_lock:
+                    self.__events_handled += 1
+                    self.__last_event_time = start
+                if self.__supervisor:
+                    self.__supervisor.record_success(self.__service_id)
+                if self.__metrics:
+                    elapsed = (time.perf_counter() - start) * 1000.0
+                    self.__metrics.timer(
+                        "handle.duration", elapsed, {
+                            "service": self.__service_id,
+                            "event_type": event.event_type,
+                        })
+                    self.__metrics.increment(
+                        "events.handled", {
+                            "service": self.__service_id,
+                            "event_type": event.event_type,
+                        })
+            except Exception:
+                with self.__counter_lock:
+                    self.__events_failed += 1
+                if self.__supervisor:
+                    self.__supervisor.record_failure(self.__service_id)
+                logger.exception("handler %s failed processing %s",
+                                 self.__service_id, event.event_type)
+                if self.__metrics:
+                    self.__metrics.increment(
+                        "events.failed", {
+                            "service": self.__service_id,
+                            "event_type": event.event_type,
+                        })
+                raise
 
     @abstractmethod
     def handle(self, event: Event) -> None:

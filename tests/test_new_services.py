@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from underwrite.__events__ import Event
+from underwrite.__events__ import Event, EventType
 from underwrite.services.collection.service import CollectionService
 from underwrite.services.disbursement.service import DisbursementService
 from underwrite.services.document.service import DocumentService
@@ -11,37 +11,202 @@ from underwrite.services.settlement.service import SettlementService
 from underwrite.services.underwriter.service import UnderwriterService
 
 
-def test_underwriter_handle_does_not_crash() -> None:
-    svc = UnderwriterService(service_id="underwriter")
-    svc.handle(Event(event_type="test", source="test", payload={}))
-    assert svc.is_running is False
+class TestUnderwriterService:
+
+    def test_ignores_unrelated_event(self) -> None:
+        svc = UnderwriterService(service_id="underwriter")
+        svc.handle(Event(event_type="other", source="test", payload={}))
+
+    def test_rejects_high_default_probability(self) -> None:
+        svc = UnderwriterService(service_id="underwriter")
+        svc.handle(
+            Event(
+                event_type=EventType.UNDERWRITE_REQUEST,
+                source="test",
+                payload={
+                    "borrower": "bob",
+                    "principal": 50000.0,
+                    "default_probability": 0.5,
+                },
+            ))
+
+    def test_approves_low_risk_loan(self) -> None:
+        svc = UnderwriterService(service_id="underwriter")
+        svc.handle(
+            Event(
+                event_type=EventType.UNDERWRITE_REQUEST,
+                source="test",
+                payload={
+                    "borrower": "alice",
+                    "principal": 10000.0,
+                    "default_probability": 0.1,
+                },
+            ))
 
 
-def test_pricing_handle_does_not_crash() -> None:
-    svc = PricingService(service_id="pricing")
-    svc.handle(Event(event_type="test", source="test", payload={}))
-    assert svc.is_running is False
+class TestPricingService:
+
+    def test_ignores_unrelated_event(self) -> None:
+        svc = PricingService(service_id="pricing")
+        svc.handle(Event(event_type="other", source="test", payload={}))
+
+    def test_computes_pricing(self) -> None:
+        svc = PricingService(service_id="pricing")
+        svc.handle(
+            Event(
+                event_type=EventType.PRICING_REQUEST,
+                source="test",
+                payload={
+                    "borrower": "alice",
+                    "principal": 10000.0,
+                    "default_probability": 0.1,
+                },
+            ))
 
 
-def test_document_handle_does_not_crash() -> None:
-    svc = DocumentService(service_id="document")
-    svc.handle(Event(event_type="test", source="test", payload={}))
-    assert svc.is_running is False
+class TestDocumentService:
+
+    def test_ignores_unrelated_event(self) -> None:
+        svc = DocumentService(service_id="document")
+        svc.handle(Event(event_type="other", source="test", payload={}))
+
+    def test_generates_document_on_approval(self) -> None:
+        svc = DocumentService(service_id="document")
+        svc.handle(
+            Event(
+                event_type=EventType.UNDERWRITER_APPROVED,
+                source="test",
+                payload={
+                    "borrower": "alice",
+                    "principal": 10000.0
+                },
+            ))
+        docs = svc.documents_for("alice")
+        assert len(docs) == 1
+        assert docs[0]["borrower"] == "alice"
+        assert docs[0]["status"] == "generated"
+
+    def test_multiple_documents(self) -> None:
+        svc = DocumentService(service_id="document")
+        for _ in range(3):
+            svc.handle(
+                Event(
+                    event_type=EventType.UNDERWRITER_APPROVED,
+                    source="test",
+                    payload={
+                        "borrower": "bob",
+                        "principal": 5000.0
+                    },
+                ))
+        assert len(svc.documents_for("bob")) == 3
 
 
-def test_disbursement_handle_does_not_crash() -> None:
-    svc = DisbursementService(service_id="disbursement")
-    svc.handle(Event(event_type="test", source="test", payload={}))
-    assert svc.is_running is False
+class TestDisbursementService:
+
+    def test_ignores_unrelated_event(self) -> None:
+        svc = DisbursementService(service_id="disbursement")
+        svc.handle(Event(event_type="other", source="test", payload={}))
+
+    def test_records_disbursement(self) -> None:
+        svc = DisbursementService(service_id="disbursement")
+        svc.handle(
+            Event(
+                event_type=EventType.DOCUMENT_GENERATED,
+                source="test",
+                payload={
+                    "borrower": "alice",
+                    "principal": 10000.0,
+                    "doc_id": "doc123"
+                },
+            ))
+        record = svc.get("alice")
+        assert record is not None
+        assert record["borrower"] == "alice"
+        assert record["status"] == "disbursed"
 
 
-def test_collection_handle_does_not_crash() -> None:
-    svc = CollectionService(service_id="collection")
-    svc.handle(Event(event_type="test", source="test", payload={}))
-    assert svc.is_running is False
+class TestCollectionService:
+
+    def test_ignores_unrelated_event(self) -> None:
+        svc = CollectionService(service_id="collection")
+        svc.handle(Event(event_type="other", source="test", payload={}))
+
+    def test_records_originated_loan(self) -> None:
+        svc = CollectionService(service_id="collection")
+        svc.handle(
+            Event(
+                event_type=EventType.LOAN_ORIGINATED,
+                source="test",
+                payload={
+                    "borrower": "alice",
+                    "principal": 12000.0,
+                    "term": 12.0,
+                },
+            ))
+        loan = svc.get("alice")
+        assert loan is not None
+        assert loan["principal"] == 12000.0
+        assert loan["term"] == 12.0
+        assert loan["status"] == "active"
+
+    def test_marks_loan_closed_on_full_repayment(self) -> None:
+        svc = CollectionService(service_id="collection")
+        svc.handle(
+            Event(
+                event_type=EventType.LOAN_ORIGINATED,
+                source="test",
+                payload={
+                    "borrower": "bob",
+                    "principal": 1000.0,
+                    "term": 1.0,
+                },
+            ))
+        svc.handle(
+            Event(
+                event_type=EventType.REPAID,
+                source="test",
+                payload={
+                    "user": "bob",
+                    "delta_earned": 1000.0
+                },
+            ))
+        loan = svc.get("bob")
+        assert loan is not None
+        assert loan["status"] == "closed"
 
 
-def test_settlement_handle_does_not_crash() -> None:
-    svc = SettlementService(service_id="settlement")
-    svc.handle(Event(event_type="test", source="test", payload={}))
-    assert svc.is_running is False
+class TestSettlementService:
+
+    def test_ignores_unrelated_event(self) -> None:
+        svc = SettlementService(service_id="settlement")
+        svc.handle(Event(event_type="other", source="test", payload={}))
+
+    def test_records_settlement_on_default(self) -> None:
+        svc = SettlementService(service_id="settlement")
+        svc.handle(
+            Event(
+                event_type=EventType.DEFAULT_OCCURRED,
+                source="test",
+                payload={
+                    "borrower": "alice",
+                    "principal": 10000.0
+                },
+            ))
+        assert len(svc.settlements) == 1
+        assert svc.settlements[0]["borrower"] == "alice"
+        assert svc.settlements[0]["loss"] == 10000.0
+        assert svc.settlements[0]["status"] == "settled"
+
+    def test_tracks_multiple_settlements(self) -> None:
+        svc = SettlementService(service_id="settlement")
+        for borrower in ["alice", "bob"]:
+            svc.handle(
+                Event(
+                    event_type=EventType.DEFAULT_OCCURRED,
+                    source="test",
+                    payload={
+                        "borrower": borrower,
+                        "principal": 5000.0
+                    },
+                ))
+        assert len(svc.settlements) == 2

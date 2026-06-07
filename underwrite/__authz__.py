@@ -8,7 +8,6 @@ from __future__ import annotations
 
 __all__ = [
     "AccessControl",
-    "HAS_CRYPTO",
     "Policy",
 ]
 
@@ -17,12 +16,8 @@ import json
 import logging
 import threading
 
-try:
-    from cryptography.exceptions import InvalidSignature
-    from cryptography.hazmat.primitives.asymmetric import ed25519
-    HAS_CRYPTO: bool = True
-except ImportError:
-    HAS_CRYPTO = False
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric import ed25519
 
 from underwrite.__events__ import Event
 from underwrite.__exceptions__ import AuthzError
@@ -34,7 +29,7 @@ class Policy:
     """A single access rule: allow or deny a subject on a resource."""
 
     def __init__(self, effect: str, subject: str, resource: str) -> None:
-        """Initialises a policy rule.
+        """Initializes a policy rule.
 
         Args:
             effect: ``"allow"`` or ``"deny"``.
@@ -78,7 +73,7 @@ class AccessControl:
     """
 
     def __init__(self) -> None:
-        """Initialises an empty access-control evaluator."""
+        """Initializes an empty access-control evaluator."""
         self.__lock: threading.Lock = threading.Lock()
         self.__policies: list[Policy] = []
         self.__trusted_keys: dict[str, str] = {}  # service_id -> public_key
@@ -162,8 +157,6 @@ class AccessControl:
         When the ``cryptography`` library is not installed, all
         signatures are accepted (insecure — for development only).
         """
-        if not HAS_CRYPTO:
-            return True  # dev mode: trust everything
         with self.__lock:
             public_key_b64 = self.__trusted_keys.get(event.source)
         if not public_key_b64:
@@ -180,7 +173,7 @@ class AccessControl:
             return True
         except InvalidSignature:
             return False
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             logger.exception(
                 "unexpected error verifying signature on event %s: %s",
                 event.event_id, exc)
@@ -220,9 +213,13 @@ class AccessControl:
             event: The event to verify.
 
         Raises:
-            AuthzError: If the signature is present but invalid.
+            AuthzError: If the signature is missing or invalid.
         """
-        if event.signature and not self.verify_signature(event):
+        if not event.signature:
+            raise AuthzError(
+                f"missing signature on event {event.event_id} from {event.source}"
+            )
+        if not self.verify_signature(event):
             raise AuthzError(
                 f"invalid signature on event {event.event_id} from {event.source}"
             )

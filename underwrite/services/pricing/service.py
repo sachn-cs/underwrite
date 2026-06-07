@@ -18,7 +18,7 @@ class PricingService(NanoService):
     """Computes loan pricing (rate, fees) from risk score and principal."""
 
     def handle(self, event: Event) -> None:
-        if event.event_type != "pricing.request":
+        if event.event_type != EventType.PRICING_REQUEST:
             return
         p = event.payload
         borrower: str = get_non_empty(p, "borrower")

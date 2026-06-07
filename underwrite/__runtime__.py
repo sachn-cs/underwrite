@@ -31,10 +31,10 @@ from underwrite.__metrics__ import MetricsCollector
 from underwrite.__migrate__ import default_plan
 from underwrite.__saga__ import SagaOrchestrator
 from underwrite.__secrets__ import SecretsManager
+from underwrite.__service_registry__ import SERVICE_CLASSES, SERVICE_MAP, WIRING
 from underwrite.__store__ import FileStore, MemoryStore, Store
 from underwrite.__supervisor__ import ServiceSupervisor
 from underwrite.__tracer__ import Tracer
-from underwrite._service_registry import SERVICE_CLASSES, SERVICE_MAP, WIRING
 from underwrite.services import NanoService
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ class Runtime:
     def __init__(self,
                  config: Configuration | None = None,
                  readonly: bool = False) -> None:
-        """Initialises the Runtime.
+        """Initializes the Runtime.
 
         Args:
             config: Runtime configuration. Loaded from defaults if omitted.
@@ -74,6 +74,7 @@ class Runtime:
         self.__store = self.__build_store()
         self.__read_store = self.__build_read_store()
         self.__services = {}
+        self.__lock: threading.RLock = threading.RLock()
         if readonly:
             self.__bus = LocalBus(store=self.__store)
             self.__health = HealthRegistry()
@@ -101,61 +102,91 @@ class Runtime:
         self.__metrics_stop = None
 
         self.__register_subsystem_health()
-        self.__run_migrations()
-        self.__start_metrics_export()
 
     def __configure_logging(self) -> None:
-        import json as _json
-        import logging as _logging
+        import json as json_mod
+        import logging as logging_mod
 
         cfg = self.__config.logging
-        level = getattr(_logging, cfg.level.upper(), _logging.INFO)
-        handler: _logging.Handler
+        level = getattr(logging_mod, cfg.level.upper(), logging_mod.INFO)
+        handler: logging_mod.Handler
         if cfg.output == "stdout":
-            handler = _logging.StreamHandler()
+            handler = logging_mod.StreamHandler()
         elif cfg.output == "stderr":
-            handler = _logging.StreamHandler()
+            handler = logging_mod.StreamHandler()
         else:
-            handler = _logging.StreamHandler()
+            handler = logging_mod.StreamHandler()
         handler.setLevel(level)
 
         if cfg.log_format == "json":
 
-            class _JsonFormatter(_logging.Formatter):
+            SENSITIVE_FIELDS: frozenset[str] = frozenset({
+                "password",
+                "secret",
+                "token",
+                "auth",
+                "authorization",
+                "private_key",
+                "ssn",
+                "tax_id",
+                "pin",
+                "cvv",
+                "pan",
+                "account_number",
+                "routing_number",
+            })
 
-                def format(self, record: _logging.LogRecord) -> str:
+            class JsonFormatter(logging_mod.Formatter):
+
+                def __redact(self, data: object) -> object:
+                    if isinstance(data, dict):
+                        return {
+                            k:
+                                "***REDACTED***" if any(
+                                    s in k.lower() for s in SENSITIVE_FIELDS)
+                                else self.__redact(v) for k, v in data.items()
+                        }
+                    if isinstance(data, (list, tuple)):
+                        return [self.__redact(i) for i in data]
+                    return data
+
+                def format(self, record: logging_mod.LogRecord) -> str:
+                    msg = record.getMessage()
                     data: dict[str, object] = {
                         "timestamp": self.formatTime(record),
                         "level": record.levelname,
                         "logger": record.name,
-                        "message": record.getMessage(),
+                        "message": self.__redact(msg),
                         "module": record.module,
                         "line": record.lineno,
                     }
                     corr_id = getattr(record, "correlation_id", None)
                     if corr_id:
                         data["correlation_id"] = corr_id
-                    return _json.dumps(data)
+                    trace_id = getattr(record, "trace_id", None)
+                    if trace_id:
+                        data["trace_id"] = trace_id
+                    return json_mod.dumps(data)
 
-            handler.setFormatter(_JsonFormatter())
+            handler.setFormatter(JsonFormatter())
         else:
             handler.setFormatter(
-                _logging.Formatter(
+                logging_mod.Formatter(
                     "%(asctime)s [%(levelname)s] %(correlation_id)s %(name)s: %(message)s"
                 ))
 
-        root = _logging.getLogger("underwrite")
+        root = logging_mod.getLogger("underwrite")
 
-        class _CorrelationFilter(_logging.Filter):
+        class CorrelationFilter(logging_mod.Filter):
 
-            def filter(self, record: _logging.LogRecord) -> bool:
+            def filter(self, record: logging_mod.LogRecord) -> bool:
                 if not hasattr(record, "correlation_id"):
                     from underwrite.services.base import get_log_correlation_id
                     record.correlation_id = get_log_correlation_id(
                     )  # type: ignore[attr-defined]
                 return True
 
-        root.addFilter(_CorrelationFilter())
+        root.addFilter(CorrelationFilter())
         root.setLevel(level)
         root.addHandler(handler)
 
@@ -247,6 +278,8 @@ class Runtime:
                 for rule in rules.get("deny", []):
                     acl.deny(rule.get("subject", "*"),
                              rule.get("resource", "*"))
+        else:
+            acl.allow("*", "*")
         return acl
 
     def __start_metrics_export(self) -> None:
@@ -259,7 +292,7 @@ class Runtime:
         metrics: MetricsCollector = self.__metrics
         interval: int = self.__config.metrics.export_interval
 
-        def _export_loop() -> None:
+        def export_loop() -> None:
             while not stop_event.is_set():
                 stop_event.wait(interval)
                 if stop_event.is_set():
@@ -272,15 +305,16 @@ class Runtime:
                             snap.get("gauges")
                     ]):
                         continue
-                    _logger = logging.getLogger("underwrite.metrics")
-                    _logger.debug("exporting %d counters, %d timers, %d gauges",
-                                  len(snap.get("counters", {})),
-                                  len(snap.get("timers", {})),
-                                  len(snap.get("gauges", {})))
+                    metrics_logger = logging.getLogger("underwrite.metrics")
+                    metrics_logger.debug(
+                        "exporting %d counters, %d timers, %d gauges",
+                        len(snap.get("counters", {})),
+                        len(snap.get("timers", {})), len(snap.get("gauges",
+                                                                  {})))
                 except Exception:
                     logger.exception("metrics export failed")
 
-        self.__metrics_thread = threading.Thread(target=_export_loop,
+        self.__metrics_thread = threading.Thread(target=export_loop,
                                                  daemon=True,
                                                  name="metrics-export")
         self.__metrics_thread.start()
@@ -339,7 +373,8 @@ class Runtime:
     @property
     def services(self) -> dict[str, NanoService]:
         """Returns a snapshot of registered services keyed by name."""
-        return dict(self.__services)
+        with self.__lock:
+            return dict(self.__services)
 
     @property
     def health(self) -> HealthRegistry:
@@ -437,6 +472,12 @@ class Runtime:
                 svc.subscribe(event_type)
         svc.subscribe(service_name)
 
+    def __enter__(self) -> Runtime:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.stop()
+
     def start(self, service_names: list[str] | None = None) -> None:
         """Starts the event bus and selected services.
 
@@ -447,6 +488,8 @@ class Runtime:
         if service_names is None:
             service_names = self.__config.enabled_services()
         self.__service_names = list(service_names)
+        self.__run_migrations()
+        self.__start_metrics_export()
         for name in service_names:
             if name not in self.__services:
                 self.register(name)
@@ -469,16 +512,18 @@ class Runtime:
         for service_id in self.__supervisor.failing_services():
             if not self.__supervisor.should_restart(service_id):
                 continue
-            if service_id not in self.__services:
-                self.__supervisor.reset(service_id)
-                continue
-            logger.warning("restarting failing service %s", service_id)
-            try:
-                old = self.__services.pop(service_id)
-                old.stop()
-            except Exception:
-                logger.exception("error stopping service %s during restart",
-                                 service_id)
+            with self.__lock:
+                if service_id not in self.__services:
+                    self.__supervisor.reset(service_id)
+                    continue
+                logger.warning("restarting failing service %s", service_id)
+                try:
+                    old = self.__services.pop(service_id)
+                    old.stop()
+                except Exception:
+                    logger.exception("error stopping service %s during restart",
+                                     service_id)
+                    continue
             try:
                 svc = self.register(service_id)
                 self.wire(service_id)

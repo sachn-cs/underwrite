@@ -76,6 +76,9 @@ class GovernanceService(NanoService):
                     return
                 lo, hi = self.__ranges[param]
                 if not (lo <= value <= hi):
+                    logger.warning(
+                        "governance proposal for %r value %s outside range [%s, %s]",
+                        param, value, lo, hi)
                     return
                 self.__params[param] = value
                 self.__sync_store()

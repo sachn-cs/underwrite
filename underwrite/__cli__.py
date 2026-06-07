@@ -30,7 +30,7 @@ app = typer.Typer(
 )
 
 
-def _load_config() -> Configuration:
+def load_config() -> Configuration:
     """Loads configuration from disk or returns defaults.
 
     Returns:
@@ -63,7 +63,7 @@ def init(
     typer.echo(f"Configuration written to {path}")
 
 
-_SERVICE_ARG = typer.Argument(
+SERVICE_ARG = typer.Argument(
     ...,
     help="One or more nano services to start",
     metavar="SERVICE",
@@ -71,7 +71,7 @@ _SERVICE_ARG = typer.Argument(
 
 
 @app.command()
-def run(services: list[str] = _SERVICE_ARG,) -> None:
+def run(services: list[str] = SERVICE_ARG,) -> None:
     """Starts one or more nano services."""
     for name in services:
         if name not in SERVICE_NAMES:
@@ -81,25 +81,23 @@ def run(services: list[str] = _SERVICE_ARG,) -> None:
             typer.echo(f"Available: {', '.join(SERVICE_NAMES)}")
             raise typer.Exit(code=1)
 
-    config = _load_config()
-    runtime = Runtime(config)
+    config = load_config()
 
     def handle_signal(signum: int, frame: object) -> None:
         raise KeyboardInterrupt()
 
     signal.signal(signal.SIGTERM, handle_signal)
 
-    try:
-        runtime.start(services)
-        typer.echo(f"Running: {', '.join(services)}")
-        typer.echo("Press Ctrl+C to stop.")
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        typer.echo("\nShutting down...")
-    finally:
-        runtime.stop()
-        typer.echo("Stopped.")
+    with Runtime(config) as runtime:
+        try:
+            runtime.start(services)
+            typer.echo(f"Running: {', '.join(services)}")
+            typer.echo("Press Ctrl+C to stop.")
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            typer.echo("\nShutting down...")
+    typer.echo("Stopped.")
 
 
 @app.command()
@@ -119,23 +117,12 @@ def identity(
 ) -> None:
     """Generates an Ed25519 identity for a service."""
     try:
-        from underwrite.__identity__ import HAS_CRYPTO
-    except ImportError:
-        HAS_CRYPTO = False
-    if not HAS_CRYPTO:
-        typer.secho(
-            "Warning: cryptography library not available — "
-            "identity will use dummy (insecure) keys",
-            err=True,
-            fg=typer.colors.YELLOW,
-        )
-    try:
         ident: Identity = Identity.create(service_name)
     except Exception as exc:
         typer.secho(f"Failed to create identity: {exc}",
                     err=True,
                     fg=typer.colors.RED)
-        raise typer.Exit(code=1) from None
+        raise typer.Exit(code=1) from exc
     typer.echo(f"Identity for: {service_name}")
     typer.echo(f"  Public key:  {ident.public_key}")
     typer.echo("  Private key: (stored only in memory / TPM — not printable)")
@@ -144,7 +131,7 @@ def identity(
 @app.command()
 def health() -> None:
     """Shows system health status."""
-    config = _load_config()
+    config = load_config()
     runtime = Runtime(config, readonly=True)
     status = runtime.health.status()
     typer.echo(f"Status: {status['status']}")
@@ -172,7 +159,7 @@ def dlq(
                                   help="Max events to replay (0 = all)"),
 ) -> None:
     """Shows dead-letter queue info, or replays dead-letter events."""
-    config = _load_config()
+    config = load_config()
     runtime = Runtime(config, readonly=True)
     dq = runtime.bus.dlq
     if replay:
@@ -191,7 +178,7 @@ def dlq(
 @app.command()
 def metrics() -> None:
     """Shows a metrics snapshot."""
-    config = _load_config()
+    config = load_config()
     runtime = Runtime(config, readonly=True)
     mc = runtime.metrics
     if not mc:
@@ -210,7 +197,7 @@ def metrics() -> None:
 
 @app.command()
 def serve(
-    host: str = typer.Option("0.0.0.0", help="Bind address"),
+    host: str = typer.Option("127.0.0.1", help="Bind address"),
     port: int = typer.Option(8080, help="Bind port"),
     services: str = typer.Option(
         "mechanism,audit", help="Comma-separated list of services to start"),
@@ -218,6 +205,8 @@ def serve(
         100, help="Max requests per second for health/metrics endpoints"),
     require_auth: bool = typer.Option(
         False, help="Require bearer token (UNDERWRITE_API_TOKEN env var)"),
+    shutdown_timeout: int = typer.Option(
+        30, help="Graceful shutdown timeout in seconds"),
 ) -> None:
     """Starts the Runtime as an HTTP daemon with health/metrics endpoints.
 
@@ -233,7 +222,7 @@ def serve(
             fg=typer.colors.RED)
         raise typer.Exit(code=1) from None
 
-    config = _load_config()
+    config = load_config()
     rt = Runtime(config)
 
     from underwrite.__serve__ import create_app
@@ -244,10 +233,11 @@ def serve(
             services=services,
             rate_limit=rate_limit,
             require_auth=require_auth,
+            shutdown_timeout=shutdown_timeout,
         )
     except ValueError as exc:
         typer.secho(str(exc), err=True, fg=typer.colors.RED)
-        raise typer.Exit(code=1) from None
+        raise typer.Exit(code=1) from exc
 
     typer.echo(f"Serving on http://{host}:{port}")
     uvicorn.run(app_fastapi, host=host, port=port, log_level="info")
@@ -256,7 +246,7 @@ def serve(
 @app.command()
 def migrate() -> None:
     """Runs pending schema migrations."""
-    _load_config()
+    load_config()
     Runtime()  # triggers auto-migrate on construction
     typer.echo("Migrations applied")
 

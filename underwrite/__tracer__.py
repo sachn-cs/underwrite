@@ -70,6 +70,16 @@ class Tracer:
         with self.__lock:
             return list(self.__spans)
 
+    @property
+    def exporter(self) -> SpanExporter:
+        """Returns the exporter (test-accessible hook)."""
+        return self.__exporter
+
+    @exporter.setter
+    def exporter(self, exporter: SpanExporter) -> None:
+        with self.__lock:
+            self.__exporter = exporter
+
     def start_span(self,
                    operation: str,
                    trace_id: str = "",
@@ -202,7 +212,7 @@ class OtlpSpanExporter(SpanExporter):
         try:
             from opentelemetry import trace
             from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-                OTLPSpanExporter as _OTLPSpanExporter,)
+                OTLPSpanExporter,)
             from opentelemetry.sdk.resources import Resource
             from opentelemetry.sdk.trace import TracerProvider as SdkTracerProvider
             from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -214,7 +224,7 @@ class OtlpSpanExporter(SpanExporter):
 
         resource = Resource.create({"service.name": self.__service_name})
         provider = SdkTracerProvider(resource=resource)
-        exporter = _OTLPSpanExporter(endpoint=self.__endpoint)
+        exporter = OTLPSpanExporter(endpoint=self.__endpoint)
         processor = BatchSpanProcessor(exporter)
         provider.add_span_processor(processor)
 

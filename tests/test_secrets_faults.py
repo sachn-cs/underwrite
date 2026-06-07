@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from underwrite.__metrics__ import MetricsCollector
 from underwrite.__secrets__ import (
     AwsSecretsBackend,
     EnvSecretsBackend,
@@ -16,7 +17,6 @@ from underwrite.__secrets__ import (
     SecretsManager,
     VaultSecretsBackend,
 )
-from underwrite.__metrics__ import MetricsCollector
 
 
 class TestEnvSecretsBackend:
@@ -73,14 +73,14 @@ class TestEnvSecretsBackend:
         assert dict(os.environ) == env_before
 
 
-def _make_hvac_mock() -> Mock:
+def make_hvac_mock() -> Mock:
     """Create a mock hvac module with proper package structure for sub-imports."""
     mock_hvac = Mock()
     mock_hvac.__path__ = []  # Make it look like a package
     return mock_hvac
 
 
-def _make_hvac_module() -> dict[str, Mock]:
+def make_hvac_module() -> dict[str, Mock]:
     """Create a full hvac module mock hierarchy including hvac.exceptions."""
     mock_hvac = Mock()
     mock_hvac.__path__ = []
@@ -101,7 +101,7 @@ class TestVaultSecretsBackend:
     """Tests for VaultSecretsBackend — HashiCorp Vault KV v2."""
 
     def test_get_calls_hvac_and_returns_value(self) -> None:
-        modules = _make_hvac_module()
+        modules = make_hvac_module()
         mock_hvac = modules["hvac"]
         mock_client = Mock()
         mock_hvac.Client.return_value = mock_client
@@ -123,7 +123,7 @@ class TestVaultSecretsBackend:
             path="my-key", mount_point="secret")
 
     def test_get_raises_on_hvac_error(self) -> None:
-        modules = _make_hvac_module()
+        modules = make_hvac_module()
         mock_hvac = modules["hvac"]
         mock_client = Mock()
         vault_error = modules["hvac"].exceptions.VaultError(
@@ -136,7 +136,7 @@ class TestVaultSecretsBackend:
                 backend.get("my-key")
 
     def test_get_uses_default_mount_point(self) -> None:
-        modules = _make_hvac_module()
+        modules = make_hvac_module()
         mock_hvac = modules["hvac"]
         mock_client = Mock()
         mock_hvac.Client.return_value = mock_client
@@ -154,7 +154,7 @@ class TestVaultSecretsBackend:
             path="k", mount_point="secret")
 
     def test_get_uses_custom_mount_point(self) -> None:
-        modules = _make_hvac_module()
+        modules = make_hvac_module()
         mock_hvac = modules["hvac"]
         mock_client = Mock()
         mock_hvac.Client.return_value = mock_client
@@ -172,7 +172,7 @@ class TestVaultSecretsBackend:
             path="k", mount_point="team-secrets")
 
     def test_get_falls_back_to_vault_token_env(self) -> None:
-        modules = _make_hvac_module()
+        modules = make_hvac_module()
         mock_hvac = modules["hvac"]
         mock_client = Mock()
         mock_hvac.Client.return_value = mock_client
@@ -188,11 +188,11 @@ class TestVaultSecretsBackend:
                             clear=False):
                 backend = VaultSecretsBackend()
                 backend.get("k")
-        mock_hvac.Client.assert_called_once_with(url="http://localhost:8200",
+        mock_hvac.Client.assert_called_once_with(url="https://localhost:8200",
                                                  token="env-token")
 
     def test_set_calls_hvac(self) -> None:
-        modules = _make_hvac_module()
+        modules = make_hvac_module()
         mock_hvac = modules["hvac"]
         mock_client = Mock()
         mock_hvac.Client.return_value = mock_client
@@ -204,7 +204,10 @@ class TestVaultSecretsBackend:
 
     def test_raises_on_missing_hvac_package(self) -> None:
         backend = VaultSecretsBackend()
-        with patch.dict("sys.modules", {"hvac": None, "hvac.exceptions": None}):
+        with patch.dict("sys.modules", {
+                "hvac": None,
+                "hvac.exceptions": None
+        }):
             with patch("builtins.__import__") as mock_import:
                 mock_import.side_effect = ImportError("no hvac")
                 with pytest.raises(ImportError,
@@ -305,7 +308,7 @@ class TestAwsSecretsBackend:
 
     def test_get_propagates_client_import_error(self) -> None:
         backend = AwsSecretsBackend()
-        with patch.object(backend, "_client") as mock_client_method:
+        with patch.object(backend, "client") as mock_client_method:
             mock_client_method.side_effect = ImportError("no boto3")
             with pytest.raises(ImportError, match="no boto3"):
                 backend.get("k")
@@ -358,30 +361,30 @@ class TestSecretsManager:
 
     def test_build_backend_none_config_returns_env(self) -> None:
         mgr = SecretsManager(config=None)
-        assert isinstance(mgr._SecretsManager__backend, EnvSecretsBackend)
+        assert isinstance(mgr.backend, EnvSecretsBackend)
 
     def test_build_backend_vault_config(self) -> None:
         cfg = SimpleNamespace(backend="vault",
                               url="http://vault:8200",
                               token="tok")
         mgr = SecretsManager(config=cfg)
-        backend = mgr._SecretsManager__backend
+        backend = mgr.backend
         assert isinstance(backend, VaultSecretsBackend)
 
     def test_build_backend_aws_config(self) -> None:
         cfg = SimpleNamespace(backend="aws", region="eu-central-1")
         mgr = SecretsManager(config=cfg)
-        backend = mgr._SecretsManager__backend
+        backend = mgr.backend
         assert isinstance(backend, AwsSecretsBackend)
 
     def test_build_backend_unknown_backend_falls_back_to_env(self) -> None:
         cfg = SimpleNamespace(backend="unknown")
         mgr = SecretsManager(config=cfg)
-        backend = mgr._SecretsManager__backend
+        backend = mgr.backend
         assert isinstance(backend, EnvSecretsBackend)
 
     def test_backend_provided_directly_is_used(self) -> None:
         mock_backend = Mock(spec=SecretsBackend)
         mgr = SecretsManager(backend=mock_backend,
                              config=SimpleNamespace(backend="vault"))
-        assert mgr._SecretsManager__backend is mock_backend
+        assert mgr.backend is mock_backend

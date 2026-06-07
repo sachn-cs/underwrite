@@ -9,8 +9,10 @@ from underwrite.services import NanoService
 class NotificationService(NanoService):
     """Sends notifications for fraud alerts, NPA events, and early warnings.
 
-    Currently logs to stdout; production deployments integrate with
-    email / SMS / webhook providers.
+    NOTE: This is a stub implementation.  Currently re-emits events
+    as NOTIFICATION_SENT without dispatching to external channels.
+    Production deployments should integrate with email/SMS/webhook
+    providers and replace the stub body in ``handle()``.
     """
 
     def handle(self, event: Event) -> None:

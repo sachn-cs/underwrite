@@ -18,8 +18,11 @@ from collections.abc import Callable
 from typing import Any
 
 from underwrite.__bus__ import AsyncEventBus, DeadLetterQueue, Event, IdempotencyGuard
+from underwrite.__store__ import Store
 
 logger = logging.getLogger(__name__)
+
+HANDLER_TIMEOUT: float = 30.0  # max seconds per async handler
 
 
 class AsyncLocalBus(AsyncEventBus):
@@ -28,100 +31,143 @@ class AsyncLocalBus(AsyncEventBus):
     ``publish()`` enqueues events; a background ``asyncio.Task`` dequeues
     and dispatches them to subscribed handlers concurrently via
     ``asyncio.gather()``.
+
+    Each handler has a per-execution timeout (*HANDLER_TIMEOUT*) to
+    prevent a single slow handler from blocking the dispatch group.
     """
 
     def __init__(
         self,
         maxsize: int = 0,
         max_workers: int = 0,
+        store: Store | None = None,
     ) -> None:
-        self._queue: asyncio.Queue[Event] = asyncio.Queue(maxsize=maxsize)
-        self._subscribers: dict[str, list[Callable[[Event], Any]]] = {}
-        self._subscription_ids: dict[str, tuple[str, Callable[[Event],
-                                                              Any]]] = {}
-        self._subscription_lock: asyncio.Lock = asyncio.Lock()
-        self._task: asyncio.Task[None] | None = None
-        self._running: bool = False
-        self._semaphore: asyncio.Semaphore | None = (
+        self.__queue: asyncio.Queue[Event] = asyncio.Queue(maxsize=maxsize)
+        self.__subscribers: dict[str, list[Callable[[Event], Any]]] = {}
+        self.__subscription_ids: dict[str, tuple[str, Callable[[Event],
+                                                               Any]]] = {}
+        self.__subscription_lock: asyncio.Lock = asyncio.Lock()
+        self.__task: asyncio.Task[None] | None = None
+        self.__running: bool = False
+        self.__semaphore: asyncio.Semaphore | None = (
             asyncio.Semaphore(max_workers) if max_workers > 0 else None)
-        self._dlq: DeadLetterQueue = DeadLetterQueue()
-        self._idempotency: IdempotencyGuard = IdempotencyGuard()
+        self.__dlq: DeadLetterQueue = DeadLetterQueue(store=store)
+        self.__idempotency: IdempotencyGuard = IdempotencyGuard()
 
     @property
     def dlq(self) -> DeadLetterQueue:
-        return self._dlq
+        return self.__dlq
 
     @property
     def idempotency(self) -> IdempotencyGuard:
-        return self._idempotency
+        return self.__idempotency
 
     async def start(self) -> None:
-        if self._running:
+        if self.__running:
             return
-        self._running = True
-        self._task = asyncio.create_task(self._dispatch_loop())
+        self.__running = True
+        self.__task = asyncio.create_task(self.__dispatch_loop())
         logger.info("AsyncLocalBus started")
 
     async def stop(self) -> None:
-        self._running = False
-        if self._task is not None:
-            self._task.cancel()
+        self.__running = False
+        # Drain any remaining events from the queue
+        drained = 0
+        while not self.__queue.empty():
             try:
-                await self._task
+                event = self.__queue.get_nowait()
+                await self.__dispatch(event)
+                drained += 1
+            except asyncio.QueueEmpty:
+                break
+        if self.__task is not None:
+            self.__task.cancel()
+            try:
+                await self.__task
             except asyncio.CancelledError:
                 pass
-            self._task = None
-        logger.info("AsyncLocalBus stopped")
+            self.__task = None
+        logger.info("AsyncLocalBus stopped (drained %d events)", drained)
 
     async def publish(self, event: Event) -> str:
-        await self._queue.put(event)
+        await self.__queue.put(event)
         return event.event_id
 
     async def subscribe(self, event_type: str, handler: Callable[[Event],
                                                                  Any]) -> str:
         sid = str(uuid.uuid4())
-        async with self._subscription_lock:
-            self._subscribers.setdefault(event_type, []).append(handler)
-            self._subscription_ids[sid] = (event_type, handler)
+        async with self.__subscription_lock:
+            self.__subscribers.setdefault(event_type, []).append(handler)
+            self.__subscription_ids[sid] = (event_type, handler)
         return sid
 
     async def unsubscribe(self, subscription_id: str) -> None:
-        async with self._subscription_lock:
-            meta = self._subscription_ids.pop(subscription_id, None)
+        async with self.__subscription_lock:
+            meta = self.__subscription_ids.pop(subscription_id, None)
             if meta is not None:
                 event_type, handler = meta
-                handlers = self._subscribers.get(event_type, [])
+                handlers = self.__subscribers.get(event_type, [])
                 if handler in handlers:
                     handlers.remove(handler)
 
-    async def _dispatch_loop(self) -> None:
-        while self._running:
+    async def __dispatch_loop(self) -> None:
+        while self.__running:
             try:
-                event = await asyncio.wait_for(self._queue.get(), timeout=1.0)
+                event = await asyncio.wait_for(self.__queue.get(), timeout=1.0)
             except asyncio.TimeoutError:
                 continue
-            await self._dispatch(event)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception(
+                    "dispatch loop: unexpected error dequeuing event")
+                continue
+            try:
+                await self.__dispatch(event)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception(
+                    "dispatch loop: unexpected error processing %s",
+                    event.event_id)
 
-    async def _dispatch(self, event: Event) -> None:
-        handlers = list(self._subscribers.get(event.event_type, []))
+    async def __dispatch(self, event: Event) -> None:
+        async with self.__subscription_lock:
+            handlers = list(self.__subscribers.get(event.event_type, []))
+            wild_handlers = list(self.__subscribers.get("*", []))
+        handlers = handlers + wild_handlers
         if not handlers:
             return
-        coros = [self._safe_dispatch(h, event) for h in handlers]
-        if self._semaphore is not None:
+        coros = [self.__safe_dispatch(h, event) for h in handlers]
+        if self.__semaphore is not None:
 
-            async def _bounded(h, e):
-                async with self._semaphore:
-                    await self._safe_dispatch(h, e)
+            async def __bounded(h, e):
+                async with self.__semaphore:
+                    await self.__safe_dispatch(h, e)
 
-            coros = [_bounded(h, event) for h in handlers]
-        await asyncio.gather(*coros, return_exceptions=True)
+            coros = [__bounded(h, event) for h in handlers]
+        results = await asyncio.wait_for(
+            asyncio.gather(*coros, return_exceptions=True),
+            timeout=HANDLER_TIMEOUT * 2,
+        )
+        for handler, result in zip(handlers, results, strict=False):
+            if isinstance(result, Exception):
+                logger.warning("async handler %s failed: %s",
+                               getattr(handler, "__name__", str(handler)),
+                               result)
 
-    @staticmethod
-    async def _safe_dispatch(handler: Callable[[Event], Any],
-                             event: Event) -> None:
+    async def __safe_dispatch(self, handler: Callable[[Event], Any],
+                              event: Event) -> None:
         try:
             result = handler(event)
             if result is not None and hasattr(result, "__await__"):
-                await result
-        except Exception:
+                result = await asyncio.wait_for(result, timeout=HANDLER_TIMEOUT)
+        except asyncio.TimeoutError:
+            msg = f"handler timed out after {HANDLER_TIMEOUT}s"
+            logger.warning("async handler timed out for %s: %s", event.event_id,
+                           handler.__name__)
+            self.__dlq.put(event, msg, handler.__name__)
+        except Exception as exc:
             logger.exception("async handler failed for %s", event.event_id)
+            self.__dlq.put(event, f"{type(exc).__name__}: {exc}",
+                           handler.__name__)

@@ -93,7 +93,7 @@ class SchemaRegistry:
     """Registry of event schemas keyed by event type name."""
 
     def __init__(self) -> None:
-        self._schemas: dict[str, EventSchema] = {}
+        self.__schemas: dict[str, EventSchema] = {}
 
     def register(self, event_type: str, schema: EventSchema) -> None:
         """Register a schema for *event_type*.
@@ -102,17 +102,17 @@ class SchemaRegistry:
             ValueError: If a schema for *event_type* is already registered
                 with a version >= the new schema's version.
         """
-        existing = self._schemas.get(event_type)
+        existing = self.__schemas.get(event_type)
         if existing is not None and existing.version >= schema.version:
             raise ValueError(
                 f"schema for {event_type!r} already registered "
                 f"at version {existing.version} >= {schema.version}")
-        self._schemas[event_type] = schema
+        self.__schemas[event_type] = schema
         logger.debug("registered schema for %s v%s", event_type, schema.version)
 
     def get(self, event_type: str) -> EventSchema | None:
         """Return the registered schema for *event_type*, or ``None``."""
-        return self._schemas.get(event_type)
+        return self.__schemas.get(event_type)
 
     def validate(self, event_type: str, payload: Any) -> None:
         """Validate *payload* against the registered schema for *event_type*.
@@ -121,7 +121,7 @@ class SchemaRegistry:
             SchemaValidationError: If no schema is registered or validation
                 fails.
         """
-        schema = self._schemas.get(event_type)
+        schema = self.__schemas.get(event_type)
         if schema is None:
             logger.debug("no schema registered for %s, skipping validation",
                          event_type)
@@ -129,7 +129,7 @@ class SchemaRegistry:
         schema.validate(payload)
 
     def __contains__(self, event_type: str) -> bool:
-        return event_type in self._schemas
+        return event_type in self.__schemas
 
 
 registry: SchemaRegistry = SchemaRegistry()

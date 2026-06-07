@@ -69,7 +69,7 @@ class TestAuditService:
 
     def test_sequential_numbering(self) -> None:
         svc = audit()
-        for _i in range(10):
+        for _ in range(10):
             svc.handle(Event(event_type="ev", source="s"))
         seqs = [r["seq"] for r in svc.ledger]
         assert seqs == list(range(1, 11))
@@ -115,7 +115,7 @@ class TestAuditService:
     def test_multiple_records_have_unique_seqs(self) -> None:
         svc = audit()
         seqs = set()
-        for _i in range(100):
+        for _ in range(100):
             svc.handle(Event(event_type="ev", source="s"))
             seqs.add(svc.ledger[-1]["seq"])
         assert len(seqs) == 100
@@ -145,7 +145,8 @@ class TestAuditService:
         mock_boto3_mod.client = MagicMock(return_value=mock_s3)
 
         with patch.dict("sys.modules", {"boto3": mock_boto3_mod}):
-            if "underwrite.services.audit.service" in __import__("sys").modules:
+            if "underwrite.services.audit.service" in __import__(
+                    "sys").modules:
                 __import__("sys").modules.pop(
                     "underwrite.services.audit.service", None)
             from underwrite.services.audit.service import AuditService as AuditSvc2

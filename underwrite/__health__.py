@@ -27,7 +27,7 @@ class HealthRegistry:
     """Thread-safe registry of health checks."""
 
     def __init__(self) -> None:
-        """Initialises an empty health-check registry."""
+        """Initializes an empty health-check registry."""
         self.__lock: threading.Lock = threading.Lock()
         self.__checks: dict[str, HealthCheck] = {}
 
@@ -67,7 +67,10 @@ class HealthRegistry:
                 result = check()
             except Exception as exc:
                 logger.exception("health check %s failed", name)
-                result = {"ok": False, "detail": str(exc)}
+                result = {
+                    "ok": False,
+                    "detail": f"{type(exc).__name__}: {name}"
+                }
             if not result.get("ok", False):
                 overall = False
             results[name] = result

@@ -47,19 +47,19 @@ from underwrite.__exceptions__ import ConfigurationError
 logger = logging.getLogger(__name__)
 
 
-class _ForbidExtra(BaseModel):
+class ForbidExtra(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class ServiceConfig(_ForbidExtra):
+class ServiceConfig(ForbidExtra):
     enabled: bool = False
     priority: int = 0
 
 
-_BACKENDS = Annotated[str, Field(validate_default=True)]
+BACKENDS = Annotated[str, Field(validate_default=True)]
 
 
-class BusConfig(_ForbidExtra):
+class BusConfig(ForbidExtra):
     backend: str = "local"
     rate_limit: float = Field(default=0.0, ge=0)
     max_workers: int = Field(default=0, ge=0)
@@ -67,14 +67,14 @@ class BusConfig(_ForbidExtra):
 
     @field_validator("backend")
     @classmethod
-    def _check_backend(cls, v: str) -> str:
+    def check_backend(cls, v: str) -> str:
         allowed = {"local", "sqs", "modal"}
         if v not in allowed:
             raise ValueError(f"bus.backend must be one of {allowed}, got {v!r}")
         return v
 
 
-class StoreConfig(_ForbidExtra):
+class StoreConfig(ForbidExtra):
     backend: str = "memory"
     dsn: str = ""
     pool_size: int = Field(default=5, ge=1)
@@ -83,7 +83,7 @@ class StoreConfig(_ForbidExtra):
 
     @field_validator("backend")
     @classmethod
-    def _check_backend(cls, v: str) -> str:
+    def check_backend(cls, v: str) -> str:
         allowed = {"memory", "filesystem", "postgres"}
         if v not in allowed:
             raise ValueError(
@@ -91,14 +91,14 @@ class StoreConfig(_ForbidExtra):
         return v
 
 
-class LoggingConfig(_ForbidExtra):
+class LoggingConfig(ForbidExtra):
     level: str = "INFO"
     output: str = "stdout"
     log_format: str = "text"
 
     @field_validator("level")
     @classmethod
-    def _check_level(cls, v: str) -> str:
+    def check_level(cls, v: str) -> str:
         allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
         if v not in allowed:
             raise ValueError(
@@ -107,7 +107,7 @@ class LoggingConfig(_ForbidExtra):
 
     @field_validator("log_format")
     @classmethod
-    def _check_format(cls, v: str) -> str:
+    def check_format(cls, v: str) -> str:
         allowed = {"text", "json"}
         if v not in allowed:
             raise ValueError(
@@ -115,34 +115,35 @@ class LoggingConfig(_ForbidExtra):
         return v
 
 
-class IdentityConfig(_ForbidExtra):
+class IdentityConfig(ForbidExtra):
     private_key: str = ""
     public_key: str = ""
+    encryption_passphrase: str = ""
     key_ttl: float = Field(default=86400.0, ge=0)
     key_grace: float = Field(default=3600.0, ge=0)
 
 
-class AuthzConfig(_ForbidExtra):
-    enabled: bool = False
+class AuthzConfig(ForbidExtra):
+    enabled: bool = True
     policy_file: str = ""
 
 
-class MetricsConfig(_ForbidExtra):
+class MetricsConfig(ForbidExtra):
     enabled: bool = True
     export_interval: int = Field(default=60, ge=0)
 
 
-class MigrationConfig(_ForbidExtra):
+class MigrationConfig(ForbidExtra):
     auto_migrate: bool = True
 
 
-class TracingConfig(_ForbidExtra):
+class TracingConfig(ForbidExtra):
     enabled: bool = False
     exporter: str = "console"
 
     @field_validator("exporter")
     @classmethod
-    def _check_exporter(cls, v: str) -> str:
+    def check_exporter(cls, v: str) -> str:
         allowed = {"console", "otlp", "noop"}
         if v not in allowed:
             raise ValueError(
@@ -150,24 +151,24 @@ class TracingConfig(_ForbidExtra):
         return v
 
 
-class SagaConfig(_ForbidExtra):
+class SagaConfig(ForbidExtra):
     enabled: bool = True
 
 
-class SecretsConfig(_ForbidExtra):
+class SecretsConfig(ForbidExtra):
     backend: str = "env"
     url: str = ""
     token: str = ""
     region: str = ""
 
 
-class RecoveryConfig(_ForbidExtra):
+class RecoveryConfig(ForbidExtra):
     auto_restart: bool = True
     max_restarts: int = Field(default=3, ge=0)
     backoff_seconds: float = Field(default=1.0, ge=0)
 
 
-class FeeConfig(_ForbidExtra):
+class FeeConfig(ForbidExtra):
     schedules: dict[str, float] = Field(
         default_factory=lambda: {
             "late_payment": 25.0,
@@ -177,7 +178,7 @@ class FeeConfig(_ForbidExtra):
         })
 
 
-class GovernanceConfig(_ForbidExtra):
+class GovernanceConfig(ForbidExtra):
     param_ranges: dict[str, list[float]] = Field(
         default_factory=lambda: {
             "protocol_rate": [0.0, 1.0],
@@ -196,12 +197,12 @@ class GovernanceConfig(_ForbidExtra):
         })
 
 
-class AuditConfig(_ForbidExtra):
+class AuditConfig(ForbidExtra):
     max_ledger: int = Field(default=100000, ge=1)
     export_url: str = ""
 
 
-class Configuration(_ForbidExtra):
+class Configuration(ForbidExtra):
     bus: BusConfig = Field(default_factory=BusConfig)
     store: StoreConfig = Field(default_factory=StoreConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
@@ -228,10 +229,14 @@ class Configuration(_ForbidExtra):
         return config
 
     @classmethod
+    @classmethod
     def load(cls, path: str | None = None) -> Configuration:
         config = cls.default()
         env = os.environ.get("UNDERWRITE_ENV", "")
         for candidate in ([path] if path else []):
+            if candidate and ".." in Path(candidate).parts:
+                raise ConfigurationError(
+                    f"config path traversal detected: {candidate}")
             if candidate and Path(candidate).exists():
                 try:
                     with open(candidate) as fh:
@@ -311,7 +316,7 @@ class Configuration(_ForbidExtra):
             raise ConfigurationError(
                 f"unknown config keys: {', '.join(sorted(unknown))}")
 
-        def _merge_sub(model_cls, section, cfg, data_map):
+        def merge_sub(model_cls, section, cfg, data_map):
             unknown = set(data_map) - set(model_cls.model_fields)
             if unknown:
                 raise ConfigurationError(
@@ -330,40 +335,40 @@ class Configuration(_ForbidExtra):
                 raise ConfigurationError(msg) from exc
 
         if "bus" in data:
-            config.bus = _merge_sub(BusConfig, "bus", config.bus, data["bus"])
+            config.bus = merge_sub(BusConfig, "bus", config.bus, data["bus"])
         if "store" in data:
-            config.store = _merge_sub(StoreConfig, "store", config.store,
-                                      data["store"])
+            config.store = merge_sub(StoreConfig, "store", config.store,
+                                     data["store"])
         if "logging" in data:
             overrides = dict(data["logging"])
             if "format" in overrides and "log_format" not in overrides:
                 overrides["log_format"] = overrides.pop("format")
-            config.logging = _merge_sub(LoggingConfig, "logging",
-                                        config.logging, overrides)
+            config.logging = merge_sub(LoggingConfig, "logging", config.logging,
+                                       overrides)
         if "identity" in data:
-            config.identity = _merge_sub(IdentityConfig, "identity",
-                                         config.identity, data["identity"])
+            config.identity = merge_sub(IdentityConfig, "identity",
+                                        config.identity, data["identity"])
         if "authz" in data:
-            config.authz = _merge_sub(AuthzConfig, "authz", config.authz,
-                                      data["authz"])
+            config.authz = merge_sub(AuthzConfig, "authz", config.authz,
+                                     data["authz"])
         if "metrics" in data:
-            config.metrics = _merge_sub(MetricsConfig, "metrics",
-                                        config.metrics, data["metrics"])
+            config.metrics = merge_sub(MetricsConfig, "metrics", config.metrics,
+                                       data["metrics"])
         if "migration" in data:
-            config.migration = _merge_sub(MigrationConfig, "migration",
-                                          config.migration, data["migration"])
+            config.migration = merge_sub(MigrationConfig, "migration",
+                                         config.migration, data["migration"])
         if "tracing" in data:
-            config.tracing = _merge_sub(TracingConfig, "tracing",
-                                        config.tracing, data["tracing"])
+            config.tracing = merge_sub(TracingConfig, "tracing", config.tracing,
+                                       data["tracing"])
         if "saga" in data:
-            config.saga = _merge_sub(SagaConfig, "saga", config.saga,
-                                     data["saga"])
+            config.saga = merge_sub(SagaConfig, "saga", config.saga,
+                                    data["saga"])
         if "secrets" in data:
-            config.secrets = _merge_sub(SecretsConfig, "secrets",
-                                        config.secrets, data["secrets"])
+            config.secrets = merge_sub(SecretsConfig, "secrets", config.secrets,
+                                       data["secrets"])
         if "recovery" in data:
-            config.recovery = _merge_sub(RecoveryConfig, "recovery",
-                                         config.recovery, data["recovery"])
+            config.recovery = merge_sub(RecoveryConfig, "recovery",
+                                        config.recovery, data["recovery"])
         if "fee" in data:
             schedules = data["fee"].get("schedules")
             if schedules is not None and isinstance(schedules, dict):

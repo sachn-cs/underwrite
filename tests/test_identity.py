@@ -19,7 +19,7 @@ class TestIdentityService:
         store = MemoryStore()
         svc = IdentityService(service_id="identity", store=store)
         svc.handle(
-            Event(event_type="identity_register",
+            Event(event_type=EventType.IDENTITY_REGISTER,
                   source="test",
                   payload={"service_id": "risk"}))
         stored = store.get("identity:risk")
@@ -36,7 +36,7 @@ class TestIdentityService:
         svc = IdentityService(service_id="identity", store=store, bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type="identity_register",
+            Event(event_type=EventType.IDENTITY_REGISTER,
                   source="test",
                   payload={"service_id": "fraud"}))
         assert len(received) == 1
@@ -47,12 +47,12 @@ class TestIdentityService:
         store = MemoryStore()
         svc = IdentityService(service_id="identity", store=store)
         svc.handle(
-            Event(event_type="identity_register",
+            Event(event_type=EventType.IDENTITY_REGISTER,
                   source="test",
                   payload={"service_id": "audit"}))
         original = store.get("identity:audit")["public_key"]
         svc.handle(
-            Event(event_type="identity_rotate",
+            Event(event_type=EventType.IDENTITY_ROTATE,
                   source="test",
                   payload={"service_id": "audit"}))
         rotated = store.get("identity:audit")["public_key"]
@@ -66,7 +66,11 @@ class TestIdentityService:
         svc = IdentityService(service_id="identity", store=store, bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type="identity_rotate",
+            Event(event_type=EventType.IDENTITY_REGISTER,
+                  source="test",
+                  payload={"service_id": "gov"}))
+        svc.handle(
+            Event(event_type=EventType.IDENTITY_ROTATE,
                   source="test",
                   payload={"service_id": "gov"}))
         assert len(received) == 1
@@ -75,11 +79,11 @@ class TestIdentityService:
         store = MemoryStore()
         svc = IdentityService(service_id="identity", store=store)
         svc.handle(
-            Event(event_type="identity_register",
+            Event(event_type=EventType.IDENTITY_REGISTER,
                   source="test",
                   payload={"service_id": "a"}))
         svc.handle(
-            Event(event_type="identity_register",
+            Event(event_type=EventType.IDENTITY_REGISTER,
                   source="test",
                   payload={"service_id": "b"}))
         assert store.get("identity:a") is not None
@@ -102,7 +106,7 @@ class TestIdentityService:
         svc = IdentityService(service_id="identity")
         try:
             svc.handle(
-                Event(event_type="identity_register",
+                Event(event_type=EventType.IDENTITY_REGISTER,
                       source="test",
                       payload={"service_id": ""}))
         except ProtocolError:

@@ -18,7 +18,7 @@ class QuoteService(NanoService):
         Args:
             event: The incoming event. Only ``quote`` events are processed.
         """
-        if event.event_type != "quote":
+        if event.event_type != EventType.QUOTE:
             return
         p = event.payload
         principal: float = get_non_negative(p, "principal")

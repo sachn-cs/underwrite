@@ -14,7 +14,7 @@ from typing import Any
 from underwrite.__events__ import Event, EventType
 from underwrite.__exceptions__ import InfeasibleOperationError, ProtocolError
 from underwrite.services import NanoService
-from underwrite.validate import get_finite, get_non_empty, get_non_negative, get_positive
+from underwrite.validate import PayloadValidator
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,6 @@ class MechanismService(NanoService):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.__state_lock: threading.RLock = threading.RLock()
-        self.__io_lock: threading.Lock = threading.Lock()
         self.__seeds: set[str] = set()
         self.__parent: dict[str, str] = {}
         self.__children: dict[str, list[str]] = {}
@@ -45,6 +44,19 @@ class MechanismService(NanoService):
         self.__principal: dict[str, float] = {}
         self.__loans: dict[str, list[dict[str, Any]]] = {}
         self.__load_store()
+
+    # -- test-accessible hooks -----------------------------------------------
+
+    @property
+    def state_lock(self) -> threading.RLock:
+        return self.__state_lock
+
+    @property
+    def loans(self) -> dict[str, list[dict[str, Any]]]:
+        return self.__loans
+
+    def required_delegation(self, user: str, depth: int = 0) -> float:
+        return self.__required_delegation(user, depth)
 
     # -- public property accessors (immutable views) -------------------------
 
@@ -94,14 +106,22 @@ class MechanismService(NanoService):
         self.__loans = snap["loans"]
 
     def __persist_or_rollback(self, snap: dict[str, Any]) -> None:
-        """Persist state to store; roll back in-memory state on failure."""
+        """Persist state to store; roll back in-memory state on failure.
+
+        Serializes state under the state lock but writes to the store
+        outside the lock so that slow I/O does not block concurrent
+        state-machine operations.
+        """
+        with self.__state_lock:
+            serialized = self.__serialize_state()
         try:
-            self.__sync_store()
+            self.store.set("protocol:state", serialized)
         except Exception:
             logger.exception(
                 "failed to persist mechanism state, rolling back in-memory state"
             )
-            self.__restore(snap)
+            with self.__state_lock:
+                self.__restore(snap)
             raise
 
     def handle(self, event: Event) -> None:
@@ -132,8 +152,9 @@ class MechanismService(NanoService):
 
     def __require_user(self, user: str) -> None:
         """Raise ProtocolError if *user* is not a known participant."""
-        if user not in self.__earned:
-            raise ProtocolError(f"unknown user: {user}")
+        with self.__state_lock:
+            if user not in self.__earned:
+                raise ProtocolError(f"unknown user: {user}")
 
     def credit_limit(self, user: str) -> float:
         with self.__state_lock:
@@ -151,13 +172,13 @@ class MechanismService(NanoService):
     def __total_credit_limit(self) -> float:
         return sum(self.credit_limit(u) for u in self.__earned)
 
-    def __required_delegation(self, user: str, _depth: int = 0) -> float:
-        if _depth > 50:
+    def __required_delegation(self, user: str, depth: int = 0) -> float:
+        if depth > 50:
             raise ProtocolError(f"delegation chain too deep for {user}")
         if user in self.__seeds:
             return 0.0
         child_req = sum(
-            self.__required_delegation(c, _depth + 1)
+            self.__required_delegation(c, depth + 1)
             for c in self.__children.get(user, []))
         return max(
             0.0,
@@ -165,23 +186,25 @@ class MechanismService(NanoService):
             self.__earned.get(user, 0.0))
 
     def __path_to_seed(self, user: str) -> list[str]:
-        self.__require_user(user)
-        path: list[str] = [user]
-        current: str = user
-        seen: set[str] = {user}
-        while current not in self.__seeds:
-            current = self.__parent[current]
-            if current in seen:
-                raise ProtocolError(f"cycle detected for {user}")
-            seen.add(current)
-            path.append(current)
-        path.reverse()
-        return path
+        with self.__state_lock:
+            self.__require_user(user)
+            path: list[str] = [user]
+            current: str = user
+            seen: set[str] = {user}
+            while current not in self.__seeds:
+                current = self.__parent[current]
+                if current in seen:
+                    raise ProtocolError(f"cycle detected for {user}")
+                seen.add(current)
+                path.append(current)
+            path.reverse()
+            return path
 
     def __add_seed(self, event: Event) -> None:
+        v = PayloadValidator()
         p = event.payload
-        user: str = get_non_empty(p, "user")
-        budget: float = get_positive(p, "base_budget")
+        user: str = v.non_empty(p, "user")
+        budget: float = v.positive(p, "base_budget")
         with self.__state_lock:
             if user in self.__earned:
                 raise ProtocolError(f"user already exists: {user}")
@@ -191,20 +214,22 @@ class MechanismService(NanoService):
             self.__earned[user] = 0.0
             self.__principal[user] = 0.0
             self.__children[user] = []
-            self.__persist_or_rollback(snap)
+        self.__persist_or_rollback(snap)
         self.emit(EventType.SEED_ADDED, p, correlation_id=event.correlation_id)
 
     def __add_user(self, event: Event) -> None:
+        v = PayloadValidator()
         p = event.payload
-        sponsor: str = get_non_empty(p, "sponsor")
-        user: str = get_non_empty(p, "user")
-        amount: float = get_positive(p, "delegation_amount")
-        self.__require_user(sponsor)
-        if user in self.__earned:
-            raise ProtocolError(f"user already exists: {user}")
-        if self.credit_limit(sponsor) < amount:
-            raise InfeasibleOperationError("insufficient sponsor credit limit")
+        sponsor: str = v.non_empty(p, "sponsor")
+        user: str = v.non_empty(p, "user")
+        amount: float = v.positive(p, "delegation_amount")
         with self.__state_lock:
+            self.__require_user(sponsor)
+            if user in self.__earned:
+                raise ProtocolError(f"user already exists: {user}")
+            if self.credit_limit(sponsor) < amount:
+                raise InfeasibleOperationError(
+                    "insufficient sponsor credit limit")
             snap = self.__snapshot()
             self.__parent[user] = sponsor
             self.__children[user] = []
@@ -212,32 +237,31 @@ class MechanismService(NanoService):
             self.__delegation[(sponsor, user)] = amount
             self.__earned[user] = 0.0
             self.__principal[user] = 0.0
-            self.__persist_or_rollback(snap)
+        self.__persist_or_rollback(snap)
         self.emit(EventType.USER_ADDED, p, correlation_id=event.correlation_id)
 
     def __repay(self, event: Event) -> None:
+        v = PayloadValidator()
         p = event.payload
-        user: str = get_non_empty(p, "user")
-        delta: float = get_non_negative(p, "delta_earned")
-        self.__require_user(user)
+        user: str = v.non_empty(p, "user")
+        delta: float = v.non_negative(p, "delta_earned")
         with self.__state_lock:
+            self.__require_user(user)
             snap = self.__snapshot()
             self.__earned[user] += delta
-            self.__persist_or_rollback(snap)
+        self.__persist_or_rollback(snap)
         self.emit(EventType.REPAID, p, correlation_id=event.correlation_id)
 
     def __originate(self, event: Event) -> None:
+        v = PayloadValidator()
         p = event.payload
-        borrower: str = get_non_empty(p, "borrower")
-        principal: float = get_positive(p, "principal")
-        term: float = get_positive(p, "term")
-        dp: float = get_finite(p, "default_probability", 0.0)
-        pr: float = get_finite(p, "protocol_rate", 0.0)
-        mdr: float = get_finite(p, "max_delegation_rate", 0.0)
+        borrower: str = v.non_empty(p, "borrower")
+        principal: float = v.positive(p, "principal")
+        term: float = v.positive(p, "term")
+        dp: float = v.finite(p, "default_probability", 0.0)
+        pr: float = v.finite(p, "protocol_rate", 0.0)
+        mdr: float = v.finite(p, "max_delegation_rate", 0.0)
 
-        self.__require_user(borrower)
-        if self.credit_limit(borrower) < principal:
-            raise InfeasibleOperationError("principal exceeds credit limit")
         if pr < 0:
             raise ProtocolError("rates must be >= 0")
         if mdr < 0:
@@ -248,6 +272,9 @@ class MechanismService(NanoService):
         protocol_premium: float = pr * principal * term
         p["protocol_premium"] = protocol_premium
         with self.__state_lock:
+            self.__require_user(borrower)
+            if self.credit_limit(borrower) < principal:
+                raise InfeasibleOperationError("principal exceeds credit limit")
             snap = self.__snapshot()
             self.__principal[borrower] = self.__principal.get(borrower,
                                                               0.0) + principal
@@ -261,20 +288,20 @@ class MechanismService(NanoService):
                 "protocol_premium": protocol_premium,
             }
             self.__loans.setdefault(borrower, []).append(loan)
-            self.__persist_or_rollback(snap)
+        self.__persist_or_rollback(snap)
         self.emit(EventType.LOAN_ORIGINATED,
                   p,
                   correlation_id=event.correlation_id)
 
     def __default(self, event: Event) -> None:
+        v = PayloadValidator()
         p = event.payload
-        borrower: str = get_non_empty(p, "borrower")
-        self.__require_user(borrower)
-        borrower_principal: float = self.__principal.get(borrower, 0.0)
-        if borrower_principal <= 0:
-            raise InfeasibleOperationError("no outstanding principal")
-
+        borrower: str = v.non_empty(p, "borrower")
         with self.__state_lock:
+            self.__require_user(borrower)
+            borrower_principal: float = self.__principal.get(borrower, 0.0)
+            if borrower_principal <= 0:
+                raise InfeasibleOperationError("no outstanding principal")
             snap = self.__snapshot()
             absorb: float = min(self.__earned.get(borrower, 0.0),
                                 borrower_principal)
@@ -309,25 +336,26 @@ class MechanismService(NanoService):
 
             self.__principal[borrower] = 0.0
             self.__loans.pop(borrower, None)
-            self.__persist_or_rollback(snap)
+        self.__persist_or_rollback(snap)
         self.emit(EventType.DEFAULT_OCCURRED,
                   p,
                   correlation_id=event.correlation_id)
 
     def __revoke(self, event: Event) -> None:
+        v = PayloadValidator()
         p = event.payload
-        sponsor: str = get_non_empty(p, "sponsor")
-        child: str = get_non_empty(p, "child")
-        new_amount: float = get_non_negative(p, "new_delegation")
-        self.__require_user(sponsor)
-        self.__require_user(child)
-        if self.__parent.get(child) != sponsor:
-            raise ProtocolError("not the parent-child edge")
-        needed: float = self.__required_delegation(child)
-        if new_amount < needed:
-            raise InfeasibleOperationError(
-                "revocation would make subtree insolvent")
+        sponsor: str = v.non_empty(p, "sponsor")
+        child: str = v.non_empty(p, "child")
+        new_amount: float = v.non_negative(p, "new_delegation")
         with self.__state_lock:
+            self.__require_user(sponsor)
+            self.__require_user(child)
+            if self.__parent.get(child) != sponsor:
+                raise ProtocolError("not the parent-child edge")
+            needed: float = self.__required_delegation(child)
+            if new_amount < needed:
+                raise InfeasibleOperationError(
+                    "revocation would make subtree insolvent")
             edge: tuple[str, str] = (sponsor, child)
             if edge not in self.__delegation:
                 raise ProtocolError("unknown delegation edge")
@@ -339,22 +367,23 @@ class MechanismService(NanoService):
                         "insufficient credit limit to increase delegation")
             snap = self.__snapshot()
             self.__delegation[edge] = new_amount
-            self.__persist_or_rollback(snap)
+        self.__persist_or_rollback(snap)
         self.emit(EventType.REVOKED, p, correlation_id=event.correlation_id)
 
     def __quote(self, event: Event) -> None:
+        v = PayloadValidator()
         p = event.payload
-        borrower: str = get_non_empty(p, "borrower")
-        principal: float = get_finite(p, "principal", 0.0)
-        term: float = get_positive(p, "term")
-        dp: float = get_finite(p, "default_probability", 0.02)
-        pr: float = get_finite(p, "protocol_rate", 0.0)
+        borrower: str = v.non_empty(p, "borrower")
+        principal: float = v.finite(p, "principal", 0.0)
+        term: float = v.positive(p, "term")
+        dp: float = v.finite(p, "default_probability", 0.02)
+        pr: float = v.finite(p, "protocol_rate", 0.0)
 
         if not (0.0 < dp < 1.0):
             raise ProtocolError("default probability must be in (0,1)")
         clamped_dp: float = max(min(dp, 1.0 - EPSILON), EPSILON)
         clamped_term: float = max(term, EPSILON)
-        one_minus_dp: float = 1.0 - clamped_dp
+        one_minus_dp: float = max(1.0 - clamped_dp, EPSILON)
         break_even: float = min(clamped_dp / (one_minus_dp * clamped_term), 1e6)
         protocol_premium: float = pr * principal * term
         self.emit(EventType.QUOTE_CALCULATED, {
@@ -394,28 +423,32 @@ class MechanismService(NanoService):
                 b = loan.get("borrower", "")
                 self.__loans.setdefault(b, []).append(loan)
 
+    def __serialize_state(self) -> dict[str, Any]:
+        """Returns a serializable copy of all state (caller must hold __state_lock)."""
+        return {
+            "seeds":
+                sorted(self.__seeds),
+            "parent":
+                dict(self.__parent),
+            "children": {
+                k: list(v) for k, v in self.__children.items()
+            },
+            "delegation": {
+                f"{s}->{c}": v for (s, c), v in self.__delegation.items()
+            },
+            "base_budget":
+                dict(self.__base_budget),
+            "earned":
+                dict(self.__earned),
+            "principal":
+                dict(self.__principal),
+            "loans": [
+                loan for borrower_loans in self.__loans.values()
+                for loan in borrower_loans
+            ],
+        }
+
     def __sync_store(self) -> None:
         with self.__state_lock:
-            state: dict[str, Any] = {
-                "seeds":
-                    sorted(self.__seeds),
-                "parent":
-                    dict(self.__parent),
-                "children": {
-                    k: list(v) for k, v in self.__children.items()
-                },
-                "delegation": {
-                    f"{s}->{c}": v for (s, c), v in self.__delegation.items()
-                },
-                "base_budget":
-                    dict(self.__base_budget),
-                "earned":
-                    dict(self.__earned),
-                "principal":
-                    dict(self.__principal),
-                "loans": [
-                    loan for borrower_loans in self.__loans.values()
-                    for loan in borrower_loans
-                ],
-            }
-            self.store.set("protocol:state", state)
+            state = self.__serialize_state()
+        self.store.set("protocol:state", state)

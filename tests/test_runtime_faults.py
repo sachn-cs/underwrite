@@ -5,31 +5,28 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
-
 from underwrite.__runtime__ import Runtime
-from underwrite.services.base import NanoService
 
 
 class TestRuntimeOtlpTracer:
 
     def test_build_tracer_otlp_creates_tracer(self) -> None:
-        config = _config_with_otlp()
+        config = config_with_otlp()
         rt = Runtime(config)
         assert rt.tracer is not None
 
     def test_build_tracer_otlp_disabled_returns_none(self) -> None:
-        config = _config_with_otlp()
+        config = config_with_otlp()
         config.tracing.enabled = False
         rt = Runtime(config)
         assert rt.tracer is None
 
     def test_otlp_spans_are_exported(self) -> None:
-        config = _config_with_otlp()
+        config = config_with_otlp()
         rt = Runtime(config)
         mock_exporter = MagicMock()
         assert rt.tracer is not None
-        rt.tracer._Tracer__exporter = mock_exporter  # type: ignore[attr-defined]
+        rt.tracer.exporter = mock_exporter
 
         span = rt.tracer.start_span("test-op", tags={"key": "val"})
         rt.tracer.end_span(span)
@@ -41,7 +38,7 @@ class TestRuntimeOtlpTracer:
         assert exported_spans[0].tags["key"] == "val"
 
     def test_otlp_exporter_fallback_on_import_error(self) -> None:
-        config = _config_with_otlp()
+        config = config_with_otlp()
         rt = Runtime(config)
         assert rt.tracer is not None
         span = rt.tracer.start_span("fallback-test")
@@ -49,7 +46,7 @@ class TestRuntimeOtlpTracer:
         assert span.operation == "fallback-test"
 
 
-def _config_with_otlp() -> Any:
+def config_with_otlp() -> Any:
     from underwrite.__config__ import Configuration
     config = Configuration.default()
     config.tracing.enabled = True
@@ -62,15 +59,15 @@ class TestRuntimeRestartFailingServices:
     def test_restart_no_supervisor_returns_empty(self) -> None:
         from underwrite.__config__ import Configuration
         config = Configuration.default()
+        config.recovery.auto_restart = False
         rt = Runtime(config)
-        rt._Runtime__supervisor = None  # type: ignore[attr-defined]
         assert rt.restart_failing_services() == []
 
     def test_restart_returns_empty_when_no_failures(self) -> None:
         from underwrite.__config__ import Configuration
         config = Configuration.default()
         rt = Runtime(config)
-        if rt._Runtime__supervisor is not None:
-            rt._Runtime__supervisor.record_failure("svc-a")
-            rt._Runtime__supervisor.record_success("svc-a")
+        if rt.supervisor is not None:
+            rt.supervisor.record_failure("svc-a")
+            rt.supervisor.record_success("svc-a")
         assert rt.restart_failing_services() == []

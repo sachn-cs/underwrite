@@ -40,6 +40,9 @@ def discover_plugins() -> dict[str, type[NanoService]]:
     """
     plugins: dict[str, type[NanoService]] = {}
     for ep in importlib.metadata.entry_points(group=PLUGIN_ENTRYPOINT_GROUP):
+        logger.warning(
+            "loading plugin %s from %s — verify this package is trusted",
+            ep.name, ep.value)
         try:
             cls = ep.load()
             plugins[ep.name] = cls

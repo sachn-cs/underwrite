@@ -62,7 +62,8 @@ class TestFileStoreCorruption:
             with pytest.raises(StoreError):
                 store.get("key1")
         snapshot = metrics.snapshot()
-        assert any(k.startswith("store.io_error") for k in snapshot["counters"])
+        assert any(
+            k.startswith("store.io_error") for k in snapshot["counters"])
 
 
 class TestMemoryStore:
@@ -112,37 +113,40 @@ class TestMemoryStore:
 class MockStore(Store):
 
     def __init__(self) -> None:
-        self._data: dict = {}
+        self.data: dict = {}
 
     def get(self, key: str) -> Any | None:
-        return self._data.get(key)
+        return self.data.get(key)
 
     def set(self, key: str, value: Any) -> None:
-        self._data[key] = value
+        self.data[key] = value
 
     def delete(self, key: str) -> bool:
-        return self._data.pop(key, None) is not None
+        return self.data.pop(key, None) is not None
 
     def exists(self, key: str) -> bool:
-        return key in self._data
+        return key in self.data
 
     def keys(self, pattern: str | None = None) -> list:
-        return list(self._data.keys())
+        return list(self.data.keys())
 
 
 class MockReadStore(ReadStore):
 
     def __init__(self) -> None:
-        self._data: dict = {}
+        self.data: dict = {}
 
     def get(self, key: str) -> Any | None:
-        return self._data.get(key)
+        return self.data.get(key)
 
     def exists(self, key: str) -> bool:
-        return key in self._data
+        return key in self.data
+
+    def delete(self, key: str) -> bool:
+        return self.data.pop(key, None) is not None
 
     def keys(self, pattern: str | None = None) -> list:
-        return list(self._data.keys())
+        return list(self.data.keys())
 
 
 class TestCQRSStore:
@@ -150,7 +154,7 @@ class TestCQRSStore:
     def test_get_from_read_store(self) -> None:
         write = MockStore()
         read = MockReadStore()
-        read._data["k"] = "read_val"
+        read.data["k"] = "read_val"
         cqrs = CQRSStore(write, read)
         assert cqrs.get("k") == "read_val"
 
@@ -159,21 +163,21 @@ class TestCQRSStore:
         read = MockReadStore()
         cqrs = CQRSStore(write, read)
         cqrs.set("k", "write_val")
-        assert write._data["k"] == "write_val"
-        assert "k" not in read._data
+        assert write.data["k"] == "write_val"
+        assert "k" not in read.data
 
     def test_delete_from_write_store(self) -> None:
         write = MockStore()
-        write._data["k"] = "v"
+        write.data["k"] = "v"
         read = MockReadStore()
         cqrs = CQRSStore(write, read)
         assert cqrs.delete("k") is True
-        assert "k" not in write._data
+        assert "k" not in write.data
 
     def test_exists_from_read_store(self) -> None:
         write = MockStore()
         read = MockReadStore()
-        read._data["k"] = "v"
+        read.data["k"] = "v"
         cqrs = CQRSStore(write, read)
         assert cqrs.exists("k") is True
 

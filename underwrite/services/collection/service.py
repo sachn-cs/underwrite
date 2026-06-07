@@ -52,6 +52,7 @@ class CollectionService(NanoService):
             p = event.payload
             user: str = get_non_empty(p, "user")
             delta: float = get_finite(p, "delta_earned")
+            emit_data: dict[str, Any] | None = None
             with self.__lock:
                 loan = self.__loans.get(user)
                 if loan:
@@ -59,13 +60,15 @@ class CollectionService(NanoService):
                     if loan["paid"] >= loan["principal"]:
                         loan["status"] = "closed"
                     self.__sync_store()
-            if loan:
-                self.emit(EventType.COLLECTION_UPDATED, {
-                    "borrower": user,
-                    "paid": round(loan["paid"], 2),
-                    "remaining": round(loan["principal"] - loan["paid"], 2),
-                    "status": loan["status"],
-                },
+                    emit_data = {
+                        "borrower": user,
+                        "paid": round(loan["paid"], 2),
+                        "remaining": round(loan["principal"] - loan["paid"], 2),
+                        "status": loan["status"],
+                    }
+            if emit_data is not None:
+                self.emit(EventType.COLLECTION_UPDATED,
+                          emit_data,
                           correlation_id=event.correlation_id)
 
     def get(self, borrower: str) -> dict[str, Any] | None:

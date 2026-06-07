@@ -10,6 +10,7 @@ __all__ = [
     "PII_FIELD_PATTERNS",
     "PII_REDACTED",
     "PII_VALUE_PATTERNS",
+    "PIISanitizer",
     "contains_pii_value",
     "is_pii_field",
     "redact_payload",
@@ -45,39 +46,75 @@ PII_VALUE_PATTERNS: list[str] = [
 PII_REDACTED: str = "***REDACTED***"
 
 
+class PIISanitizer:
+    """Domain service for PII detection and redaction.
+
+    Inspects payload dictionaries for known PII field names and value
+    patterns, returning a deep copy with sensitive values replaced by a
+    redaction sentinel.
+    """
+
+    @staticmethod
+    def is_sensitive_field(key: str) -> bool:
+        """Returns True if the key matches a known PII field name."""
+        lower = key.lower().replace("_", "").replace("-", "")
+        for pattern in PII_FIELD_PATTERNS:
+            if pattern.replace("_", "") in lower:
+                return True
+        return False
+
+    @staticmethod
+    def contains_sensitive_value(value: str) -> bool:
+        """Returns True if the string value matches a PII pattern."""
+        for pat in PII_VALUE_PATTERNS:
+            if re.search(pat, value):
+                return True
+        return False
+
+    @staticmethod
+    def sanitize(payload: dict[str, Any]) -> dict[str, Any]:
+        """Returns a deep copy of *payload* with PII fields and values redacted.
+
+        Args:
+            payload: The source data dictionary.
+
+        Returns:
+            A new dictionary with sensitive content replaced by ``PII_REDACTED``.
+        """
+        result: dict[str, Any] = {}
+        for key, value in payload.items():
+            if PIISanitizer.is_sensitive_field(key):
+                result[key] = PII_REDACTED
+            elif isinstance(
+                    value,
+                    str) and PIISanitizer.contains_sensitive_value(value):
+                result[key] = PII_REDACTED
+            elif isinstance(value, dict):
+                result[key] = PIISanitizer.sanitize(value)
+            elif isinstance(value, list):
+                result[key] = [
+                    PIISanitizer.sanitize(item) if isinstance(item, dict) else
+                    PII_REDACTED if isinstance(item, str) and
+                    PIISanitizer.contains_sensitive_value(item) else item
+                    for item in value
+                ]
+            else:
+                result[key] = value
+        return result
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible standalone function wrappers
+# ---------------------------------------------------------------------------
+
+
 def is_pii_field(key: str) -> bool:
-    """Returns True if the key matches a known PII field name."""
-    lower = key.lower().replace("_", "").replace("-", "")
-    for pattern in PII_FIELD_PATTERNS:
-        if pattern.replace("_", "") in lower:
-            return True
-    return False
+    return PIISanitizer.is_sensitive_field(key)
 
 
 def contains_pii_value(value: str) -> bool:
-    """Returns True if the string value matches a PII pattern."""
-    for pat in PII_VALUE_PATTERNS:
-        if re.search(pat, value):
-            return True
-    return False
+    return PIISanitizer.contains_sensitive_value(value)
 
 
 def redact_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """Returns a copy of payload with PII fields and values redacted."""
-    result: dict[str, Any] = {}
-    for key, value in payload.items():
-        if is_pii_field(key):
-            result[key] = PII_REDACTED
-        elif isinstance(value, str) and contains_pii_value(value):
-            result[key] = PII_REDACTED
-        elif isinstance(value, dict):
-            result[key] = redact_payload(value)
-        elif isinstance(value, list):
-            result[key] = [
-                redact_payload(item) if isinstance(item, dict) else PII_REDACTED
-                if isinstance(item, str) and contains_pii_value(item) else item
-                for item in value
-            ]
-        else:
-            result[key] = value
-    return result
+    return PIISanitizer.sanitize(payload)

@@ -27,7 +27,7 @@ from underwrite.__store__ import MemoryStore, Store
 logger = logging.getLogger(__name__)
 
 
-class _Emitter(Protocol):
+class Emitter(Protocol):
     """Protocol for saga event emitters (typically a NanoService)."""
 
     def emit(self,
@@ -138,7 +138,7 @@ class SagaOrchestrator:
     def __init__(self, store: Store | None = None) -> None:
         self.__lock: threading.RLock = threading.RLock()
         self.__sagas: dict[str, Saga] = {}
-        self.__emitters: dict[str, _Emitter] = {}
+        self.__emitters: dict[str, Emitter] = {}
         self.__store: Store = store or MemoryStore()
         self.__load_sagas()
 
@@ -172,7 +172,7 @@ class SagaOrchestrator:
         except Exception:
             logger.exception("failed to remove saga %s from store", saga_id)
 
-    def register_emitter(self, saga_name: str, emitter: _Emitter) -> None:
+    def register_emitter(self, saga_name: str, emitter: Emitter) -> None:
         """Registers an event emitter (NanoService) for a saga type."""
         with self.__lock:
             self.__emitters[saga_name] = emitter
@@ -216,12 +216,12 @@ class SagaOrchestrator:
             ``True`` if the step succeeded, ``False`` otherwise.
         """
         idem_key = self.__step_idempotency_key(saga_id, step_index)
-        if self.__store.get(idem_key) is not None:
-            logger.debug(
-                "saga %s step %d already completed (idempotency), skipping",
-                saga_id, step_index)
-            return True
         with self.__lock:
+            if self.__store.get(idem_key) is not None:
+                logger.debug(
+                    "saga %s step %d already completed (idempotency), skipping",
+                    saga_id, step_index)
+                return True
             saga = self.__sagas.get(saga_id)
             if not saga or saga.status != "started":
                 logger.warning("saga %s not found or not started (status=%s)",
@@ -269,13 +269,11 @@ class SagaOrchestrator:
             if not saga:
                 logger.warning("execute_all: saga %s not found", saga_id)
                 return False
-        for i in range(len(saga.steps)):
-            if not self.execute_step(saga_id, i):
-                return False
-        with self.__lock:
-            if saga_id in self.__sagas:
-                self.__sagas[saga_id].status = "completed"
-                self.__persist_saga(self.__sagas[saga_id])
+            for i in range(len(saga.steps)):
+                if not self.execute_step(saga_id, i):
+                    return False
+            saga.status = "completed"
+            self.__persist_saga(saga)
         return True
 
     def __rollback(self, saga_id: str, failed_step: int, error: str) -> None:
@@ -355,22 +353,18 @@ class SagaOrchestrator:
                 if i not in completed:
                     next_idx = i
                     break
-        # Execute all steps starting from next_idx
         if next_idx < 0:
             return True  # all steps already completed
         from_index = next_idx
+        if from_index == 0:
+            return self.execute_all(saga_id)
         with self.__lock:
             saga_ref = self.__sagas.get(saga_id)
             if not saga_ref:
                 return False
-        # Call execute_all if starting from step 0, else execute remaining
-        if from_index == 0:
-            return self.execute_all(saga_id)
-        for i in range(from_index, len(saga.steps)):
-            if not self.execute_step(saga_id, i):
-                return False
-        with self.__lock:
-            if saga_id in self.__sagas:
-                self.__sagas[saga_id].status = "completed"
-                self.__persist_saga(self.__sagas[saga_id])
+            for i in range(from_index, len(saga_ref.steps)):
+                if not self.execute_step(saga_id, i):
+                    return False
+            saga_ref.status = "completed"
+            self.__persist_saga(saga_ref)
         return True

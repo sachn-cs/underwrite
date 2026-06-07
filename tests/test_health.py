@@ -33,7 +33,7 @@ class TestHealthRegistry:
                     (_ for _ in ()).throw(RuntimeError("boom")))
         status = hr.status()
         assert status["ok"] is False
-        assert "boom" in status["checks"]["crashy"]["detail"]
+        assert "RuntimeError" in status["checks"]["crashy"]["detail"]
 
     def test_unregister(self) -> None:
         hr = HealthRegistry()
