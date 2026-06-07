@@ -8,9 +8,6 @@ Tests run multiple threads concurrently to expose data races in:
 from __future__ import annotations
 
 import threading
-import time
-
-import pytest
 
 from underwrite.__bus__ import LocalBus
 from underwrite.__events__ import Event
@@ -41,7 +38,6 @@ class TestLocalBusConcurrency:
 
     def test_concurrent_subscribe_unsubscribe(self) -> None:
         bus = LocalBus()
-        sids: list[str] = []
 
         def sub_unsub() -> None:
             for _ in range(50):
@@ -80,7 +76,8 @@ class TestLocalBusConcurrency:
 class TestKeyRotationManagerConcurrency:
     """Verify KeyRotationManager thread safety under concurrent rotation."""
 
-    def test_concurrent_get_or_create_returns_consistent_identity(self) -> None:
+    def test_concurrent_get_or_create_returns_consistent_identity(
+            self) -> None:
         krm = KeyRotationManager(ttl_seconds=99999)
         results: list[str] = []
 
@@ -127,7 +124,7 @@ class TestKeyRotationManagerConcurrency:
 class TestMechanismServiceConcurrency:
     """Verify MechanismService thread safety under concurrent commands."""
 
-    def _make_mechanism(self, store):
+    def __make_mechanism(self, store):
         from underwrite.services.mechanism.service import MechanismService
 
         bus = LocalBus()
@@ -139,7 +136,7 @@ class TestMechanismServiceConcurrency:
 
     def test_concurrent_add_seed(self) -> None:
         store = MemoryStore()
-        mech = self._make_mechanism(store)
+        mech = self.__make_mechanism(store)
         errors: list[Exception] = []
 
         def add_seed(i: int) -> None:
@@ -158,7 +155,7 @@ class TestMechanismServiceConcurrency:
                 errors.append(e)
 
         threads = [
-            threading.Thread(target=add_seed, args=(i,)) for i in range(20)
+            threading.Thread(target=add_seed, args=(i, )) for i in range(20)
         ]
         for t in threads:
             t.start()
@@ -169,7 +166,7 @@ class TestMechanismServiceConcurrency:
 
     def test_concurrent_add_user_and_originate(self) -> None:
         store = MemoryStore()
-        mech = self._make_mechanism(store)
+        mech = self.__make_mechanism(store)
         # Set up a seed first
         seed_ev = Event(
             event_type="mechanism",
@@ -201,7 +198,7 @@ class TestMechanismServiceConcurrency:
                 errors.append(e)
 
         threads = [
-            threading.Thread(target=add_user, args=(i,)) for i in range(20)
+            threading.Thread(target=add_user, args=(i, )) for i in range(20)
         ]
         for t in threads:
             t.start()
@@ -211,7 +208,7 @@ class TestMechanismServiceConcurrency:
 
     def test_credit_limit_does_not_race(self) -> None:
         store = MemoryStore()
-        mech = self._make_mechanism(store)
+        mech = self.__make_mechanism(store)
         # Set up seed + user
         mech.handle(
             Event(

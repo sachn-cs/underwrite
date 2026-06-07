@@ -24,7 +24,6 @@ import concurrent.futures
 import logging
 import threading
 import time
-import traceback
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -62,7 +61,7 @@ class DeadLetterQueue:
                  max_records: int = 10000,
                  store: Store | None = None,
                  sync_interval: int = 10) -> None:
-        """Initialises a bounded dead-letter queue.
+        """Initializes a bounded dead-letter queue.
 
         Args:
             max_records: Maximum entries before oldest are evicted.
@@ -81,7 +80,7 @@ class DeadLetterQueue:
     # -- serialisation helpers -----------------------------------------------
 
     @staticmethod
-    def _event_to_dict(event: Event) -> dict[str, Any]:
+    def event_to_dict(event: Event) -> dict[str, Any]:
         return {
             "event_id": event.event_id,
             "event_type": event.event_type,
@@ -91,25 +90,27 @@ class DeadLetterQueue:
             "payload": event.payload,
             "correlation_id": event.correlation_id,
             "signature": event.signature,
+            "trace_id": event.trace_id,
+            "parent_span_id": event.parent_span_id,
         }
 
     @staticmethod
-    def _event_from_dict(d: dict[str, Any]) -> Event:
+    def event_from_dict(d: dict[str, Any]) -> Event:
         return Event(**d)
 
     @staticmethod
-    def _record_to_dict(r: DeadLetterRecord) -> dict[str, Any]:
+    def record_to_dict(r: DeadLetterRecord) -> dict[str, Any]:
         return {
-            "event": DeadLetterQueue._event_to_dict(r.event),
+            "event": DeadLetterQueue.event_to_dict(r.event),
             "error": r.error,
             "subscriber_id": r.subscriber_id,
             "timestamp": r.timestamp,
         }
 
     @staticmethod
-    def _record_from_dict(d: dict[str, Any]) -> DeadLetterRecord:
+    def record_from_dict(d: dict[str, Any]) -> DeadLetterRecord:
         return DeadLetterRecord(
-            event=DeadLetterQueue._event_from_dict(d["event"]),
+            event=DeadLetterQueue.event_from_dict(d["event"]),
             error=d["error"],
             subscriber_id=d["subscriber_id"],
             timestamp=d["timestamp"],
@@ -128,7 +129,7 @@ class DeadLetterQueue:
                 skipped = 0
                 for r in raw:
                     if isinstance(r, dict) and "event" in r:
-                        valid.append(self._record_from_dict(r))
+                        valid.append(self.record_from_dict(r))
                     else:
                         skipped += 1
                 if skipped:
@@ -147,7 +148,7 @@ class DeadLetterQueue:
             return
         try:
             store.set("bus:dlq",
-                      [self._record_to_dict(r) for r in self.__records])
+                      [self.record_to_dict(r) for r in self.__records])
         except Exception:
             logger.exception("failed to persist DLQ records to store")
 
@@ -168,17 +169,17 @@ class DeadLetterQueue:
             error: Description of the failure.
             subscriber_id: Identifier of the subscriber that failed.
         """
+        should_sync = False
         with self.__lock:
             if len(self.__records) >= self.__max_records:
                 self.__records.pop(0)
             self.__records.append(
-                DeadLetterRecord(
-                    event=event,
-                    error=error,
-                    subscriber_id=subscriber_id,
-                ))
-            if self.__should_sync():
-                self.__sync_store()
+                DeadLetterRecord(event=event,
+                                 error=error,
+                                 subscriber_id=subscriber_id))
+            should_sync = self.__should_sync()
+        if should_sync:
+            self.__sync_store()
 
     @property
     def records(self) -> list[DeadLetterRecord]:
@@ -286,16 +287,16 @@ class RateLimiter:
     """Token-bucket rate limiter per key."""
 
     def __init__(self, max_rate: float = 100.0, interval: float = 1.0) -> None:
-        """Initialises a token-bucket rate limiter.
+        """Initializes a token-bucket rate limiter.
 
         Args:
             max_rate: Maximum operations per *interval*.
             interval: Time window in seconds.
         """
-        self._max_rate: float = max_rate
-        self._interval: float = interval
-        self._lock: threading.Lock = threading.Lock()
-        self._buckets: dict[str, float] = {}
+        self.max_rate: float = max_rate
+        self.interval: float = interval
+        self.__lock: threading.Lock = threading.Lock()
+        self.__buckets: dict[str, float] = {}
 
     def check(self, key: str) -> bool:
         """Checks whether *key* is allowed under the rate limit.
@@ -306,14 +307,14 @@ class RateLimiter:
         Returns:
             True if the operation is allowed, False otherwise.
         """
-        if self._max_rate == 0:
+        if self.max_rate == 0:
             return True
         now = time.monotonic()
-        with self._lock:
-            last = self._buckets.get(key, 0.0)
-            if now - last < self._interval / self._max_rate:
+        with self.__lock:
+            last = self.__buckets.get(key, 0.0)
+            if now - last < self.interval / self.max_rate:
                 return False
-            self._buckets[key] = now
+            self.__buckets[key] = now
             return True
 
     def assert_allowed(self, key: str) -> None:
@@ -344,7 +345,7 @@ class DistributedRateLimiter(RateLimiter):
         store: Store | None = None,
         prefix: str = "ratelimit",
     ) -> None:
-        """Initialises a distributed rate limiter.
+        """Initializes a distributed rate limiter.
 
         Args:
             max_rate: Maximum operations per *interval*.
@@ -362,11 +363,13 @@ class DistributedRateLimiter(RateLimiter):
     def check(self, key: str) -> bool:
         if self.__store is None:
             return super().check(key)
+        if not super().check(key):
+            return False
         now = time.time()
         store_key = f"{self.__prefix}:{key}"
         raw = self.__store.get(store_key)
         last: float = raw if isinstance(raw, (int, float)) else 0.0
-        if now - last < self._interval / self._max_rate:
+        if now - last < self.interval / self.max_rate:
             return False
         self.__store.set(store_key, now)
         return True
@@ -379,7 +382,7 @@ class IdempotencyGuard:
     """
 
     def __init__(self, max_ids_per_handler: int = 100000) -> None:
-        """Initialises an empty idempotency guard.
+        """Initializes an empty idempotency guard.
 
         Args:
             max_ids_per_handler: Maximum event IDs tracked per handler
@@ -469,7 +472,7 @@ class LocalBus(EventBus):
                  max_futures: int = 10000,
                  max_buffer_size: int = 0,
                  store: Store | None = None) -> None:
-        """Initialises the local bus.
+        """Initializes the local bus.
 
         Args:
             rate_limit: Max events per second per subscriber (0 = unlimited).
@@ -563,6 +566,14 @@ class LocalBus(EventBus):
             self.__running = True
             self.__flush()
 
+    def __handle_future(self, f: concurrent.futures.Future) -> None:
+        try:
+            exc = f.exception(timeout=0)
+        except concurrent.futures.TimeoutError:
+            return
+        if exc is not None:
+            logger.warning("future %s raised: %s", f, exc)
+
     def stop(self) -> None:
         """Stops the bus, clears handlers and buffer, and shuts down the executor."""
         with self.__lock:
@@ -570,14 +581,15 @@ class LocalBus(EventBus):
             self.__handlers.clear()
             self.__buffer.clear()
         if self.__executor:
-            for f in self.__futures:
-                if not f.done():
-                    try:
-                        f.result(timeout=5)
-                    except Exception:
-                        logger.debug("future %s timed out on stop", f)
-                        logger.debug("future details", exc_info=True)
-            self.__executor.shutdown(wait=True)
+            done, not_done = concurrent.futures.wait(
+                self.__futures,
+                timeout=5,
+                return_when=concurrent.futures.ALL_COMPLETED)
+            if not_done:
+                logger.warning(
+                    "%d future(s) did not complete within stop timeout",
+                    len(not_done))
+            self.__executor.shutdown(wait=False)
         self.__futures.clear()
 
     def __flush(self) -> None:
@@ -599,6 +611,7 @@ class LocalBus(EventBus):
                 if self.__executor:
                     future = self.__executor.submit(self.__dispatch, handler,
                                                     event, sid)
+                    future.add_done_callback(self.__handle_future)
                     self.__futures.append(future)
                     self.__trim_futures()
                 else:
@@ -610,9 +623,11 @@ class LocalBus(EventBus):
         done = [f for f in self.__futures if f.done()]
         for f in done:
             try:
-                f.result(timeout=0)
-            except Exception:
-                logger.debug("future %s raised on result", f, exc_info=True)
+                exc = f.exception(timeout=0)
+            except concurrent.futures.TimeoutError:
+                continue
+            if exc is not None:
+                logger.warning("future %s raised: %s", f, exc)
         self.__futures = [f for f in self.__futures if not f.done()]
 
     def __dispatch_sync(self, handler: Callable[[Event], None], event: Event,
@@ -621,10 +636,9 @@ class LocalBus(EventBus):
             handler(event)
             self.__circuit_breaker.record_success(sid)
         except Exception as exc:
-            logger.warning("subscriber %s failed on %s (%s), sent to DLQ", sid,
-                           event.event_type, exc)
-            tb = traceback.format_exc()
-            self.__dlq.put(event, f"{exc}\n{tb}", sid)
+            logger.exception("subscriber %s failed on %s (%s), sent to DLQ",
+                             sid, event.event_type, exc)
+            self.__dlq.put(event, f"{type(exc).__name__}: {exc}", sid)
             self.__circuit_breaker.record_failure(sid)
 
     def __dispatch(self, handler: Callable[[Event], None], event: Event,
@@ -633,10 +647,9 @@ class LocalBus(EventBus):
             handler(event)
             self.__circuit_breaker.record_success(sid)
         except Exception as exc:
-            logger.warning("subscriber %s failed on %s (%s), sent to DLQ", sid,
-                           event.event_type, exc)
-            tb = traceback.format_exc()
-            self.__dlq.put(event, f"{exc}\n{tb}", sid)
+            logger.exception("subscriber %s failed on %s (%s), sent to DLQ",
+                             sid, event.event_type, exc)
+            self.__dlq.put(event, f"{type(exc).__name__}: {exc}", sid)
             self.__circuit_breaker.record_failure(sid)
 
 

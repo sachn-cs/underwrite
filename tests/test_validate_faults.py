@@ -143,13 +143,11 @@ class TestRequireInRange:
         with pytest.raises(ProtocolError, match="must be in"):
             require_in_range(1.1, 0.0, 1.0, "prob")
 
-    def test_raises_for_value_at_lower_bound_open_interval(self) -> None:
-        with pytest.raises(ProtocolError, match="must be in"):
-            require_in_range(0.0, 0.0, 1.0, "prob")
+    def test_accepts_value_at_lower_bound(self) -> None:
+        assert require_in_range(0.0, 0.0, 1.0, "prob") == 0.0
 
-    def test_raises_for_value_at_upper_bound_open_interval(self) -> None:
-        with pytest.raises(ProtocolError, match="must be in"):
-            require_in_range(1.0, 0.0, 1.0, "prob")
+    def test_accepts_value_at_upper_bound(self) -> None:
+        assert require_in_range(1.0, 0.0, 1.0, "prob") == 1.0
 
     def test_raises_for_non_finite_value(self) -> None:
         with pytest.raises(ProtocolError, match="must be finite"):
@@ -295,7 +293,7 @@ class TestGetNonNegative:
 
 
 class TestGetInRange:
-    """Tests for get_in_range — extracts value in open interval from payload."""
+    """Tests for get_in_range — extracts value in closed interval from payload."""
 
     def test_extracts_value_in_range(self) -> None:
         payload = {"score": 0.75}
@@ -313,13 +311,13 @@ class TestGetInRange:
         with pytest.raises(ProtocolError, match="must be in"):
             get_in_range({"score": -0.1}, "score", 0.0, 1.0, default=0.5)
 
-    def test_raises_for_boundary_lower(self) -> None:
-        with pytest.raises(ProtocolError, match="must be in"):
-            get_in_range({"score": 0.0}, "score", 0.0, 1.0, default=0.5)
+    def test_accepts_boundary_lower(self) -> None:
+        assert get_in_range({"score": 0.0}, "score", 0.0, 1.0,
+                            default=0.5) == 0.0
 
-    def test_raises_for_boundary_upper(self) -> None:
-        with pytest.raises(ProtocolError, match="must be in"):
-            get_in_range({"score": 1.0}, "score", 0.0, 1.0, default=0.5)
+    def test_accepts_boundary_upper(self) -> None:
+        assert get_in_range({"score": 1.0}, "score", 0.0, 1.0,
+                            default=0.5) == 1.0
 
     def test_raises_for_non_finite(self) -> None:
         with pytest.raises(ProtocolError, match="must be finite"):

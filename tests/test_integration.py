@@ -12,11 +12,12 @@ from underwrite.__runtime__ import Runtime
 from underwrite.__store__ import MemoryStore
 
 
-def _memory_runtime() -> Runtime:
+def memory_runtime() -> Runtime:
     """Returns a Runtime backed by MemoryStore for test isolation."""
     cfg = Configuration.default()
     cfg.store.backend = "memory"
     cfg.metrics.enabled = False
+    cfg.authz.enabled = False
     return Runtime(config=cfg)
 
 
@@ -24,7 +25,9 @@ class TestRuntimeIntegration:
     """End-to-end tests using the full Runtime."""
 
     def test_start_stop_services(self) -> None:
-        rt = Runtime()
+        cfg = Configuration.default()
+        cfg.authz.enabled = False
+        rt = Runtime(config=cfg)
         rt.register("mechanism")
         rt.wire("mechanism")
         rt.start(["mechanism"])
@@ -33,7 +36,7 @@ class TestRuntimeIntegration:
         assert rt.get("mechanism").is_running is False
 
     def test_mechanism_emits_seed_added(self) -> None:
-        rt = _memory_runtime()
+        rt = memory_runtime()
         bus = rt.bus
         received: list[Event] = []
         bus.subscribe("*", lambda e: received.append(e))
@@ -53,7 +56,9 @@ class TestRuntimeIntegration:
         assert any(e.event_type == EventType.SEED_ADDED for e in received)
 
     def test_store_persists_across_start_stop(self) -> None:
-        rt = Runtime()
+        cfg = Configuration.default()
+        cfg.authz.enabled = False
+        rt = Runtime(config=cfg)
         rt.register("mechanism")
         rt.wire("mechanism")
         rt.start(["mechanism"])
@@ -72,7 +77,9 @@ class TestRuntimeIntegration:
         assert "bank" in orig_state["seeds"]
 
     def test_bus_delivers_to_subscribed_service(self) -> None:
-        rt = Runtime()
+        cfg = Configuration.default()
+        cfg.authz.enabled = False
+        rt = Runtime(config=cfg)
         bus = rt.bus
         rt.register("audit")
         rt.wire("audit")
@@ -90,7 +97,9 @@ class TestRuntimeIntegration:
         assert audit.ledger[0]["event_type"] == EventType.LOAN_ORIGINATED
 
     def test_mechanism_rejects_with_bus(self) -> None:
-        rt = Runtime()
+        cfg = Configuration.default()
+        cfg.authz.enabled = False
+        rt = Runtime(config=cfg)
         bus = rt.bus
         received: list[Event] = []
         bus.subscribe("mechanism.rejected", lambda e: received.append(e))
@@ -111,7 +120,7 @@ class TestRuntimeIntegration:
         assert received[0].payload["reason"] is not None
 
     def test_full_loan_lifecycle(self) -> None:
-        rt = _memory_runtime()
+        rt = memory_runtime()
         bus = rt.bus
         all_events: list[Event] = []
         bus.subscribe("*", lambda e: all_events.append(e))
@@ -184,7 +193,7 @@ class TestStoreIntegration:
 class TestCrossServiceCommunication:
 
     def test_two_services_share_store(self) -> None:
-        rt = _memory_runtime()
+        rt = memory_runtime()
         bus = rt.bus
         bus.start()
         rt.register("mechanism")

@@ -84,8 +84,8 @@ class TestStatementService:
     def test_includes_total_paid(self) -> None:
         store = MemoryStore()
         store.set("loan:L5", {"outstanding": 20000})
-        store.set("payment:L5:1", {"loan_id": "L5", "amount": 1000})
-        store.set("payment:L5:2", {"loan_id": "L5", "amount": 500})
+        store.set("payment:pay_L5_1", {"loan_id": "L5", "amount": 1000})
+        store.set("payment:pay_L5_2", {"loan_id": "L5", "amount": 500})
         svc = StatementService(service_id="statement", store=store)
         svc.handle(
             Event(event_type="statement.generate",

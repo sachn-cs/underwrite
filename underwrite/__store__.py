@@ -21,19 +21,23 @@ import logging
 import os
 import threading
 from abc import ABC, abstractmethod
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from underwrite.__circuit__ import CircuitBreaker, RetryPolicy
 from underwrite.__exceptions__ import MigrationError, StoreError
 
+_log = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from underwrite.__migrate__ import MigrationPlan
 
-_FILE_TIMEOUT_MSG: str = "store operation timed out after %.1fs on %s"
+FILE_TIMEOUT_MSG: str = "store operation timed out after %.1fs on %s"
 
 
-class _Connection(Protocol):
+class Connection(Protocol):
     """Minimal protocol for a DB-API 2.0 connection."""
 
     def cursor(self) -> Any:
@@ -103,6 +107,10 @@ class ReadStore(ABC):
         """Returns ``True`` if *key* is present."""
 
     @abstractmethod
+    def delete(self, key: str) -> bool:
+        """Removes *key*.  Returns ``True`` if it existed."""
+
+    @abstractmethod
     def keys(self,
              pattern: str | None = None,
              limit: int = 0,
@@ -118,11 +126,17 @@ class ReadStore(ABC):
 
 
 class MemoryStore(Store):
-    """Thread-safe in-memory store.  Data is lost on process exit."""
+    """Thread-safe in-memory store.  Data is lost on process exit.
 
-    def __init__(self) -> None:
+    Bounded by *max_entries* — when the limit is reached the oldest
+    entries (by insertion order) are evicted to stay within budget.
+    """
+
+    def __init__(self, max_entries: int = 0) -> None:
         self.__lock: threading.Lock = threading.Lock()
         self.__data: dict[str, Any] = {}
+        self.__max_entries: int = max_entries
+        self.__keys: list[str] = []  # insertion-order tracking for eviction
 
     def get(self, key: str) -> Any | None:
         """Returns the value for *key*, or ``None``."""
@@ -132,6 +146,12 @@ class MemoryStore(Store):
     def set(self, key: str, value: Any) -> None:
         """Persists *value* under *key*."""
         with self.__lock:
+            is_new: bool = key not in self.__data
+            if is_new and self.__max_entries > 0:
+                while len(self.__keys) >= self.__max_entries:
+                    evicted = self.__keys.pop(0)
+                    self.__data.pop(evicted, None)
+                self.__keys.append(key)
             self.__data[key] = value
 
     def delete(self, key: str) -> bool:
@@ -200,7 +220,14 @@ class FileStore(Store):
             self.__executor = None
 
     def __del__(self) -> None:
-        self.shutdown(wait=False)
+        exec = self.__executor
+        if exec is not None:
+            self.__executor = None
+            try:
+                exec.shutdown(wait=False)
+            except Exception:
+                self.__logger.warning(
+                    "FileStore executor shutdown failed during GC")
 
     def __timeout(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
         """Runs *fn* with the configured timeout via the executor."""
@@ -211,7 +238,7 @@ class FileStore(Store):
             return fut.result(timeout=self.__operation_timeout)
         except concurrent.futures.TimeoutError:
             raise TimeoutError(
-                _FILE_TIMEOUT_MSG %
+                FILE_TIMEOUT_MSG %
                 (self.__operation_timeout, fn.__name__)) from None
 
     def __circuit_call(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
@@ -226,33 +253,32 @@ class FileStore(Store):
             StoreError: If the file exists but is corrupted or unreadable.
         """
 
-        def _read() -> Any | None:
+        def read() -> Any | None:
             path = self.__path(key)
             if not path.exists():
                 return None
             try:
                 with open(path) as fh:
                     return json.load(fh)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
                 self.__logger.exception("corrupted store file %s", path)
                 if self.__metrics:
                     self.__metrics.increment("store.corruption",
                                              {"path": path.name})
-                raise StoreError(
-                    f"corrupted store file for key {key}") from None
-            except OSError:
+                raise StoreError(f"corrupted store file for key {key}") from e
+            except OSError as e:
                 self.__logger.exception("I/O error reading store file %s", path)
                 if self.__metrics:
                     self.__metrics.increment("store.io_error",
                                              {"path": path.name})
-                raise StoreError(f"I/O error reading store key {key}") from None
+                raise StoreError(f"I/O error reading store key {key}") from e
 
-        return self.__circuit_call(_read)
+        return self.__circuit_call(read)
 
     def set(self, key: str, value: Any) -> None:
         """Persists *value* under *key* as a JSON file (atomic write)."""
 
-        def _write() -> None:
+        def write() -> None:
             path = self.__path(key)
             path.parent.mkdir(parents=True, exist_ok=True)
             tmp = path.with_suffix(f".tmp.{os.getpid()}")
@@ -264,12 +290,12 @@ class FileStore(Store):
                         os.fsync(fh.fileno())
                 os.replace(tmp, path)
 
-        self.__circuit_call(_write)
+        self.__circuit_call(write)
 
     def delete(self, key: str) -> bool:
         """Removes the file for *key*.  Returns ``True`` if it existed."""
 
-        def _delete() -> bool:
+        def delete() -> bool:
             path = self.__path(key)
             if not path.exists():
                 return False
@@ -277,15 +303,15 @@ class FileStore(Store):
                 path.unlink(missing_ok=True)
             return True
 
-        return self.__circuit_call(_delete)
+        return self.__circuit_call(delete)
 
     def exists(self, key: str) -> bool:
         """Returns ``True`` if the file for *key* exists."""
 
-        def _exists() -> bool:
+        def exists() -> bool:
             return self.__path(key).exists()
 
-        return self.__circuit_call(_exists)
+        return self.__circuit_call(exists)
 
     def keys(self,
              pattern: str | None = None,
@@ -299,7 +325,7 @@ class FileStore(Store):
             offset: Number of results to skip before returning.
         """
 
-        def _keys() -> list[str]:
+        def keys() -> list[str]:
             result: list[str] = []
             count: int = 0
             for path in self.__data_dir.rglob("*.json"):
@@ -314,7 +340,7 @@ class FileStore(Store):
                         break
             return result
 
-        return self.__circuit_call(_keys)
+        return self.__circuit_call(keys)
 
     def __path(self, key: str) -> Path:
         safe = key.replace(":", "/")
@@ -324,9 +350,17 @@ class FileStore(Store):
         data_dir = self.__data_dir.resolve()
         try:
             full.relative_to(data_dir)
-        except ValueError:
+        except ValueError as e:
             raise StoreError(
-                f"key {key} resolves outside data directory") from None
+                f"key {key} resolves outside data directory") from e
+        if full.is_symlink():
+            resolved = full.resolve()
+            try:
+                resolved.relative_to(data_dir)
+            except ValueError as e:
+                raise StoreError(
+                    f"key {key} resolves to symlink outside data directory"
+                ) from e
         return full
 
 
@@ -342,14 +376,14 @@ class PostgresStore(Store):
                  pool_size: int = 5,
                  operation_timeout: float = 30.0) -> None:
         self.__dsn: str = dsn
-        import re as _re
-        if not _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
+        import re as re_mod
+        if not re_mod.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
             raise StoreError(f"invalid table name: {table!r}")
         self.__table: str = table
         self.__pool_size: int = pool_size
         self.__operation_timeout: float = operation_timeout
         self.__lock: threading.Lock = threading.Lock()
-        self.__pool: list[_Connection] = []
+        self.__pool: list[Connection] = []
         self.__circuit: CircuitBreaker = CircuitBreaker(
             failure_threshold=3,
             recovery_timeout=15.0,
@@ -357,13 +391,21 @@ class PostgresStore(Store):
         )
         self.__retry: RetryPolicy = RetryPolicy(max_retries=2, base_delay=0.05)
 
-    def __acquire(self) -> _Connection:
+    @contextmanager
+    def __connection(self) -> Generator[Connection, None, None]:
         try:
             import psycopg2
         except ImportError:
             raise StoreError(
                 "PostgresStore requires psycopg2-binary; install with: pip install underwrite[postgres]"
             ) from None
+        conn = self.__acquire(psycopg2)
+        try:
+            yield conn
+        finally:
+            self.__release(conn)
+
+    def __acquire(self, psycopg2: Any) -> Connection:
         with self.__lock:
             if self.__pool:
                 conn = self.__pool.pop()
@@ -378,7 +420,7 @@ class PostgresStore(Store):
                 )
         return conn
 
-    def __release(self, conn: _Connection) -> None:
+    def __release(self, conn: Connection) -> None:
         with self.__lock:
             if len(self.__pool) < self.__pool_size:
                 self.__pool.append(conn)
@@ -390,15 +432,12 @@ class PostgresStore(Store):
         params: tuple[Any, ...] = ()) -> list[tuple[Any, ...]] | None:
 
         def run() -> Any:
-            conn = self.__acquire()
-            try:
+            with self.__connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(query, params)
                     if cur.description:
                         return cur.fetchall()
                     return None
-            finally:
-                self.__release(conn)
 
         return self.__circuit.call(lambda: self.__retry.execute(run))
 
@@ -455,10 +494,11 @@ class PostgresStore(Store):
         try:
             self.__execute("SELECT 1")
             return {"ok": True, "circuit": self.__circuit.state.value}
-        except Exception as exc:
+        except Exception as e:
+            _log.warning("PostgresStore health check failed: %s", e)
             return {
                 "ok": False,
-                "detail": str(exc),
+                "detail": "Postgres health check failed",
                 "circuit": self.__circuit.state.value
             }
 
@@ -515,8 +555,9 @@ class CQRSStore(Store):
         return self.__read.get(key)
 
     def set(self, key: str, value: Any) -> None:
-        """Persists *value* to the write store."""
+        """Persists *value* to the write store and invalidates the read store."""
         self.__write.set(key, value)
+        self.__read.delete(key)
 
     def delete(self, key: str) -> bool:
         """Removes *key* from the write store.  Returns ``True`` if it existed."""

@@ -117,10 +117,15 @@ class TestValidationFaults:
 class TestRiskModelFaults:
 
     def test_model_no_joblib_fallback_to_json(self, tmp_path: Any) -> None:
+        import hashlib
         import json
         model_path = str(tmp_path / "model.json")
+        content = {"coef_": [5e-7, 0.01], "intercept_": 0.02}
         with open(model_path, "w") as fh:
-            json.dump({"coef_": [5e-7, 0.01], "intercept_": 0.02}, fh)
+            json.dump(content, fh)
+        sha = hashlib.sha256(open(model_path, "rb").read()).hexdigest()
+        with open(str(tmp_path / "model.json.sha256"), "w") as fh:
+            fh.write(sha)
         rm = RiskModel(model_path)
         assert rm is not None
         result = rm.predict(100_000, 12)

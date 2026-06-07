@@ -16,7 +16,7 @@ from underwrite.__bus__ import LocalBus
 from underwrite.__config__ import SERVICE_NAMES, Configuration
 from underwrite.__events__ import Event
 from underwrite.__exceptions__ import (
-    ServiceNotFoundError,)
+    ServiceNotFoundError, )
 from underwrite.__identity__ import Identity
 from underwrite.__runtime__ import Runtime
 from underwrite.__store__ import FileStore, MemoryStore
@@ -263,7 +263,7 @@ class TestMemoryStore:
                     errors.append(exc)
 
         threads: list[threading.Thread] = [
-            threading.Thread(target=writer, args=(i,)) for i in range(10)
+            threading.Thread(target=writer, args=(i, )) for i in range(10)
         ]
         for t in threads:
             t.start()
@@ -382,7 +382,8 @@ class TestNanoService:
         bus.start()
         svc.start()
         bus.publish(
-            Event(event_type="request", source="test", correlation_id="corr-1"))
+            Event(event_type="request", source="test",
+                  correlation_id="corr-1"))
         time.sleep(0.01)
         assert len(received) >= 1
         assert received[0].payload["received"] == "request"

@@ -161,8 +161,8 @@ class TestEdgeCases:
         svc = risk(bus=bus)
         bus.start()
         svc.handle(Event(event_type="seed.added", source="test", payload={}))
-        svc.handle(Event(event_type=EventType.REPAID, source="test",
-                         payload={}))
+        svc.handle(
+            Event(event_type=EventType.REPAID, source="test", payload={}))
         svc.handle(
             Event(event_type=EventType.DEFAULT_OCCURRED,
                   source="test",

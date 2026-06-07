@@ -483,7 +483,8 @@ class TestRevoke:
             "new_delegation": 10
         })
         state = svc.store.get("protocol:state")
-        assert state is None or "bank->alice" not in state.get("delegation", {})
+        assert state is None or "bank->alice" not in state.get(
+            "delegation", {})
 
 
 class TestCreditLimit:
@@ -672,8 +673,8 @@ class TestEdgeCases:
         # __required_delegation("u0") traverses 0→1→…→54, hitting depth 54 > 50.
         # Access via an internal call since handle propagates ProtocolError to the bus DLQ.
         with pytest.raises(ProtocolError, match="delegation chain too deep"):
-            with svc._MechanismService__state_lock:
-                svc._MechanismService__required_delegation("u0")
+            with svc.state_lock:
+                svc.required_delegation("u0")
 
 
 class TestMechanismStoreLoad:
@@ -746,8 +747,7 @@ class TestMechanismStateOrdering:
                 correlation_id: str = "") -> None:
             if event_type == EventType.LOAN_ORIGINATED:
                 captured["emit_seen"] = True
-                captured["loans_at_emit"] = len(
-                    svc._MechanismService__loans.get("bank", []))
+                captured["loans_at_emit"] = len(svc.loans.get("bank", []))
 
         svc = make_svc()
         svc.emit = spy  # type: ignore[assignment]

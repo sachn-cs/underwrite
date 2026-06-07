@@ -15,7 +15,9 @@ from pathlib import Path
 from typing import Any
 
 from underwrite.__events__ import Event
-from underwrite.__pii import redact_payload
+from underwrite.__pii import PIISanitizer
+
+_sanitizer = PIISanitizer()
 from underwrite.services import BatchPersistenceMixin, NanoService
 
 logger = logging.getLogger(__name__)
@@ -62,17 +64,18 @@ class AuditService(BatchPersistenceMixin, NanoService):
                 "seq": len(self.__ledger) + 1,
                 "event_type": event.event_type,
                 "source": event.source,
-                "payload": redact_payload(dict(event.payload)),
+                "payload": _sanitizer.sanitize(dict(event.payload)),
                 "correlation_id": event.correlation_id,
                 "recorded_at": datetime.now(timezone.utc).isoformat(),
             }
             self.__ledger.append(record)
-            self._incr_and_maybe_sync()
+            self.incr_and_maybe_sync()
 
     @property
     def ledger(self) -> list[dict[str, Any]]:
         """Return a snapshot of all audit records."""
-        return list(self.__ledger)
+        with self.__lock:
+            return list(self.__ledger)
 
     def events_by_type(self, event_type: str) -> list[dict[str, Any]]:
         """Return all audit records matching a given event type.
@@ -83,7 +86,8 @@ class AuditService(BatchPersistenceMixin, NanoService):
         Returns:
             List of audit records with matching event_type.
         """
-        return [e for e in self.__ledger if e["event_type"] == event_type]
+        with self.__lock:
+            return [e for e in self.__ledger if e["event_type"] == event_type]
 
     def export(self) -> None:
         """Export the audit ledger to the configured ``export_url``.
@@ -189,7 +193,7 @@ class AuditService(BatchPersistenceMixin, NanoService):
 
     # -- state persistence ---------------------------------------------------
 
-    def _do_sync_store(self) -> None:
+    def do_sync_store(self) -> None:
         """Persist the in-memory ledger to the shared store."""
         with self.__lock:
             self.store.set(f"{self.service_id}:ledger", list(self.__ledger))

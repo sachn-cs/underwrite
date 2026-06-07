@@ -54,7 +54,7 @@ class MetricsCollector:
     """
 
     def __init__(self, max_metrics: int = 10000) -> None:
-        """Initialises an empty metrics collector.
+        """Initializes an empty metrics collector.
 
         Args:
             max_metrics: Maximum metric entries before eviction.
@@ -74,11 +74,8 @@ class MetricsCollector:
             excess = len(metric_map) - target
             if excess <= 0:
                 continue
-            for _ in range(excess):
-                try:
-                    metric_map.pop(next(iter(metric_map)))
-                except KeyError:
-                    break
+            for key in list(metric_map)[:excess]:
+                del metric_map[key]
 
     def __key(self, name: str, tags: dict[str, str]) -> str:
         parts = [name]

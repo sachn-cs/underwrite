@@ -7,7 +7,6 @@ verify provenance.  Keys support automatic rotation with TTL.
 from __future__ import annotations
 
 __all__ = [
-    "HAS_CRYPTO",
     "Identity",
     "KeyRotationManager",
 ]
@@ -21,18 +20,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519
+
 from underwrite.__exceptions__ import IdentityError
 
 logger = logging.getLogger(__name__)
-
-try:
-    from cryptography.exceptions import InvalidSignature
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.asymmetric import ed25519
-
-    HAS_CRYPTO: bool = True
-except ImportError:
-    HAS_CRYPTO = False
 
 
 @dataclass(frozen=True)
@@ -41,24 +35,32 @@ class Identity:
 
     The public key is included in every emitted event; downstream
     consumers use it to verify the event signature.
+
+    When *encryption_passphrase* is provided the private key is stored
+    encrypted at rest (PKCS8 — ``BestAvailableEncryption``) to reduce
+    the risk of key material leaking in memory dumps / core dumps.
     """
 
     service_id: str
     public_key: str
     __private_key: str = ""
+    encrypted: bool = False
     created_at: float = 0.0
 
     @classmethod
     def create(cls,
                service_id: str,
                private_key_pem: str = "",
-               secrets_manager: Any | None = None) -> Identity:
+               secrets_manager: Any | None = None,
+               encryption_passphrase: str = "") -> Identity:
         """Creates or derives an identity.
 
         Args:
             service_id: Unique name for this service.
             private_key_pem: Optional PEM-encoded private key.
             secrets_manager: Optional SecretsManager to load the key from.
+            encryption_passphrase: If set, the private key is encrypted at
+                rest in memory using this passphrase.
 
         Returns:
             A new Identity instance.
@@ -84,29 +86,20 @@ class Identity:
                         encoding=serialization.Encoding.Raw,
                         format=serialization.PublicFormat.Raw,
                     )).decode(),
+                encrypted=bool(encryption_passphrase),
                 created_at=now,
             )
+            alg = serialization.BestAvailableEncryption(
+                encryption_passphrase.encode(
+                )) if encryption_passphrase else serialization.NoEncryption()
             object.__setattr__(
                 identity, '_Identity__private_key',
                 base64.b64encode(
                     private.private_bytes(
                         encoding=serialization.Encoding.Raw,
                         format=serialization.PrivateFormat.Raw,
-                        encryption_algorithm=serialization.NoEncryption(),
+                        encryption_algorithm=alg,
                     )).decode())
-            return identity
-        if not HAS_CRYPTO:
-            logger.warning(
-                "cryptography library not available — using dummy "
-                "identity for %s; signatures are NOT secure", service_id)
-            dummy = b"\x00" * 32
-            identity = cls(
-                service_id=service_id,
-                public_key=base64.b64encode(dummy).decode(),
-                created_at=now,
-            )
-            object.__setattr__(identity, '_Identity__private_key',
-                               base64.b64encode(dummy).decode())
             return identity
         private = ed25519.Ed25519PrivateKey.generate()
         public = private.public_key()
@@ -117,30 +110,42 @@ class Identity:
                     encoding=serialization.Encoding.Raw,
                     format=serialization.PublicFormat.Raw,
                 )).decode(),
+            encrypted=bool(encryption_passphrase),
             created_at=now,
         )
+        alg = serialization.BestAvailableEncryption(
+            encryption_passphrase.encode(
+            )) if encryption_passphrase else serialization.NoEncryption()
         object.__setattr__(
             identity, '_Identity__private_key',
             base64.b64encode(
                 private.private_bytes(
                     encoding=serialization.Encoding.Raw,
                     format=serialization.PrivateFormat.Raw,
-                    encryption_algorithm=serialization.NoEncryption(),
+                    encryption_algorithm=alg,
                 )).decode())
         return identity
 
-    def sign(self, payload: str) -> str:
-        """Signs a string payload and returns a base64-encoded signature."""
-        if not HAS_CRYPTO:
-            return f"dummy_{payload[:16]}"
-        private_bytes = base64.b64decode(self.__private_key)
-        private = ed25519.Ed25519PrivateKey.from_private_bytes(private_bytes)
+    def sign(self, payload: str, passphrase: str = "") -> str:
+        """Signs a string payload and returns a base64-encoded signature.
+
+        Args:
+            payload: The string to sign.
+            passphrase: Required if the private key was stored encrypted.
+        """
+        raw = base64.b64decode(self.__private_key)
+        if self.encrypted:
+            loaded = serialization.load_der_private_key(
+                raw, password=passphrase.encode())
+            if not isinstance(loaded, ed25519.Ed25519PrivateKey):
+                raise IdentityError("encrypted key is not Ed25519")
+            private = loaded
+        else:
+            private = ed25519.Ed25519PrivateKey.from_private_bytes(raw)
         return base64.b64encode(private.sign(payload.encode("utf-8"))).decode()
 
     def verify(self, payload: str, signature: str) -> bool:
         """Verifies a base64-encoded signature against a payload."""
-        if not HAS_CRYPTO:
-            return signature.startswith("dummy_")
         try:
             public_bytes = base64.b64decode(self.public_key)
             public = ed25519.Ed25519PublicKey.from_public_bytes(public_bytes)
@@ -171,7 +176,7 @@ class KeyRotationManager:
     def __init__(self,
                  ttl_seconds: float = 86400.0,
                  grace_period: float = 3600.0) -> None:
-        """Initialises a key-rotation manager.
+        """Initializes a key-rotation manager.
 
         Args:
             ttl_seconds: Time-to-live for each key before rotation.
@@ -230,7 +235,7 @@ class KeyRotationManager:
             public_key: Base64-encoded public key to verify against.
 
         Returns:
-            True if the signature is valid under any recognised key.
+            True if the signature is valid under any recognized key.
         """
         with self.__lock:
             identity = self.__current.get(service_id)

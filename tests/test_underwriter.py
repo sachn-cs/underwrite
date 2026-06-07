@@ -13,8 +13,8 @@ def svc(bus=None) -> UnderwriterService:
 
 def request(svc, bus, **kw) -> None:
     bus.start()
-    svc.handle(Event(event_type="underwrite.request", source="test",
-                     payload=kw))
+    svc.handle(
+        Event(event_type="underwrite.request", source="test", payload=kw))
 
 
 class TestUnderwriterApproval:

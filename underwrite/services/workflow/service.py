@@ -7,7 +7,9 @@ Each workflow instance progresses through stages and emits
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
+from typing import Any
 
 from underwrite.__events__ import Event, EventType
 from underwrite.services.base import NanoService
@@ -29,6 +31,10 @@ STAGES: dict[str, list[str]] = {
 
 class WorkflowService(NanoService):
     """Manages business process state machines for origination, recovery, etc."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.__lock: threading.RLock = threading.RLock()
+        super().__init__(**kwargs)
 
     def handle(self, event: Event) -> None:
         if event.event_type == EventType.WORKFLOW_START:
@@ -84,20 +90,22 @@ class WorkflowService(NanoService):
                            correlation_id: str = "") -> None:
         if not entity_id:
             return
-        record = self.store.get(f"workflow:{entity_id}")
-        if not record or record.get("status") != "active":
-            return
-        next_idx: int = record["stage_index"] + 1
-        if next_idx >= len(record["stages"]):
-            record["status"] = "completed"
-            record["completed_at"] = datetime.now(timezone.utc).isoformat()
-            self.store.set(f"workflow:{entity_id}", record)
+        with self.__lock:
+            record = self.store.get(f"workflow:{entity_id}")
+            if not record or record.get("status") != "active":
+                return
+            next_idx: int = record["stage_index"] + 1
+            if next_idx >= len(record["stages"]):
+                record["status"] = "completed"
+                record["completed_at"] = datetime.now(timezone.utc).isoformat()
+                self.store.set(f"workflow:{entity_id}", record)
+            else:
+                record["stage_index"] = next_idx
+                record["current_stage"] = record["stages"][next_idx]
+                self.store.set(f"workflow:{entity_id}", record)
+        if record["status"] == "completed":
             self.emit(EventType.WORKFLOW_COMPLETED, {
                 "workflow_type": record["type"],
                 "entity_id": entity_id,
             },
                       correlation_id=correlation_id)
-        else:
-            record["stage_index"] = next_idx
-            record["current_stage"] = record["stages"][next_idx]
-            self.store.set(f"workflow:{entity_id}", record)

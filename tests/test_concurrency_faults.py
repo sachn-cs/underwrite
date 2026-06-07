@@ -78,7 +78,9 @@ class TestBusConcurrency:
             except Exception as exc:
                 errors.append(exc)
 
-        threads = [threading.Thread(target=dlq_ops) for _ in range(NUM_THREADS)]
+        threads = [
+            threading.Thread(target=dlq_ops) for _ in range(NUM_THREADS)
+        ]
         for t in threads:
             t.start()
         for t in threads:
@@ -107,7 +109,9 @@ class TestStoreConcurrency:
             except Exception as exc:
                 errors.append(exc)
 
-        threads = [threading.Thread(target=set_get) for _ in range(NUM_THREADS)]
+        threads = [
+            threading.Thread(target=set_get) for _ in range(NUM_THREADS)
+        ]
         for t in threads:
             t.start()
         for t in threads:
@@ -128,7 +132,9 @@ class TestStoreConcurrency:
             except Exception as exc:
                 errors.append(exc)
 
-        threads = [threading.Thread(target=set_get) for _ in range(NUM_THREADS)]
+        threads = [
+            threading.Thread(target=set_get) for _ in range(NUM_THREADS)
+        ]
         for t in threads:
             t.start()
         for t in threads:
@@ -181,7 +187,8 @@ class TestMetricsConcurrency:
                 errors.append(exc)
 
         threads = [
-            threading.Thread(target=ops, args=(i,)) for i in range(NUM_THREADS)
+            threading.Thread(target=ops, args=(i, ))
+            for i in range(NUM_THREADS)
         ]
         for t in threads:
             t.start()

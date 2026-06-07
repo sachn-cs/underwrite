@@ -11,20 +11,21 @@ from underwrite.__events__ import Event, EventType
 from underwrite.__runtime__ import Runtime
 
 
-def _memory_runtime(enable_metrics: bool = True) -> Runtime:
+def memory_runtime(enable_metrics: bool = True) -> Runtime:
     """Returns a Runtime backed by MemoryStore for test isolation."""
     cfg = Configuration.default()
     cfg.store.backend = "memory"
     cfg.metrics.enabled = enable_metrics
     cfg.tracing.enabled = False
     cfg.metrics.export_interval = 0  # disable export thread
+    cfg.authz.enabled = False
     return Runtime(config=cfg)
 
 
 class TestPublishFlow:
 
     def test_publish_through_runtime_delivers_to_service(self) -> None:
-        rt = _memory_runtime()
+        rt = memory_runtime()
         bus = rt.bus
         rt.register("audit")
         rt.wire("audit")
@@ -47,7 +48,9 @@ class TestPublishFlow:
         rt.stop()
 
     def test_runtime_publish_method_creates_event(self) -> None:
-        rt = Runtime()
+        cfg = Configuration.default()
+        cfg.authz.enabled = False
+        rt = Runtime(config=cfg)
         bus = rt.bus
         received: list[Event] = []
         bus.subscribe("*", lambda e: received.append(e))
@@ -60,7 +63,7 @@ class TestPublishFlow:
         rt.stop()
 
     def test_multiple_services_receive_same_event(self) -> None:
-        rt = _memory_runtime()
+        rt = memory_runtime()
         bus = rt.bus
         rt.register("mechanism")
         rt.register("audit")
@@ -88,7 +91,7 @@ class TestPublishFlow:
         rt.stop()
 
     def test_service_emits_through_bus_downstream(self) -> None:
-        rt = _memory_runtime()
+        rt = memory_runtime()
         bus = rt.bus
         all_events: list[Event] = []
         bus.subscribe("*", lambda e: all_events.append(e))
@@ -110,7 +113,7 @@ class TestPublishFlow:
         rt.stop()
 
     def test_audit_records_emitted_events_via_wiring(self) -> None:
-        rt = _memory_runtime()
+        rt = memory_runtime()
         bus = rt.bus
         rt.register("mechanism")
         rt.register("audit")
@@ -181,7 +184,7 @@ class TestMetricsE2E:
         rt.stop()
 
     def test_events_emitted_increment_counter(self) -> None:
-        rt = _memory_runtime()
+        rt = memory_runtime()
         bus = rt.bus
         rt.register("mechanism")
         rt.wire("mechanism")
@@ -199,7 +202,8 @@ class TestMetricsE2E:
         snap = rt.metrics.snapshot()
         counters = snap.get("counters", {})
         emitted_key = next(
-            (k for k in counters if "events.emitted" in k and "mechanism" in k),
+            (k
+             for k in counters if "events.emitted" in k and "mechanism" in k),
             None)
         assert emitted_key is not None
         rt.stop()
@@ -241,7 +245,7 @@ class TestGracefulShutdownE2E:
 class TestMultipleServiceCoordination:
 
     def test_mechanism_and_audit_coexist(self) -> None:
-        rt = _memory_runtime()
+        rt = memory_runtime()
         bus = rt.bus
         rt.register("mechanism")
         rt.register("audit")
@@ -267,7 +271,7 @@ class TestMultipleServiceCoordination:
         assert rt.get("audit").is_running is False
 
     def test_store_shared_between_services(self) -> None:
-        rt = _memory_runtime()
+        rt = memory_runtime()
         bus = rt.bus
         rt.register("mechanism")
         rt.register("audit")

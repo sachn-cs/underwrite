@@ -39,7 +39,8 @@ class TestCollateralService:
     def test_emits_marked_event_with_correct_values(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe(EventType.COLLATERAL_MARKED, lambda e: received.append(e))
+        bus.subscribe(EventType.COLLATERAL_MARKED,
+                      lambda e: received.append(e))
         svc = collateral(bus=bus)
         bus.start()
         svc.handle(
@@ -129,7 +130,8 @@ class TestCollateralService:
     def test_ignores_unrelated_event_types(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe(EventType.COLLATERAL_MARKED, lambda e: received.append(e))
+        bus.subscribe(EventType.COLLATERAL_MARKED,
+                      lambda e: received.append(e))
         svc = collateral(bus=bus)
         bus.start()
         svc.handle(Event(event_type="seed.added", source="test", payload={}))

@@ -37,9 +37,11 @@ class GraphService(NanoService):
         seeds: list[str] = state.get("seeds", [])
         path: list[str] = [user]
         current: str = user
+        visited: set[str] = set()
         while current not in seeds:
-            if current not in parent:
+            if current not in parent or current in visited:
                 break
+            visited.add(current)
             current = parent[current]
             path.append(current)
         path.reverse()
@@ -79,7 +81,9 @@ class GraphService(NanoService):
                   correlation_id=event.correlation_id)
 
     def __query_users(self, event: Event) -> None:
-        state: dict[str, Any] = self.store.get("protocol:state") or {}
+        state: dict[str, Any] | None = self.safe_store_get("protocol:state")
+        if state is None:
+            state = {}
         earned: dict[str, float] = state.get("earned", {})
         self.emit(EventType.GRAPH_USERS_RESULT,
                   {"users": sorted(earned.keys())},

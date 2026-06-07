@@ -250,10 +250,8 @@ class TestEdgeCases:
 
     def test_records_use_deque_maxlen(self) -> None:
         svc = fraud()
-        # Access private __records to verify deque maxlen
-        records = svc._FraudService__records
         borrower = "maxlen_test"
-        for _i in range(2000):
+        for _ in range(2000):
             svc.handle(
                 Event(event_type=EventType.LOAN_ORIGINATED,
                       source="test",
@@ -261,6 +259,7 @@ class TestEdgeCases:
                           "borrower": borrower,
                           "principal": 100
                       }))
+        records = svc.records
         recs = records.get(borrower)
         assert recs is not None
         assert isinstance(recs, deque)

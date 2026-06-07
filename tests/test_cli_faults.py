@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from underwrite.__cli__ import _load_config
+from underwrite.__cli__ import load_config
 from underwrite.__config__ import Configuration
 
 
 class TestCLILoadConfig:
 
     def test_load_config_returns_default_when_no_file(self) -> None:
-        config = _load_config()
+        config = load_config()
         assert isinstance(config, Configuration)
 
     def test_load_config_default_has_no_services_enabled(self) -> None:
-        config = _load_config()
-        for _svc, cfg in config.services.items():
+        config = load_config()
+        for _name, cfg in config.services.items():
             assert cfg.enabled is False
 
 

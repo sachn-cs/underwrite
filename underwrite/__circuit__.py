@@ -13,6 +13,7 @@ __all__ = [
 ]
 
 import logging
+import random
 import threading
 import time
 from collections.abc import Callable
@@ -39,7 +40,7 @@ class CircuitBreaker:
                  failure_threshold: int = 5,
                  recovery_timeout: float = 30.0,
                  name: str = "") -> None:
-        """Initialises a circuit breaker.
+        """Initializes a circuit breaker.
 
         Args:
             failure_threshold: Consecutive failures before opening.
@@ -139,7 +140,7 @@ class RetryPolicy:
         max_delay: float = 5.0,
         retryable_exceptions: tuple[type[Exception], ...] | None = None
     ) -> None:
-        """Initialises a retry policy with exponential backoff.
+        """Initializes a retry policy with exponential backoff.
 
         Args:
             max_retries: Maximum retry attempts (not counting the initial call).
@@ -169,7 +170,6 @@ class RetryPolicy:
         Raises:
             Exception: The last exception encountered if all retries are exhausted.
         """
-        import random
         last_exc: Exception | None = None
         for attempt in range(self.__max_retries + 1):
             try:
@@ -181,8 +181,6 @@ class RetryPolicy:
                         self.__base_delay * (2**attempt) +
                         random.random() * 0.1, self.__max_delay)
                     time.sleep(delay)
-            except Exception:
-                raise
         if last_exc is not None:
             raise last_exc
         raise RuntimeError("unexpected: no exception captured in retry loop")

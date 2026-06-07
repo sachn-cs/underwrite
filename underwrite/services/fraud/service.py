@@ -29,6 +29,15 @@ class FraudService(BatchPersistenceMixin, NanoService):
         self.__records: OrderedDict[str, deque[dict[str, Any]]] = OrderedDict()
         self.__load_store()
 
+    @property
+    def records(self) -> OrderedDict[str, deque[dict[str, Any]]]:
+        """Returns a snapshot of the internal records dict (test-accessible hook)."""
+        with self.__lock:
+            result: OrderedDict[str, deque[dict[str, Any]]] = OrderedDict()
+            for k, v in self.__records.items():
+                result[k] = deque(v, maxlen=v.maxlen)
+            return result
+
     def handle(self, event: Event) -> None:
         """Check loan origination and repayment events against fraud rules.
 
@@ -72,7 +81,7 @@ class FraudService(BatchPersistenceMixin, NanoService):
                 "amount": amount,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
-            self._incr_and_maybe_sync()
+            self.incr_and_maybe_sync()
 
     def __check_wash(self, borrower: str, correlation_id: str) -> None:
         with self.__lock:
@@ -107,7 +116,7 @@ class FraudService(BatchPersistenceMixin, NanoService):
 
     # -- state persistence ---------------------------------------------------
 
-    def _do_sync_store(self) -> None:
+    def do_sync_store(self) -> None:
         """Persist the in-memory records to the shared store."""
         with self.__lock:
             serializable: dict[str, list[dict[str, Any]]] = {

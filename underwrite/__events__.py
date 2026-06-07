@@ -5,6 +5,7 @@ from __future__ import annotations
 __all__ = [
     "Event",
     "EventType",
+    "MAX_PAYLOAD_SIZE",
 ]
 
 import enum
@@ -13,8 +14,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+MAX_PAYLOAD_SIZE: int = 1_000_000  # 1 MB max event payload
 
-@dataclass(frozen=True)
+
+@dataclass(frozen=True, slots=True)
 class Event:
     """Standard event envelope for all nano-service communication.
 
@@ -22,8 +25,8 @@ class Event:
     tracing, and a cryptographic signature from the emitting service's
     identity.  Downstream consumers use this to verify provenance.
 
-    Note: ``payload`` is a mutable dict despite ``frozen=True`` (a
-    known dataclass limitation).  Handlers should treat it as read-only.
+    Payloads are validated against *MAX_PAYLOAD_SIZE* (1 MB) at
+    construction to prevent oversized events from entering the bus.
     """
 
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -35,6 +38,25 @@ class Event:
     payload: dict[str, Any] = field(default_factory=dict)
     correlation_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     signature: str = ""
+    trace_id: str = ""
+    parent_span_id: str = ""
+
+    def __post_init__(self) -> None:
+        payload_size: int = 0
+        if len(self.payload) > 1000:
+            from underwrite.__exceptions__ import ProtocolError
+            raise ProtocolError(f"event payload has too many keys "
+                                f"({len(self.payload)} > 1000)")
+        try:
+            import json as json_mod
+            payload_str = json_mod.dumps(self.payload, default=str)
+            payload_size = len(payload_str.encode("utf-8"))
+        except (TypeError, ValueError):
+            payload_size = MAX_PAYLOAD_SIZE + 1
+        if payload_size > MAX_PAYLOAD_SIZE:
+            from underwrite.__exceptions__ import ProtocolError
+            raise ProtocolError(f"event payload exceeds MAX_PAYLOAD_SIZE "
+                                f"({payload_size} > {MAX_PAYLOAD_SIZE})")
 
 
 class EventType(str, enum.Enum):
@@ -53,6 +75,7 @@ class EventType(str, enum.Enum):
     REVOKED = "revoked"
 
     # Quote & pricing
+    QUOTE = "quote"
     QUOTE_CALCULATED = "quote.calculated"
     PRICING_COMPUTED = "pricing.computed"
     PRICING_REQUEST = "pricing.request"
@@ -91,8 +114,8 @@ class EventType(str, enum.Enum):
     # Identity
     IDENTITY_REGISTERED = "identity.registered"
     IDENTITY_ROTATED = "identity.rotated"
-    IDENTITY_REGISTER = "identity_register"
-    IDENTITY_ROTATE = "identity_rotate"
+    IDENTITY_REGISTER = "identity.register"
+    IDENTITY_ROTATE = "identity.rotate"
 
     # Notification
     NOTIFICATION_SENT = "notification.sent"
