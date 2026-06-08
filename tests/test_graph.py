@@ -98,8 +98,7 @@ class TestPathQuery:
         svc = graph({}, bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type="graph_path",
-                  source="test",
+            Event(event_type="graph_path", source="test",
                   payload={"user": "x"}))
         assert received[0].payload["path"] == ["x"]
 
@@ -109,8 +108,7 @@ class TestCreditLimitQuery:
     def test_credit_limit_for_seed(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe("graph_credit_limit_result",
-                      lambda e: received.append(e))
+        bus.subscribe("graph_credit_limit_result", lambda e: received.append(e))
         svc = graph(
             {
                 "seeds": ["bank"],
@@ -136,8 +134,7 @@ class TestCreditLimitQuery:
     def test_credit_limit_for_user(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe("graph_credit_limit_result",
-                      lambda e: received.append(e))
+        bus.subscribe("graph_credit_limit_result", lambda e: received.append(e))
         svc = graph(
             {
                 "seeds": ["bank"],
@@ -169,8 +166,7 @@ class TestCreditLimitQuery:
     def test_credit_limit_with_outgoing_delegation(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe("graph_credit_limit_result",
-                      lambda e: received.append(e))
+        bus.subscribe("graph_credit_limit_result", lambda e: received.append(e))
         svc = graph(
             {
                 "seeds": ["bank"],
@@ -200,8 +196,7 @@ class TestCreditLimitQuery:
     def test_empty_state_returns_zero(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe("graph_credit_limit_result",
-                      lambda e: received.append(e))
+        bus.subscribe("graph_credit_limit_result", lambda e: received.append(e))
         svc = graph({}, bus=bus)
         bus.start()
         svc.handle(

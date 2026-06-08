@@ -170,8 +170,7 @@ class MetricsCollector:
                     k: {
                         "value": c.value,
                         "tags": c.tags
-                    }
-                    for k, c in self.__counters.items()
+                    } for k, c in self.__counters.items()
                 },
                 "timers": {
                     k: {
@@ -180,15 +179,13 @@ class MetricsCollector:
                         "min_ms": t.min_ms if t.count else 0,
                         "max_ms": t.max_ms,
                         "tags": t.tags
-                    }
-                    for k, t in self.__timers.items()
+                    } for k, t in self.__timers.items()
                 },
                 "gauges": {
                     k: {
                         "value": g.value,
                         "tags": g.tags
-                    }
-                    for k, g in self.__gauges.items()
+                    } for k, g in self.__gauges.items()
                 },
             }
 
