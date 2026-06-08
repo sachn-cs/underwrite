@@ -94,11 +94,13 @@ class TestEdgeCases:
         bus.start()
         svc_inst = svc(bus)
         svc_inst.handle(
-            Event(event_type="underwrite.request",
-                  source="test",
-                  payload={
-                      "borrower": "eve",
-                      "principal": "5000",
-                      "default_probability": "0.03"
-                  }))
+            Event(
+                event_type="underwrite.request",
+                source="test",
+                payload={
+                    "borrower": "eve",
+                    "principal": "5000",
+                    "default_probability": "0.03"
+                },
+            ))
         assert len(approved) == 1

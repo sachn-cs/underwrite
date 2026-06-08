@@ -106,8 +106,8 @@ class PrometheusMiddleware:
                 "path") == "/metrics-prometheus":
             from fastapi.responses import PlainTextResponse
             text = _exporter.to_prometheus_text(self.runtime)
-            response = PlainTextResponse(text,
-                                         media_type="text/plain; version=0.0.4")
+            response = PlainTextResponse(
+                text, media_type="text/plain; version=0.0.4")
             await response(scope, receive, send)
             return
         await self.app(scope, receive, send)

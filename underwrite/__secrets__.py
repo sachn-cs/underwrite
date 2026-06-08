@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from abc import ABC, abstractmethod
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from underwrite.__logger__ import logger
 
 
 class SecretsBackend(ABC):
@@ -39,11 +38,13 @@ class EnvSecretsBackend(SecretsBackend):
 class VaultSecretsBackend(SecretsBackend):
     """HashiCorp Vault KV v2 backend."""
 
-    def __init__(self,
-                 url: str = "https://localhost:8200",
-                 token: str | None = None,
-                 mount_point: str = "secret",
-                 metrics_collector: Any | None = None) -> None:
+    def __init__(
+        self,
+        url: str = "https://localhost:8200",
+        token: str | None = None,
+        mount_point: str = "secret",
+        metrics_collector: Any | None = None,
+    ) -> None:
         self.__url = url
         self.__token = token or os.environ.get("VAULT_TOKEN", "")
         self.__mount_point = mount_point
@@ -54,8 +55,10 @@ class VaultSecretsBackend(SecretsBackend):
             import hvac
         except ImportError:
             raise ImportError(
-                "VaultSecretsBackend requires hvac; pip install hvac") from None
+                "VaultSecretsBackend requires hvac; pip install hvac"
+            ) from None
         from hvac.exceptions import VaultError
+
         client = hvac.Client(url=self.__url, token=self.__token)
         try:
             resp = client.secrets.kv.v2.read_secret_version(
@@ -76,7 +79,8 @@ class VaultSecretsBackend(SecretsBackend):
             import hvac
         except ImportError:
             raise ImportError(
-                "VaultSecretsBackend requires hvac; pip install hvac") from None
+                "VaultSecretsBackend requires hvac; pip install hvac"
+            ) from None
         client = hvac.Client(url=self.__url, token=self.__token)
         client.secrets.kv.v2.create_or_update_secret(
             path=key, secret={"value": value}, mount_point=self.__mount_point)
@@ -96,7 +100,8 @@ class AwsSecretsBackend(SecretsBackend):
             import boto3
         except ImportError:
             raise ImportError(
-                "AwsSecretsBackend requires boto3; pip install boto3") from None
+                "AwsSecretsBackend requires boto3; pip install boto3"
+            ) from None
         return boto3.client("secretsmanager", region_name=self.__region)
 
     def get(self, key: str) -> str | None:

@@ -6,18 +6,17 @@ path is configurable via the environment or the shared store.
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Any
 
 from underwrite.__events__ import Event, EventType
+from underwrite.__logger__ import logger
 from underwrite.services import NanoService
 from underwrite.validate import get_finite, get_non_empty
 
-logger = logging.getLogger(__name__)
-
 try:
     from underwrite.services.risk.model import RiskModel
+
     HAS_RISK_MODEL: bool = True
 except ImportError:
     HAS_RISK_MODEL = False
@@ -56,31 +55,39 @@ class RiskService(NanoService):
             dp: float = get_finite(event.payload, "default_probability")
             borrower: str = get_non_empty(event.payload, "borrower")
             if dp > 0.3:
-                self.emit(EventType.RISK_EARLY_WARNING, {
-                    "borrower": borrower,
-                    "default_probability": dp,
-                },
-                          correlation_id=event.correlation_id)
+                self.emit(
+                    EventType.RISK_EARLY_WARNING,
+                    {
+                        "borrower": borrower,
+                        "default_probability": dp,
+                    },
+                    correlation_id=event.correlation_id,
+                )
             if self.__model:
                 try:
                     principal: float = get_finite(event.payload, "principal")
                     term: float = get_finite(event.payload, "term", 1.0)
                     score: float = self.__model.predict(principal, term)
                 except Exception as exc:
-                    logger.exception("risk scoring failed for %s: %s", borrower,
-                                     exc)
+                    logger.exception("risk scoring failed for %s: %s",
+                                     borrower, exc)
                     if self.metrics_collector:
                         self.metrics_collector.increment(
-                            "risk.scoring.failures", {
+                            "risk.scoring.failures",
+                            {
                                 "service": self.service_id,
                                 "borrower": borrower,
-                            })
+                            },
+                        )
                     score = -1.0
-                self.emit(EventType.RISK_SCORED, {
-                    "borrower": borrower,
-                    "score": score,
-                },
-                          correlation_id=event.correlation_id)
+                self.emit(
+                    EventType.RISK_SCORED,
+                    {
+                        "borrower": borrower,
+                        "score": score,
+                    },
+                    correlation_id=event.correlation_id,
+                )
 
     def health_check(self) -> dict[str, Any]:
         """Risk-specific health: reports model presence."""

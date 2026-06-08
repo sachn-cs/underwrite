@@ -13,7 +13,6 @@ __all__ = [
 
 import base64
 import json
-import logging
 import threading
 
 from cryptography.exceptions import InvalidSignature
@@ -21,8 +20,7 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 
 from underwrite.__events__ import Event
 from underwrite.__exceptions__ import AuthzError
-
-logger = logging.getLogger(__name__)
+from underwrite.__logger__ import logger
 
 
 class Policy:
@@ -165,7 +163,7 @@ class AccessControl:
             public_bytes = base64.b64decode(public_key_b64)
             public_key = ed25519.Ed25519PublicKey.from_public_bytes(
                 public_bytes)
-            payload_str = json.dumps(event.payload, sort_keys=True, default=str)
+            payload_str = json.dumps(event.payload, sort_keys=True)
             to_verify = f"{event.event_id}:{event.timestamp}:{event.event_type}:{payload_str}".encode(
             )
             signature = base64.b64decode(event.signature)

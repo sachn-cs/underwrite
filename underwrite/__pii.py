@@ -93,9 +93,9 @@ class PIISanitizer:
                 result[key] = PIISanitizer.sanitize(value)
             elif isinstance(value, list):
                 result[key] = [
-                    PIISanitizer.sanitize(item) if isinstance(item, dict) else
-                    PII_REDACTED if isinstance(item, str) and
-                    PIISanitizer.contains_sensitive_value(item) else item
+                    PIISanitizer.sanitize(item) if isinstance(
+                        item, dict) else PII_REDACTED if isinstance(item, str)
+                    and PIISanitizer.contains_sensitive_value(item) else item
                     for item in value
                 ]
             else:

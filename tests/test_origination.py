@@ -1,4 +1,5 @@
 """Exhaustive tests for OriginationService."""
+
 from __future__ import annotations
 
 from underwrite.__bus__ import LocalBus
@@ -167,13 +168,15 @@ class TestOriginationService:
         svc = OriginationService(service_id="origination", bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type="origination.create",
-                  source="test",
-                  payload={
-                      "borrower": "f",
-                      "principal": 100
-                  },
-                  correlation_id="corr-1"))
+            Event(
+                event_type="origination.create",
+                source="test",
+                payload={
+                    "borrower": "f",
+                    "principal": 100
+                },
+                correlation_id="corr-1",
+            ))
         emitted = [e for e in received if e.source == "origination"]
         assert len(emitted) == 1
         assert emitted[0].correlation_id == "corr-1"

@@ -12,15 +12,13 @@ __all__ = [
 ]
 
 import asyncio
-import logging
 import uuid
 from collections.abc import Callable
 from typing import Any
 
 from underwrite.__bus__ import AsyncEventBus, DeadLetterQueue, Event, IdempotencyGuard
+from underwrite.__logger__ import logger
 from underwrite.__store__ import Store
-
-logger = logging.getLogger(__name__)
 
 HANDLER_TIMEOUT: float = 30.0  # max seconds per async handler
 
@@ -49,8 +47,8 @@ class AsyncLocalBus(AsyncEventBus):
         self.__subscription_lock: asyncio.Lock = asyncio.Lock()
         self.__task: asyncio.Task[None] | None = None
         self.__running: bool = False
-        self.__semaphore: asyncio.Semaphore | None = (
-            asyncio.Semaphore(max_workers) if max_workers > 0 else None)
+        self.__semaphore: asyncio.Semaphore | None = asyncio.Semaphore(
+            max_workers) if max_workers > 0 else None
         self.__dlq: DeadLetterQueue = DeadLetterQueue(store=store)
         self.__idempotency: IdempotencyGuard = IdempotencyGuard()
 
@@ -161,11 +159,12 @@ class AsyncLocalBus(AsyncEventBus):
         try:
             result = handler(event)
             if result is not None and hasattr(result, "__await__"):
-                result = await asyncio.wait_for(result, timeout=HANDLER_TIMEOUT)
+                result = await asyncio.wait_for(result,
+                                                timeout=HANDLER_TIMEOUT)
         except asyncio.TimeoutError:
             msg = f"handler timed out after {HANDLER_TIMEOUT}s"
-            logger.warning("async handler timed out for %s: %s", event.event_id,
-                           handler.__name__)
+            logger.warning("async handler timed out for %s: %s",
+                           event.event_id, handler.__name__)
             self.__dlq.put(event, msg, handler.__name__)
         except Exception as exc:
             logger.exception("async handler failed for %s", event.event_id)

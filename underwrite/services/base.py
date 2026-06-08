@@ -14,27 +14,29 @@ Each service:
 
 from __future__ import annotations
 
+import concurrent.futures
 import contextlib
 import json
-import logging
 import threading
 import time
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from underwrite.services.persistence import BatchedStoreRepository, TypedStoreRepository
 
 from underwrite.__authz__ import AccessControl, AuthzError
 from underwrite.__bus__ import EventBus, LocalBus
 from underwrite.__events__ import Event
 from underwrite.__health__ import HealthRegistry
 from underwrite.__identity__ import Identity
+from underwrite.__logger__ import logger
 from underwrite.__metrics__ import MetricsCollector
 from underwrite.__saga__ import SagaOrchestrator
 from underwrite.__store__ import MemoryStore, Store
 from underwrite.__supervisor__ import ServiceSupervisor
 from underwrite.__tracer__ import Tracer
 from underwrite.validate import PayloadValidator
-
-logger = logging.getLogger(__name__)
 
 log_context = threading.local()
 
@@ -108,6 +110,7 @@ class NanoService(ABC):
         tracer: Tracer | None = None,
         saga: SagaOrchestrator | None = None,
         supervisor: ServiceSupervisor | None = None,
+        max_concurrent: int = 0,
     ) -> None:
         """Initialise the nano service.
 
@@ -120,7 +123,7 @@ class NanoService(ABC):
             health: Optional health registry for liveness checks.
             authz: Optional access control for authz gating.
             tracer: Optional distributed tracer for handler timing.
-            saga: Optional saga orchestrator for multi-step transactions.
+            max_concurrent: Max concurrent handler threads (0 = synchronous).
         """
         self.__service_id: str = service_id
         self.__identity: Identity = identity or Identity.create(service_id)
@@ -138,6 +141,10 @@ class NanoService(ABC):
         self.__events_handled: int = 0
         self.__events_failed: int = 0
         self.__last_event_time: float = 0.0
+        self.__state_lock: threading.RLock = threading.RLock()
+        self.__executor: concurrent.futures.ThreadPoolExecutor | None = (
+            concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_concurrent) if max_concurrent > 0 else None)
 
         self.__validator: PayloadValidator = PayloadValidator()
 
@@ -145,9 +152,19 @@ class NanoService(ABC):
             self.__saga.register_emitter(self.__service_id, self)
 
     @property
+    def state_lock(self) -> threading.RLock:
+        """Return the thread lock used for state mutation."""
+        return self.__state_lock
+
+    @property
     def service_id(self) -> str:
         """Return the unique identifier for this service instance."""
         return self.__service_id
+
+    @property
+    def bus(self) -> EventBus:
+        """Return the event bus for this service."""
+        return self.__bus
 
     @property
     def is_running(self) -> bool:
@@ -244,7 +261,7 @@ class NanoService(ABC):
             trace_id=trace_id,
             parent_span_id=parent_span_id,
         )
-        payload_str: str = json.dumps(payload, sort_keys=True, default=str)
+        payload_str: str = json.dumps(payload, sort_keys=True)
         to_sign: str = f"{event.event_id}:{event.timestamp}:{event.event_type}:{payload_str}"
         signed: Event = Event(
             event_id=event.event_id,
@@ -261,10 +278,13 @@ class NanoService(ABC):
             self.__authz.trust(self.__service_id, self.__identity.public_key)
         self.__bus.publish(signed)
         if self.__metrics:
-            self.__metrics.increment("events.emitted", {
-                "service": self.__service_id,
-                "event_type": event_type,
-            })
+            self.__metrics.increment(
+                "events.emitted",
+                {
+                    "service": self.__service_id,
+                    "event_type": event_type,
+                },
+            )
         return signed
 
     def sign_event(self, payload: str) -> str:
@@ -282,21 +302,29 @@ class NanoService(ABC):
                                event.event_id, event.source)
                 if self.__metrics:
                     self.__metrics.increment(
-                        "authz.failures", {
+                        "authz.failures",
+                        {
                             "service": self.__service_id,
                             "event_type": event.event_type,
-                        })
+                        },
+                    )
                 return
         if self.__bus.idempotency.is_duplicate(self.__service_id,
                                                event.event_id):
             logger.debug("duplicate event %s dropped by %s", event.event_id,
                          self.__service_id)
             return
+        if self.__executor is not None:
+            self.__executor.submit(self.__handle_event, event)
+        else:
+            self.__handle_event(event)
+
+    def __handle_event(self, event: Event) -> None:
         start = time.perf_counter()
         with (self.__tracer.trace(
                 f"handle.{event.event_type}",
-                trace_id=event.trace_id or event.correlation_id or
-                event.event_id,
+                trace_id=event.trace_id or event.correlation_id
+                or event.event_id,
                 parent_span_id=event.parent_span_id,
                 tags={
                     "service": self.__service_id,
@@ -314,15 +342,20 @@ class NanoService(ABC):
                 if self.__metrics:
                     elapsed = (time.perf_counter() - start) * 1000.0
                     self.__metrics.timer(
-                        "handle.duration", elapsed, {
+                        "handle.duration",
+                        elapsed,
+                        {
                             "service": self.__service_id,
                             "event_type": event.event_type,
-                        })
+                        },
+                    )
                     self.__metrics.increment(
-                        "events.handled", {
+                        "events.handled",
+                        {
                             "service": self.__service_id,
                             "event_type": event.event_type,
-                        })
+                        },
+                    )
             except Exception:
                 with self.__counter_lock:
                     self.__events_failed += 1
@@ -332,11 +365,12 @@ class NanoService(ABC):
                                  self.__service_id, event.event_type)
                 if self.__metrics:
                     self.__metrics.increment(
-                        "events.failed", {
+                        "events.failed",
+                        {
                             "service": self.__service_id,
                             "event_type": event.event_type,
-                        })
-                raise
+                        },
+                    )
 
     @abstractmethod
     def handle(self, event: Event) -> None:
@@ -352,3 +386,72 @@ class NanoService(ABC):
                 "events_failed": self.__events_failed,
                 "last_event_time": self.__last_event_time,
             }
+
+
+class StatefulService(NanoService, ABC):
+    """Base class for nano services that hold mutable in-memory state.
+
+    Provides a shared reentrant lock (``self.state_lock``) and factory
+    helpers for creating ``StoreRepository`` instances bound to the
+    service's store.
+
+    Usage::
+
+        class MyService(StatefulService):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self._data: dict[str, Any] = {}
+                self._repo = self.store_repo("data", dict)
+                loaded = self._repo.load(default={})
+                if loaded:
+                    self._data = loaded
+    """
+
+    def store_repo(
+        self,
+        suffix: str,
+        expected_type: type | tuple[type, ...] = object,
+    ) -> TypedStoreRepository:
+        """Create a ``TypedStoreRepository`` for *suffix* under this service's ID.
+
+        The store key is ``f"{self.service_id}:{suffix}"``.
+
+        Args:
+            suffix: Key suffix (e.g. ``"collateral"`` → key ``"collateral:collateral"``).
+            expected_type: Type constraint for loaded values.
+
+        Returns:
+            A new ``TypedStoreRepository`` bound to this service's store.
+        """
+        from underwrite.services.persistence import TypedStoreRepository
+
+        return TypedStoreRepository(
+            store=self.store,
+            key=f"{self.service_id}:{suffix}",
+            expected_type=expected_type,
+        )
+
+    def batched_repo(
+        self,
+        suffix: str,
+        expected_type: type | tuple[type, ...] = object,
+        sync_interval: int = 10,
+    ) -> BatchedStoreRepository:
+        """Create a ``BatchedStoreRepository`` for *suffix* under this service's ID.
+
+        Args:
+            suffix: Key suffix.
+            expected_type: Type constraint for loaded values.
+            sync_interval: Persist only every N ``incr_and_maybe_sync()`` calls.
+
+        Returns:
+            A new ``BatchedStoreRepository``.
+        """
+        from underwrite.services.persistence import BatchedStoreRepository
+
+        return BatchedStoreRepository(
+            store=self.store,
+            key=f"{self.service_id}:{suffix}",
+            expected_type=expected_type,
+            sync_interval=sync_interval,
+        )

@@ -67,9 +67,12 @@ class TestNotificationService:
         svc = notify(bus=bus)
         bus.start()
         for et in [
-                EventType.SEED_ADDED, EventType.USER_ADDED,
-                EventType.QUOTE_CALCULATED, EventType.LOAN_ORIGINATED,
-                EventType.REPAID, EventType.GOVERNANCE_EXECUTED
+                EventType.SEED_ADDED,
+                EventType.USER_ADDED,
+                EventType.QUOTE_CALCULATED,
+                EventType.LOAN_ORIGINATED,
+                EventType.REPAID,
+                EventType.GOVERNANCE_EXECUTED,
         ]:
             svc.handle(Event(event_type=et, source="test", payload={}))
         assert len(received) == 0

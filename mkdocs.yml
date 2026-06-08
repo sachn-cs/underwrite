@@ -9,13 +9,57 @@ theme:
     primary: indigo
 
 nav:
-  - Home: index.md
-  - Getting Started: getting-started.md
-  - Architecture: architecture.md
-  - API Reference: api-reference.md
+  - Home: README.md
+  - Getting Started:
+    - INSTALLATION.md
+    - QUICKSTART.md
+    - CONFIGURATION.md
+    - ENVIRONMENT_VARIABLES.md
+  - Architecture & Design:
+    - ARCHITECTURE.md
+    - SYSTEM_DESIGN.md
+    - DIRECTORY_STRUCTURE.md
+    - DESIGN_DECISIONS.md
+    - DOMAIN_MODEL.md
+  - API & Interfaces:
+    - API.md
+  - Development:
+    - DEVELOPMENT.md
+    - BUILD.md
+    - TESTING.md
+    - DEBUGGING.md
+    - CODE_STYLE.md
+    - CONTRIBUTING.md
+  - Operations:
+    - DEPLOYMENT.md
+    - OPERATIONS.md
+    - OBSERVABILITY.md
+    - PERFORMANCE.md
+    - SECURITY.md
+    - DATABASE.md
+    - MIGRATIONS.md
+  - Reference:
+    - DEPENDENCIES.md
+    - TROUBLESHOOTING.md
+    - FAQ.md
+    - GLOSSARY.md
+    - RELEASE_PROCESS.md
+    - CHANGELOG_GUIDE.md
+  - Project Management:
+    - MAINTENANCE.md
+    - ROADMAP.md
+  - Architecture Decisions:
+    - ADR/README.md
+    - ADR/001-nano-service-architecture.md
+    - ADR/002-event-driven-communication.md
+    - ADR/003-ed25519-cryptographic-provenance.md
+    - ADR/004-saga-orchestration.md
 
 markdown_extensions:
   - admonition
   - codehilite
   - toc:
       permalink: true
+  - pymdownx.superfences
+  - pymdownx.tabbed
+  - pymdownx.details

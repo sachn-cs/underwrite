@@ -60,8 +60,7 @@ class MigrationPlan:
             Sorted list of pending migrations.
         """
         return [
-            self.__migrations[v]
-            for v in sorted(self.__migrations)
+            self.__migrations[v] for v in sorted(self.__migrations)
             if v not in applied
         ]
 

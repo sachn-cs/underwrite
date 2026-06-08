@@ -234,14 +234,17 @@ class TestOriginate:
             "delegation_amount": 50_000
         })
         command(
-            svc, "originate", {
+            svc,
+            "originate",
+            {
                 "borrower": "alice",
                 "principal": 10_000,
                 "term": 12,
                 "default_probability": 0.02,
                 "protocol_rate": 0.10,
                 "max_delegation_rate": 0.05,
-            })
+            },
+        )
         assert svc.principal["alice"] == 10_000
 
     def test_rejects_exceeding_credit_limit(self) -> None:
@@ -254,14 +257,17 @@ class TestOriginate:
             "delegation_amount": 50_000
         })
         command(
-            svc, "originate", {
+            svc,
+            "originate",
+            {
                 "borrower": "alice",
                 "principal": 200_000,
                 "term": 12,
                 "default_probability": 0.02,
                 "protocol_rate": 0.10,
                 "max_delegation_rate": 0.05,
-            })
+            },
+        )
         assert svc.principal.get("alice", 0) == 0
 
     def test_rejects_zero_principal(self) -> None:
@@ -274,14 +280,17 @@ class TestOriginate:
             "delegation_amount": 50_000
         })
         command(
-            svc, "originate", {
+            svc,
+            "originate",
+            {
                 "borrower": "alice",
                 "principal": 0,
                 "term": 12,
                 "default_probability": 0.02,
                 "protocol_rate": 0.10,
                 "max_delegation_rate": 0.05,
-            })
+            },
+        )
         assert svc.principal.get("alice", 0) == 0
 
     def test_rejects_negative_term(self) -> None:
@@ -294,14 +303,17 @@ class TestOriginate:
             "delegation_amount": 50_000
         })
         command(
-            svc, "originate", {
+            svc,
+            "originate",
+            {
                 "borrower": "alice",
                 "principal": 10_000,
                 "term": -1,
                 "default_probability": 0.02,
                 "protocol_rate": 0.10,
                 "max_delegation_rate": 0.05,
-            })
+            },
+        )
         assert svc.principal.get("alice", 0) == 0
 
     def test_rejects_invalid_default_probability(self) -> None:
@@ -314,14 +326,17 @@ class TestOriginate:
             "delegation_amount": 50_000
         })
         command(
-            svc, "originate", {
+            svc,
+            "originate",
+            {
                 "borrower": "alice",
                 "principal": 10_000,
                 "term": 12,
                 "default_probability": 1.5,
                 "protocol_rate": 0.10,
                 "max_delegation_rate": 0.05,
-            })
+            },
+        )
         assert svc.principal.get("alice", 0) == 0
 
     def test_multiple_loans_same_borrower(self) -> None:
@@ -335,14 +350,17 @@ class TestOriginate:
         })
         for _ in range(5):
             command(
-                svc, "originate", {
+                svc,
+                "originate",
+                {
                     "borrower": "alice",
                     "principal": 50_000,
                     "term": 12,
                     "default_probability": 0.02,
                     "protocol_rate": 0.10,
                     "max_delegation_rate": 0.05,
-                })
+                },
+            )
         assert svc.principal["alice"] == 250_000
 
 
@@ -358,14 +376,17 @@ class TestDefault:
             "delegation_amount": 50_000
         })
         command(
-            svc, "originate", {
+            svc,
+            "originate",
+            {
                 "borrower": "alice",
                 "principal": 10_000,
                 "term": 12,
                 "default_probability": 0.02,
                 "protocol_rate": 0.10,
                 "max_delegation_rate": 0.05,
-            })
+            },
+        )
         command(svc, "repay", {"user": "alice", "delta_earned": 3_000})
         command(svc, "default", {"borrower": "alice"})
         assert svc.principal["alice"] == 0.0
@@ -381,14 +402,17 @@ class TestDefault:
             "delegation_amount": 50_000
         })
         command(
-            svc, "originate", {
+            svc,
+            "originate",
+            {
                 "borrower": "alice",
                 "principal": 10_000,
                 "term": 12,
                 "default_probability": 0.02,
                 "protocol_rate": 0.10,
                 "max_delegation_rate": 0.05,
-            })
+            },
+        )
         command(svc, "default", {"borrower": "alice"})
         assert svc.principal["alice"] == 0.0
 
@@ -424,14 +448,17 @@ class TestDefault:
             "delegation_amount": 100_000
         })
         command(
-            svc, "originate", {
+            svc,
+            "originate",
+            {
                 "borrower": "c",
                 "principal": 50_000,
                 "term": 12,
                 "default_probability": 0.02,
                 "protocol_rate": 0.10,
                 "max_delegation_rate": 0.05,
-            })
+            },
+        )
         command(svc, "default", {"borrower": "c"})
         assert svc.principal["c"] == 0.0
 
@@ -532,13 +559,16 @@ class TestQuote:
         svc.start()
         bus.start()
         command(
-            svc, "quote", {
+            svc,
+            "quote",
+            {
                 "borrower": "alice",
                 "principal": 10_000,
                 "term": 12,
                 "default_probability": 0.02,
                 "protocol_rate": 0.10,
-            })
+            },
+        )
         assert len(received) == 1
         assert received[0].payload["protocol_premium"] == 12_000.0
 
@@ -599,14 +629,17 @@ class TestEdgeCases:
             "delegation_amount": 200_000
         })
         command(
-            svc, "originate", {
+            svc,
+            "originate",
+            {
                 "borrower": "b",
                 "principal": 50_000,
                 "term": 12,
                 "default_probability": 0.02,
                 "protocol_rate": 0.10,
                 "max_delegation_rate": 0.05,
-            })
+            },
+        )
         command(svc, "repay", {"user": "b", "delta_earned": 10_000})
         command(svc, "default", {"borrower": "b"})
         assert svc.principal["b"] == 0.0
@@ -638,14 +671,17 @@ class TestEdgeCases:
             "delegation_amount": 50_000
         })
         command(
-            svc, "originate", {
+            svc,
+            "originate",
+            {
                 "borrower": "a",
                 "principal": 50_000,
                 "term": 12,
                 "default_probability": 0.02,
                 "protocol_rate": 0.10,
                 "max_delegation_rate": 0.05,
-            })
+            },
+        )
         assert svc.principal["a"] == 50_000
 
     def test_unknown_command_silently_ignored(self) -> None:
@@ -664,11 +700,15 @@ class TestEdgeCases:
         for i in range(55):
             user = f"u{i}"
             amt = 200_000 - i
-            command(svc, "add_user", {
-                "sponsor": prev,
-                "user": user,
-                "delegation_amount": amt,
-            })
+            command(
+                svc,
+                "add_user",
+                {
+                    "sponsor": prev,
+                    "user": user,
+                    "delegation_amount": amt,
+                },
+            )
             prev = user
         # __required_delegation("u0") traverses 0→1→…→54, hitting depth 54 > 50.
         # Access via an internal call since handle propagates ProtocolError to the bus DLQ.
@@ -754,14 +794,17 @@ class TestMechanismStateOrdering:
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
         command(
-            svc, "originate", {
+            svc,
+            "originate",
+            {
                 "borrower": "bank",
                 "principal": 10000,
                 "term": 12,
                 "default_probability": 0.02,
                 "protocol_rate": 0.1,
                 "max_delegation_rate": 0.5,
-            })
+            },
+        )
         assert captured.get("emit_seen") is True
         # Emit fires after state is persisted, so the loan IS in the loans list
         assert captured.get("loans_at_emit") == 1

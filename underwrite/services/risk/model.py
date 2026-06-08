@@ -9,13 +9,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 import threading
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from underwrite.__logger__ import logger
 
 __all__ = [
     "HeuristicStrategy",
@@ -53,8 +52,8 @@ class StrategyRegistry:
         Raises:
             TypeError: If *strategy_cls* is not a ``RiskScoringStrategy`` subclass.
         """
-        if not (isinstance(strategy_cls, type) and
-                issubclass(strategy_cls, RiskScoringStrategy)):
+        if not (isinstance(strategy_cls, type)
+                and issubclass(strategy_cls, RiskScoringStrategy)):
             raise TypeError(
                 f"{strategy_cls} is not a RiskScoringStrategy subclass")
         with self.__lock:
@@ -181,6 +180,7 @@ class RiskModel:
     @staticmethod
     def __verify_integrity(model_path: str) -> None:
         import os
+
         expected = os.environ.get("RISK_MODEL_SHA256", "")
         sidecar = Path(str(model_path) + ".sha256")
         if not expected and sidecar.exists():
@@ -199,6 +199,7 @@ class RiskModel:
     def predict(self, principal: float, term: float) -> float:
         """Returns a default-probability score in [0.0, 1.0]."""
         import math as math_mod
+
         if not math_mod.isfinite(principal) or not math_mod.isfinite(term):
             logger.warning(
                 "non-finite inputs to risk model: principal=%r, term=%r",
@@ -216,7 +217,10 @@ class RiskModel:
     def load_strategy(model_path: str) -> RiskScoringStrategy:
         """Load a model file and return the appropriate strategy.
 
-        Tries joblib first; falls back to JSON-based reconstruction.
+        Supports JSON-serialized model parameters (``coef_``, ``intercept_``).
+        Joblib support is gated behind the ``UNDERWRITE_ALLOW_JOBLIB``
+        environment variable — it must be set to ``"true"`` before importing
+        this module to enable arbitrary pickle deserialization.
 
         Args:
             model_path: Path to the serialized model file.
@@ -227,16 +231,25 @@ class RiskModel:
         Raises:
             ValueError: If the model file cannot be parsed.
         """
-        try:
-            import joblib
-            model = joblib.load(model_path)
-            if callable(getattr(model, "predict", None)):
-                return JoblibModelStrategy(model)
-            raise ValueError("joblib-loaded object has no predict method")
-        except ImportError:
-            logger.info("joblib not available, falling back to JSON load")
-        except Exception as exc:
-            logger.exception("joblib load failed for %s: %s", model_path, exc)
+        import os as _os
+
+        env_allowed = _os.environ.get("UNDERWRITE_ALLOW_JOBLIB", "").lower()
+        if env_allowed == "true":
+            try:
+                import joblib
+
+                model = joblib.load(model_path)
+                if callable(getattr(model, "predict", None)):
+                    return JoblibModelStrategy(model)
+                raise ValueError("joblib-loaded object has no predict method")
+            except ImportError:
+                logger.info("joblib not available, falling back to JSON load")
+            except Exception as exc:
+                logger.exception("joblib load failed for %s: %s", model_path,
+                                 exc)
+        else:
+            logger.info(
+                "joblib disabled; set UNDERWRITE_ALLOW_JOBLIB=true to enable")
 
         try:
             with open(model_path) as fh:
@@ -246,6 +259,7 @@ class RiskModel:
                 f"Failed to parse model file {model_path}: {exc}") from exc
 
         if not isinstance(params, dict):
-            raise ValueError(f"JSON model file must contain a JSON object, "
-                             f"got {type(params).__name__}")
+            raise ValueError(
+                f"JSON model file must contain a JSON object, got {type(params).__name__}"
+            )
         return JsonModelStrategy(params)

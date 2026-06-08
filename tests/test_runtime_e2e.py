@@ -32,12 +32,14 @@ class TestPublishFlow:
         bus.start()
         rt.start(["audit"])
         bus.publish(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "aadhaar": "1234-5678-9012",
-                      "principal": 50000
-                  }))
+            Event(
+                event_type=EventType.LOAN_ORIGINATED,
+                source="test",
+                payload={
+                    "aadhaar": "1234-5678-9012",
+                    "principal": 50000
+                },
+            ))
         audit = rt.get("audit")
         records = [
             e for e in audit.ledger
@@ -73,13 +75,15 @@ class TestPublishFlow:
         rt.start(["mechanism", "audit"])
         mechanism = rt.get("mechanism")
         mechanism.handle(
-            Event(event_type="mechanism",
-                  source="test",
-                  payload={
-                      "command": "add_seed",
-                      "user": "bank",
-                      "base_budget": 200000
-                  }))
+            Event(
+                event_type="mechanism",
+                source="test",
+                payload={
+                    "command": "add_seed",
+                    "user": "bank",
+                    "base_budget": 200000
+                },
+            ))
         audit = rt.get("audit")
         seed_events = [
             e for e in audit.ledger if e["event_type"] == EventType.SEED_ADDED
@@ -101,13 +105,15 @@ class TestPublishFlow:
         rt.start(["mechanism"])
         svc = rt.get("mechanism")
         svc.handle(
-            Event(event_type="mechanism",
-                  source="test",
-                  payload={
-                      "command": "add_seed",
-                      "user": "bank",
-                      "base_budget": 300000
-                  }))
+            Event(
+                event_type="mechanism",
+                source="test",
+                payload={
+                    "command": "add_seed",
+                    "user": "bank",
+                    "base_budget": 300000
+                },
+            ))
         emitted_types = {e.event_type for e in all_events}
         assert EventType.SEED_ADDED in emitted_types
         rt.stop()
@@ -123,13 +129,15 @@ class TestPublishFlow:
         rt.start(["mechanism", "audit"])
         svc = rt.get("mechanism")
         svc.handle(
-            Event(event_type="mechanism",
-                  source="test",
-                  payload={
-                      "command": "add_seed",
-                      "user": "bank",
-                      "base_budget": 400000
-                  }))
+            Event(
+                event_type="mechanism",
+                source="test",
+                payload={
+                    "command": "add_seed",
+                    "user": "bank",
+                    "base_budget": 400000
+                },
+            ))
         audit = rt.get("audit")
         seed_records = audit.events_by_type(EventType.SEED_ADDED)
         assert len(seed_records) >= 1
@@ -192,13 +200,15 @@ class TestMetricsE2E:
         rt.start(["mechanism"])
         svc = rt.get("mechanism")
         svc.handle(
-            Event(event_type="mechanism",
-                  source="test",
-                  payload={
-                      "command": "add_seed",
-                      "user": "bank",
-                      "base_budget": 50000
-                  }))
+            Event(
+                event_type="mechanism",
+                source="test",
+                payload={
+                    "command": "add_seed",
+                    "user": "bank",
+                    "base_budget": 50000
+                },
+            ))
         snap = rt.metrics.snapshot()
         counters = snap.get("counters", {})
         emitted_key = next(
@@ -257,13 +267,15 @@ class TestMultipleServiceCoordination:
         assert rt.get("audit").is_running
         svc = rt.get("mechanism")
         svc.handle(
-            Event(event_type="mechanism",
-                  source="test",
-                  payload={
-                      "command": "add_seed",
-                      "user": "bank",
-                      "base_budget": 100000
-                  }))
+            Event(
+                event_type="mechanism",
+                source="test",
+                payload={
+                    "command": "add_seed",
+                    "user": "bank",
+                    "base_budget": 100000
+                },
+            ))
         audit = rt.get("audit")
         assert len(audit.ledger) >= 1
         rt.stop()
@@ -281,13 +293,15 @@ class TestMultipleServiceCoordination:
         rt.start(["mechanism", "audit"])
         mech_svc = rt.get("mechanism")
         mech_svc.handle(
-            Event(event_type="mechanism",
-                  source="test",
-                  payload={
-                      "command": "add_seed",
-                      "user": "bank",
-                      "base_budget": 100000
-                  }))
+            Event(
+                event_type="mechanism",
+                source="test",
+                payload={
+                    "command": "add_seed",
+                    "user": "bank",
+                    "base_budget": 100000
+                },
+            ))
         audit_svc = rt.get("audit")
         state_from_mech = mech_svc.store.get("protocol:state")
         state_from_audit = audit_svc.store.get("protocol:state")

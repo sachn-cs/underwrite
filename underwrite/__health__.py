@@ -12,13 +12,12 @@ __all__ = [
     "HealthRegistry",
 ]
 
-import logging
 import threading
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from underwrite.__logger__ import logger
 
 HealthCheck = Callable[[], dict[str, Any]]
 

@@ -12,7 +12,6 @@ __all__ = [
     "SagaStep",
 ]
 
-import logging
 import threading
 import traceback
 import uuid
@@ -22,9 +21,8 @@ from typing import Any, Protocol
 
 from underwrite.__events__ import Event
 from underwrite.__exceptions__ import ProtocolError
+from underwrite.__logger__ import logger
 from underwrite.__store__ import MemoryStore, Store
-
-logger = logging.getLogger(__name__)
 
 
 class Emitter(Protocol):
@@ -136,11 +134,18 @@ class SagaOrchestrator:
     """
 
     def __init__(self, store: Store | None = None) -> None:
-        self.__lock: threading.RLock = threading.RLock()
+        self.__global_lock: threading.RLock = threading.RLock()
+        self.__saga_locks: dict[str, threading.RLock] = {}
         self.__sagas: dict[str, Saga] = {}
         self.__emitters: dict[str, Emitter] = {}
         self.__store: Store = store or MemoryStore()
         self.__load_sagas()
+
+    def __get_saga_lock(self, saga_id: str) -> threading.RLock:
+        with self.__global_lock:
+            if saga_id not in self.__saga_locks:
+                self.__saga_locks[saga_id] = threading.RLock()
+            return self.__saga_locks[saga_id]
 
     def __saga_store_key(self, saga_id: str) -> str:
         return f"saga:{saga_id}"
@@ -174,7 +179,7 @@ class SagaOrchestrator:
 
     def register_emitter(self, saga_name: str, emitter: Emitter) -> None:
         """Registers an event emitter (NanoService) for a saga type."""
-        with self.__lock:
+        with self.__global_lock:
             self.__emitters[saga_name] = emitter
 
     def start_saga(self, name: str, steps: list[SagaStep]) -> str:
@@ -193,7 +198,7 @@ class SagaOrchestrator:
         if not steps:
             raise ProtocolError("saga must have at least one step")
         saga = Saga(saga_id=str(uuid.uuid4()), name=name, steps=steps)
-        with self.__lock:
+        with self.__global_lock:
             self.__sagas[saga.saga_id] = saga
             self.__persist_saga(saga)
         return saga.saga_id
@@ -216,7 +221,8 @@ class SagaOrchestrator:
             ``True`` if the step succeeded, ``False`` otherwise.
         """
         idem_key = self.__step_idempotency_key(saga_id, step_index)
-        with self.__lock:
+        saga_lock = self.__get_saga_lock(saga_id)
+        with saga_lock:
             if self.__store.get(idem_key) is not None:
                 logger.debug(
                     "saga %s step %d already completed (idempotency), skipping",
@@ -235,8 +241,9 @@ class SagaOrchestrator:
             step = saga.steps[step_index]
             emitter = self.__emitters.get(saga.name)
             if not emitter:
-                logger.warning("saga %s no emitter registered for saga type %r",
-                               saga_id, saga.name)
+                logger.warning(
+                    "saga %s no emitter registered for saga type %r", saga_id,
+                    saga.name)
                 return False
             try:
                 emitter.emit(step.forward_event_type, step.forward_payload)
@@ -257,6 +264,7 @@ class SagaOrchestrator:
         """Executes all steps of a saga sequentially.
 
         If any step fails, previously completed steps are rolled back.
+        Uses per-saga locks so different sagas execute concurrently.
 
         Args:
             saga_id: Target saga ID.
@@ -264,7 +272,8 @@ class SagaOrchestrator:
         Returns:
             ``True`` if all steps completed, ``False`` on failure.
         """
-        with self.__lock:
+        saga_lock = self.__get_saga_lock(saga_id)
+        with saga_lock:
             saga = self.__sagas.get(saga_id)
             if not saga:
                 logger.warning("execute_all: saga %s not found", saga_id)
@@ -277,7 +286,8 @@ class SagaOrchestrator:
         return True
 
     def __rollback(self, saga_id: str, failed_step: int, error: str) -> None:
-        with self.__lock:
+        saga_lock = self.__get_saga_lock(saga_id)
+        with saga_lock:
             saga = self.__sagas.get(saga_id)
             if not saga:
                 logger.warning("rollback: saga %s not found", saga_id)
@@ -301,7 +311,7 @@ class SagaOrchestrator:
                     f"compensation step {step.name} failed: {exc}")
                 logger.exception("saga %s compensation step %s failed: %s",
                                  saga_id, step.name, exc)
-        with self.__lock:
+        with saga_lock:
             if saga_id in self.__sagas:
                 s = self.__sagas[saga_id]
                 s.status = "rolled_back"
@@ -315,7 +325,8 @@ class SagaOrchestrator:
         The returned ``Saga`` is a deep copy; mutations to it do not
         affect the orchestrator's internal state.
         """
-        with self.__lock:
+        saga_lock = self.__get_saga_lock(saga_id)
+        with saga_lock:
             saga = self.__sagas.get(saga_id)
             if saga is None:
                 return None
@@ -334,7 +345,8 @@ class SagaOrchestrator:
             ``True`` if all remaining steps completed, ``False`` on
             failure (the saga is rolled back by ``execute_all``).
         """
-        with self.__lock:
+        saga_lock = self.__get_saga_lock(saga_id)
+        with saga_lock:
             saga = self.__sagas.get(saga_id)
             if not saga:
                 logger.warning("replay_saga: saga %s not found", saga_id)
@@ -358,7 +370,8 @@ class SagaOrchestrator:
         from_index = next_idx
         if from_index == 0:
             return self.execute_all(saga_id)
-        with self.__lock:
+        saga_lock = self.__get_saga_lock(saga_id)
+        with saga_lock:
             saga_ref = self.__sagas.get(saga_id)
             if not saga_ref:
                 return False

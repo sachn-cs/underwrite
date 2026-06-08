@@ -15,7 +15,6 @@ __all__ = [
 
 import hmac
 import importlib.metadata
-import logging
 import os
 import re
 import uuid
@@ -25,8 +24,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from underwrite.__exceptions__ import ProtocolError
-
-logger = logging.getLogger(__name__)
+from underwrite.__logger__ import logger
 
 __VALID_EVENT_TYPE_RE = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$")
 
@@ -47,6 +45,7 @@ def __error_response(status_code: int,
 def try_instrument_fastapi(app: FastAPI) -> None:
     try:
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
         FastAPIInstrumentor().instrument(app=app)
     except ImportError:
         logger.warning(
@@ -57,6 +56,7 @@ def try_instrument_fastapi(app: FastAPI) -> None:
 def try_register_prometheus(app: FastAPI, runtime: Any) -> None:
     try:
         from underwrite.prometheus_export import PrometheusMiddleware
+
         app.add_middleware(PrometheusMiddleware, runtime=runtime)
     except ImportError:
         logger.warning(
@@ -102,8 +102,8 @@ def create_app(
             "UNDERWRITE_API_TOKEN must be set when --require-auth is used")
     if not require_auth and not token:
         logger.warning(
-            "API authentication is DISABLED. "
-            "Set UNDERWRITE_API_TOKEN or pass --require-auth in production.")
+            "API authentication is DISABLED. Set UNDERWRITE_API_TOKEN or pass --require-auth in production."
+        )
 
     app = FastAPI(title="underwrite",
                   version=importlib.metadata.version("underwrite"))
@@ -111,13 +111,13 @@ def create_app(
     try_instrument_fastapi(app)
     try_register_prometheus(app, runtime)
 
-    MAX_BODY_SIZE: int = 1_048_576  # 1 MB
+    max_body_size: int = 1_048_576  # 1 MB
 
     @app.middleware("http")
     async def body_size_middleware(request: Request,
                                    call_next: Any) -> JSONResponse:
         cl = request.headers.get("content-length")
-        if cl and cl.isdigit() and int(cl) > MAX_BODY_SIZE:
+        if cl and cl.isdigit() and int(cl) > max_body_size:
             return __error_response(413, "request body too large")
         return await call_next(request)
 
@@ -168,13 +168,15 @@ def create_app(
     @app.on_event("shutdown")
     async def shutdown() -> None:
         import asyncio
+
         try:
             await asyncio.wait_for(
                 asyncio.to_thread(runtime.stop),
                 timeout=shutdown_timeout,
             )
         except asyncio.TimeoutError:
-            logger.warning("runtime stop timed out after %ds", shutdown_timeout)
+            logger.warning("runtime stop timed out after %ds",
+                           shutdown_timeout)
 
     # -- unversioned load-balancer probes ------------------------------------
 
@@ -220,14 +222,15 @@ def create_app(
     async def v1_metrics_endpoint() -> JSONResponse | PlainTextResponse:
         try:
             from underwrite.prometheus_export import metrics_as_text
+
             return PlainTextResponse(
                 metrics_as_text(runtime),
                 media_type="text/plain; version=0.0.4",
             )
         except ImportError:
             return __error_response(
-                501, "prometheus export not available; "
-                "install underwrite[serve]")
+                501,
+                "prometheus export not available; install underwrite[serve]")
 
     @app.post(
         "/v1/publish",
@@ -256,7 +259,8 @@ def create_app(
                     payload=body.get("payload", {}),
                     correlation_id=body.get("correlation_id", ""),
                 )
-            return JSONResponse(status_code=202, content={"status": "accepted"})
+            return JSONResponse(status_code=202,
+                                content={"status": "accepted"})
         except ProtocolError:
             return __error_response(400, "invalid request")
         except Exception:
@@ -279,13 +283,14 @@ def create_app(
     async def metrics_endpoint() -> JSONResponse | PlainTextResponse:
         try:
             from underwrite.prometheus_export import metrics_as_text
+
             return PlainTextResponse(
                 metrics_as_text(runtime),
                 media_type="text/plain; version=0.0.4",
             )
         except ImportError:
             return __error_response(
-                501, "prometheus export not available; "
-                "install underwrite[serve]")
+                501,
+                "prometheus export not available; install underwrite[serve]")
 
     return app

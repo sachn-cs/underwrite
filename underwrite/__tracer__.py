@@ -15,14 +15,13 @@ __all__ = [
     "Tracer",
 ]
 
-import logging
 import threading
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from underwrite.__logger__ import logger
 
 
 @dataclass
@@ -142,8 +141,8 @@ class Tracer:
         Returns:
             A ``SpanContext`` context manager.
         """
-        return SpanContext(self, operation, trace_id, parent_span_id, tags or
-                           {})
+        return SpanContext(self, operation, trace_id, parent_span_id, tags
+                           or {})
 
 
 class SpanContext:
@@ -180,23 +179,29 @@ class ConsoleSpanExporter(SpanExporter):
     """Exports spans to stdout for development."""
 
     def export(self, spans: list[Span]) -> None:
-        """Prints span details to stdout.
-
-        Args:
-            spans: Completed spans to print.
-        """
+        """Logs span details for development."""
         for span in spans:
             duration = span.end_ms - span.start_ms
             tag_str = " ".join(f"{k}={v}" for k, v in span.tags.items())
             err = f" ERROR={span.error}" if span.error else ""
-            print(
-                f"[trace] {span.trace_id[:8]} {span.service_id}.{span.operation} "
-                f"{duration:.1f}ms parent={span.parent_span_id[:8]}{err} {tag_str}"
+            logger.info(
+                "[trace] %s %s.%s %.1fms parent=%s%s %s",
+                span.trace_id[:8],
+                span.service_id,
+                span.operation,
+                duration,
+                span.parent_span_id[:8],
+                err,
+                tag_str,
             )
 
 
 class OtlpSpanExporter(SpanExporter):
     """Exports spans via OpenTelemetry OTLP.
+
+    Initialises the SDK once at construction time so that each
+    ``export()`` call reuses the same gRPC connection and avoids
+    creating new providers/processors on every span batch.
 
     Requires the ``otlp`` extra (``opentelemetry-api``,
     ``opentelemetry-sdk``, ``opentelemetry-exporter-otlp``).
@@ -207,12 +212,16 @@ class OtlpSpanExporter(SpanExporter):
                  service_name: str = "underwrite") -> None:
         self.__endpoint = endpoint
         self.__service_name = service_name
+        self.__provider: Any = None
+        self.__tracer: Any = None
+        self.__processor: Any = None
 
-    def export(self, spans: list[Span]) -> None:
+    def _lazy_init(self) -> bool:
+        if self.__provider is not None:
+            return True
         try:
-            from opentelemetry import trace
             from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-                OTLPSpanExporter,)
+                OTLPSpanExporter, )
             from opentelemetry.sdk.resources import Resource
             from opentelemetry.sdk.trace import TracerProvider as SdkTracerProvider
             from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -220,16 +229,22 @@ class OtlpSpanExporter(SpanExporter):
             logger.warning(
                 "OTLP exporter not available; install with: pip install underwrite[otlp]"
             )
-            return
+            return False
 
         resource = Resource.create({"service.name": self.__service_name})
-        provider = SdkTracerProvider(resource=resource)
-        exporter = OTLPSpanExporter(endpoint=self.__endpoint)
-        processor = BatchSpanProcessor(exporter)
-        provider.add_span_processor(processor)
+        self.__provider = SdkTracerProvider(resource=resource)
+        otlp_exporter = OTLPSpanExporter(endpoint=self.__endpoint)
+        self.__processor = BatchSpanProcessor(otlp_exporter)
+        self.__provider.add_span_processor(self.__processor)
+        self.__tracer = self.__provider.get_tracer(__name__)
+        return True
+
+    def export(self, spans: list[Span]) -> None:
+        if not self._lazy_init():
+            return
 
         for span in spans:
-            sdk_span = provider.get_tracer(__name__).start_span(
+            sdk_span = self.__tracer.start_span(
                 span.operation,
                 attributes={
                     **span.tags,
@@ -240,9 +255,10 @@ class OtlpSpanExporter(SpanExporter):
                 },
             )
             if span.error:
+                from opentelemetry import trace
+
                 sdk_span.set_status(
                     trace.Status(trace.StatusCode.ERROR, span.error))
             sdk_span.end()
 
-        processor.shutdown()
-        provider.shutdown()
+        self.__processor.force_flush()

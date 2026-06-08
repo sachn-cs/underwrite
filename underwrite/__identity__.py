@@ -13,7 +13,6 @@ __all__ = [
 
 import base64
 import json
-import logging
 import threading
 import time
 from dataclasses import dataclass
@@ -25,8 +24,6 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
 from underwrite.__exceptions__ import IdentityError
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -48,11 +45,13 @@ class Identity:
     created_at: float = 0.0
 
     @classmethod
-    def create(cls,
-               service_id: str,
-               private_key_pem: str = "",
-               secrets_manager: Any | None = None,
-               encryption_passphrase: str = "") -> Identity:
+    def create(
+        cls,
+        service_id: str,
+        private_key_pem: str = "",
+        secrets_manager: Any | None = None,
+        encryption_passphrase: str = "",
+    ) -> Identity:
         """Creates or derives an identity.
 
         Args:
@@ -89,17 +88,19 @@ class Identity:
                 encrypted=bool(encryption_passphrase),
                 created_at=now,
             )
-            alg = serialization.BestAvailableEncryption(
-                encryption_passphrase.encode(
-                )) if encryption_passphrase else serialization.NoEncryption()
+            alg = (serialization.BestAvailableEncryption(
+                encryption_passphrase.encode())
+                   if encryption_passphrase else serialization.NoEncryption())
             object.__setattr__(
-                identity, '_Identity__private_key',
+                identity,
+                "_Identity__private_key",
                 base64.b64encode(
                     private.private_bytes(
                         encoding=serialization.Encoding.Raw,
                         format=serialization.PrivateFormat.Raw,
                         encryption_algorithm=alg,
-                    )).decode())
+                    )).decode(),
+            )
             return identity
         private = ed25519.Ed25519PrivateKey.generate()
         public = private.public_key()
@@ -113,17 +114,19 @@ class Identity:
             encrypted=bool(encryption_passphrase),
             created_at=now,
         )
-        alg = serialization.BestAvailableEncryption(
-            encryption_passphrase.encode(
-            )) if encryption_passphrase else serialization.NoEncryption()
+        alg = (serialization.BestAvailableEncryption(
+            encryption_passphrase.encode())
+               if encryption_passphrase else serialization.NoEncryption())
         object.__setattr__(
-            identity, '_Identity__private_key',
+            identity,
+            "_Identity__private_key",
             base64.b64encode(
                 private.private_bytes(
                     encoding=serialization.Encoding.Raw,
                     format=serialization.PrivateFormat.Raw,
                     encryption_algorithm=alg,
-                )).decode())
+                )).decode(),
+        )
         return identity
 
     def sign(self, payload: str, passphrase: str = "") -> str:

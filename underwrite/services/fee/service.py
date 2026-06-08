@@ -7,17 +7,15 @@ when a fee is applied to a loan.
 
 from __future__ import annotations
 
-import logging
 import math
-import threading
 from datetime import datetime, timezone
 from typing import Any
 
 from underwrite.__events__ import Event, EventType
-from underwrite.services import BatchPersistenceMixin, NanoService
+from underwrite.__logger__ import logger
+from underwrite.services.base import StatefulService
+from underwrite.services.persistence import BatchedStoreRepository
 from underwrite.validate import get_finite
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_FEE_SCHEDULES: dict[str, float] = {
     "late_payment": 25.0,
@@ -27,18 +25,20 @@ DEFAULT_FEE_SCHEDULES: dict[str, float] = {
 }
 
 
-class FeeService(BatchPersistenceMixin, NanoService):
+class FeeService(StatefulService):
     """Manages fee assessment, tracking, and lifecycle."""
 
     def __init__(self, **kwargs: Any) -> None:
         self.__schedules: dict[str,
                                float] = kwargs.pop("fee_schedules",
                                                    dict(DEFAULT_FEE_SCHEDULES))
-        BatchPersistenceMixin.__init__(self, sync_interval=10)
-        NanoService.__init__(self, **kwargs)
-        self.__lock: threading.RLock = threading.RLock()
+        super().__init__(**kwargs)
         self.__fees: dict[str, dict[str, Any]] = {}
-        self.__load_store()
+        self._repo: BatchedStoreRepository[dict[str, dict[
+            str, Any]]] = self.batched_repo("fees", dict, sync_interval=10)
+        loaded = self._repo.load(default={})
+        if loaded:
+            self.__fees = loaded
 
     def __assess(self,
                  loan_id: str,
@@ -46,7 +46,7 @@ class FeeService(BatchPersistenceMixin, NanoService):
                  principal: float = 0.0,
                  correlation_id: str = "") -> None:
         """Assess a fee and persist it.  Called directly (not via bus)."""
-        with self.__lock:
+        with self.state_lock:
             schedules = self.__schedules
             if not loan_id or fee_type not in schedules:
                 if not loan_id:
@@ -75,14 +75,17 @@ class FeeService(BatchPersistenceMixin, NanoService):
             }
             self.store.set(f"fee:{fee_id}", fee_record)
             self.__fees[f"fee:{fee_id}"] = fee_record
-            self.incr_and_maybe_sync()
-            self.emit(EventType.FEE_ASSESSED, {
-                "fee_id": fee_id,
-                "loan_id": loan_id,
-                "fee_type": fee_type,
-                "amount": amount,
-            },
-                      correlation_id=correlation_id)
+            self._repo.incr_and_maybe_sync(self.__fees)
+            self.emit(
+                EventType.FEE_ASSESSED,
+                {
+                    "fee_id": fee_id,
+                    "loan_id": loan_id,
+                    "fee_type": fee_type,
+                    "amount": amount,
+                },
+                correlation_id=correlation_id,
+            )
 
     def handle(self, event: Event) -> None:
         """Assess and pay fees based on incoming events.
@@ -103,17 +106,14 @@ class FeeService(BatchPersistenceMixin, NanoService):
 
         elif event.event_type == EventType.FEE_PAY:
             fee_id = event.payload.get("fee_id", "")
-            record = self.store.get(f"fee:{fee_id}")
-            if record and not record["paid"]:
-                with self.__lock:
-                    record = self.store.get(f"fee:{fee_id}")
-                    if record and not record["paid"]:
-                        record["paid"] = True
-                        record["paid_at"] = datetime.now(
-                            timezone.utc).isoformat()
-                        self.store.set(f"fee:{fee_id}", record)
-                        self.__fees[f"fee:{fee_id}"] = dict(record)
-                        self.incr_and_maybe_sync()
+            with self.state_lock:
+                record = self.store.get(f"fee:{fee_id}")
+                if record and not record["paid"]:
+                    record["paid"] = True
+                    record["paid_at"] = datetime.now(timezone.utc).isoformat()
+                    self.store.set(f"fee:{fee_id}", record)
+                    self.__fees[f"fee:{fee_id}"] = dict(record)
+                    self._repo.incr_and_maybe_sync(self.__fees)
 
         elif event.event_type == EventType.PAYMENT_OVERDUE:
             loan_id = event.payload.get("loan_id", "")
@@ -132,25 +132,11 @@ class FeeService(BatchPersistenceMixin, NanoService):
                 correlation_id=event.correlation_id,
             )
 
-    # -- state persistence ---------------------------------------------------
-
-    def __load_store(self) -> None:
-        """Restore fee records from the store, if present."""
-        with self.__lock:
-            raw = self.store.get(f"{self.service_id}:fees")
-            if raw is not None and isinstance(raw, dict):
-                self.__fees = dict(raw)
-
-    def do_sync_store(self) -> None:
-        """Persist the current fee records to the store."""
-        with self.__lock:
-            self.store.set(f"{self.service_id}:fees", dict(self.__fees))
-
     def health_check(self) -> dict[str, Any]:
         """Fee-specific health: reports total fee count and pending fees."""
-        with self.__lock:
-            pending = sum(
-                1 for r in self.__fees.values() if not r.get("paid", False))
+        with self.state_lock:
+            pending = sum(1 for r in self.__fees.values()
+                          if not r.get("paid", False))
             return {
                 **super().health_check(),
                 "fee_count": len(self.__fees),

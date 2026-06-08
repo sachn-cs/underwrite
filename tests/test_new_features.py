@@ -125,6 +125,7 @@ class TestAsyncBusTimeout:
 
         async def slow_handler(event: Any) -> None:
             import asyncio
+
             await asyncio.sleep(HANDLER_TIMEOUT + 5)
 
         await bus.subscribe("test.timeout", slow_handler)
@@ -133,6 +134,7 @@ class TestAsyncBusTimeout:
         event = Event(event_type="test.timeout")
         await bus.publish(event)
         import asyncio
+
         await asyncio.sleep(0.5)
 
         assert bus.dlq.count >= 0  # event was processed (may or may not have timed out in CI)
@@ -153,6 +155,7 @@ class TestAsyncBusTimeout:
         event = Event(event_type="test.fast")
         await bus.publish(event)
         import asyncio
+
         await asyncio.sleep(0.2)
 
         assert "test.fast" in results
@@ -187,6 +190,7 @@ class TestCircuitBreakerHalfOpenTransition:
                      ()).throw(ValueError("fail")))  # type: ignore[misc]
 
         import time
+
         deadline = time.monotonic() + 5.0
         while cb.state == CircuitState.OPEN:
             if time.monotonic() > deadline:
@@ -208,6 +212,7 @@ class TestCircuitBreakerHalfOpenTransition:
                          ()).throw(ValueError("fail")))  # type: ignore[misc]
 
         import time
+
         deadline = time.monotonic() + 5.0
         while cb.state == CircuitState.OPEN:
             if time.monotonic() > deadline:
@@ -238,6 +243,7 @@ class TestRateLimiterDistributed:
                                     prefix="testrl")
         assert rl.check("key1") is True
         import time
+
         time.sleep(0.15)
         assert rl.check("key1") is True
 

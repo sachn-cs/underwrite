@@ -142,6 +142,7 @@ class TestCollateralService:
     def test_origination_without_borrower_is_rejected(self) -> None:
         svc = collateral()
         from underwrite.__exceptions__ import ProtocolError
+
         try:
             svc.handle(
                 Event(event_type=EventType.LOAN_ORIGINATED,

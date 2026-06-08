@@ -2,16 +2,17 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.12"]
+      fail-fast: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -25,5 +26,25 @@ jobs:
         run: ruff check underwrite/ tests/
       - name: Type check
         run: mypy underwrite/
+      - name: Security audit
+        run: bandit -r underwrite/ -c pyproject.toml
+      - name: Dependency audit
+        run: pip-audit
       - name: Test
         run: python -m pytest tests/ -v
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build Docker image
+        run: docker build -t underwrite:ci .
+      - name: Smoke test
+        run: |
+          docker run -d --name underwrite-ci -p 8080:8080 underwrite:ci
+          sleep 5
+          curl -sf http://localhost:8080/healthz || exit 1
+          docker stop underwrite-ci

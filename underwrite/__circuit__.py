@@ -12,7 +12,6 @@ __all__ = [
     "RetryPolicy",
 ]
 
-import logging
 import random
 import threading
 import time
@@ -21,8 +20,7 @@ from enum import Enum
 from typing import Any
 
 from underwrite.__exceptions__ import CircuitBreakerOpenError
-
-logger = logging.getLogger(__name__)
+from underwrite.__logger__ import logger
 
 
 class CircuitState(Enum):
@@ -121,9 +119,12 @@ class CircuitBreaker:
                 if self.__state != CircuitState.OPEN:
                     tripped = True
                 self.__state = CircuitState.OPEN
+        count: int = self.__failure_count
+        logger.warning("circuit %s failure %d/%d", self.__name, count,
+                       self.__failure_threshold)
         if tripped:
-            logger.warning("circuit %s tripped open (%d failures)", self.__name,
-                           self.__failure_threshold)
+            logger.warning("circuit %s tripped open (%d failures)",
+                           self.__name, self.__failure_threshold)
 
 
 class RetryPolicy:
@@ -138,7 +139,7 @@ class RetryPolicy:
         max_retries: int = 3,
         base_delay: float = 0.1,
         max_delay: float = 5.0,
-        retryable_exceptions: tuple[type[Exception], ...] | None = None
+        retryable_exceptions: tuple[type[Exception], ...] | None = None,
     ) -> None:
         """Initializes a retry policy with exponential backoff.
 
@@ -154,9 +155,10 @@ class RetryPolicy:
         self.__max_delay: float = max_delay
         self.__retryable_exceptions: tuple[type[Exception],
                                            ...] = retryable_exceptions or (
-                                               Exception,)
+                                               Exception, )
 
-    def execute(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    def execute(self, fn: Callable[..., Any], *args: Any,
+                **kwargs: Any) -> Any:
         """Executes a callable with exponential-backoff retry.
 
         Args:

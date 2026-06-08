@@ -6,23 +6,29 @@ Listens for ``document.generated`` events and emits
 
 from __future__ import annotations
 
-import threading
 from datetime import datetime, timezone
 from typing import Any
 
 from underwrite.__events__ import Event, EventType
-from underwrite.services import NanoService
+from underwrite.__logger__ import logger
+from underwrite.services.base import StatefulService
+from underwrite.services.persistence import TypedStoreRepository
 from underwrite.validate import get_finite, get_non_empty
 
 
-class DisbursementService(NanoService):
+class DisbursementService(StatefulService):
     """Processes loan disbursement to borrower accounts."""
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self.__lock: threading.RLock = threading.RLock()
         self.__disbursements: dict[str, dict[str, Any]] = {}
-        self.__load_store()
+        self._repo: TypedStoreRepository[dict[str,
+                                              dict[str,
+                                                   Any]]] = self.store_repo(
+                                                       "disbursements", dict)
+        loaded = self._repo.load(default={})
+        if loaded:
+            self.__disbursements = loaded
 
     def handle(self, event: Event) -> None:
         if event.event_type != EventType.DOCUMENT_GENERATED:
@@ -32,7 +38,12 @@ class DisbursementService(NanoService):
         principal: float = get_finite(p, "principal")
         doc_id: str = p.get("doc_id", "")
 
-        with self.__lock:
+        with self.state_lock:
+            if borrower in self.__disbursements:
+                logger.warning(
+                    "duplicate disbursement attempted for %s, skipping",
+                    borrower)
+                return
             record = {
                 "borrower": borrower,
                 "principal": principal,
@@ -41,14 +52,17 @@ class DisbursementService(NanoService):
                 "status": "disbursed",
             }
             self.__disbursements[borrower] = record
-            self.__sync_store()
+            self.__sync()
 
-        self.emit(EventType.DISBURSEMENT_PROCESSED, {
-            "borrower": borrower,
-            "principal": principal,
-            "doc_id": doc_id,
-        },
-                  correlation_id=event.correlation_id)
+        self.emit(
+            EventType.DISBURSEMENT_PROCESSED,
+            {
+                "borrower": borrower,
+                "principal": principal,
+                "doc_id": doc_id,
+            },
+            correlation_id=event.correlation_id,
+        )
 
     def get(self, borrower: str) -> dict[str, Any] | None:
         """Retrieve the disbursement record for a borrower.
@@ -59,20 +73,11 @@ class DisbursementService(NanoService):
         Returns:
             Disbursement record dict or None if not yet disbursed.
         """
-        with self.__lock:
+        with self.state_lock:
             return self.__disbursements.get(borrower)
 
     # -- state persistence ---------------------------------------------------
 
-    def __sync_store(self) -> None:
+    def __sync(self) -> None:
         """Persist the in-memory disbursements to the shared store."""
-        with self.__lock:
-            self.store.set(f"{self.service_id}:disbursements",
-                           dict(self.__disbursements))
-
-    def __load_store(self) -> None:
-        """Restore the disbursements from the shared store on startup."""
-        raw = self.store.get(f"{self.service_id}:disbursements")
-        if raw is None or not isinstance(raw, dict):
-            return
-        self.__disbursements = dict(raw)
+        self._repo.save(self.__disbursements)

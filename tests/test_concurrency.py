@@ -5,6 +5,7 @@ Tests run multiple threads concurrently to expose data races in:
 - KeyRotationManager rotation
 - LocalBus publish/dispatch
 """
+
 from __future__ import annotations
 
 import threading
@@ -263,8 +264,8 @@ class TestMemoryStoreConcurrency:
             for i in range(100):
                 store.get(f"key_{i}")
 
-        threads = ([threading.Thread(target=writer) for _ in range(5)] +
-                   [threading.Thread(target=reader) for _ in range(5)])
+        threads = [threading.Thread(target=writer) for _ in range(5)
+                   ] + [threading.Thread(target=reader) for _ in range(5)]
         for t in threads:
             t.start()
         for t in threads:

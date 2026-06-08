@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from underwrite.__events__ import Event, EventType
-from underwrite.services import NanoService
-
-logger = logging.getLogger(__name__)
+from underwrite.__logger__ import logger
+from underwrite.services.base import NanoService
 
 
 class GraphService(NanoService):
@@ -18,15 +16,20 @@ class GraphService(NanoService):
     and buffer queries.
     """
 
-    def handle(self, event: Event) -> None:
-        if event.event_type == EventType.GRAPH_PATH:
-            self.__query_path(event)
-        elif event.event_type == EventType.GRAPH_CREDIT_LIMIT:
-            self.__query_credit_limit(event)
-        elif event.event_type == EventType.GRAPH_USERS:
-            self.__query_users(event)
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._handlers: dict[str, Any] = {
+            EventType.GRAPH_PATH: self.__on_graph_path,
+            EventType.GRAPH_CREDIT_LIMIT: self.__on_graph_credit_limit,
+            EventType.GRAPH_USERS: self.__on_graph_users,
+        }
 
-    def __query_path(self, event: Event) -> None:
+    def handle(self, event: Event) -> None:
+        handler = self._handlers.get(event.event_type)
+        if handler is not None:
+            handler(event)
+
+    def __on_graph_path(self, event: Event) -> None:
         user: str = event.payload.get("user", "")
         state: dict[str, Any] | None = self.safe_store_get("protocol:state")
         if state is None:
@@ -51,7 +54,7 @@ class GraphService(NanoService):
         },
                   correlation_id=event.correlation_id)
 
-    def __query_credit_limit(self, event: Event) -> None:
+    def __on_graph_credit_limit(self, event: Event) -> None:
         user: str = event.payload.get("user", "")
         state: dict[str, Any] | None = self.safe_store_get("protocol:state")
         if state is None:
@@ -74,13 +77,16 @@ class GraphService(NanoService):
         outgoing: float = sum(
             delegation_raw.get(f"{user}->{child}", 0.0)
             for child in children_raw.get(user, []))
-        self.emit(EventType.GRAPH_CREDIT_LIMIT_RESULT, {
-            "user": user,
-            "credit_limit": budget - outgoing,
-        },
-                  correlation_id=event.correlation_id)
+        self.emit(
+            EventType.GRAPH_CREDIT_LIMIT_RESULT,
+            {
+                "user": user,
+                "credit_limit": budget - outgoing,
+            },
+            correlation_id=event.correlation_id,
+        )
 
-    def __query_users(self, event: Event) -> None:
+    def __on_graph_users(self, event: Event) -> None:
         state: dict[str, Any] | None = self.safe_store_get("protocol:state")
         if state is None:
             state = {}

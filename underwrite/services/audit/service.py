@@ -7,23 +7,21 @@ never persisted — only the sanitized record.
 from __future__ import annotations
 
 import json
-import logging
-import threading
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from underwrite.__events__ import Event
+from underwrite.__logger__ import logger
 from underwrite.__pii import PIISanitizer
+from underwrite.services.base import StatefulService
+from underwrite.services.persistence import TypedStoreRepository
 
 _sanitizer = PIISanitizer()
-from underwrite.services import BatchPersistenceMixin, NanoService
-
-logger = logging.getLogger(__name__)
 
 
-class AuditService(BatchPersistenceMixin, NanoService):
+class AuditService(StatefulService):
     """Subscribes to all domain events and persists them to an append-only ledger.
 
     PII fields (aadhaar, pan, ssn, phone, email, etc.) are automatically
@@ -32,6 +30,8 @@ class AuditService(BatchPersistenceMixin, NanoService):
     Persistence is batched — the store is only written every *sync_interval*
     ``handle()`` calls to avoid O(n) serialisation overhead on every event.
     """
+
+    SYNC_INTERVAL: int = 10
 
     def __init__(self,
                  max_ledger: int = 100000,
@@ -44,13 +44,17 @@ class AuditService(BatchPersistenceMixin, NanoService):
                 are evicted when the ledger exceeds this limit.
             **kwargs: Forwarded to NanoService.__init__.
         """
-        BatchPersistenceMixin.__init__(self, sync_interval=10)
-        NanoService.__init__(self, **kwargs)
+        super().__init__(**kwargs)
         self.__max_ledger: int = max_ledger
-        self.__lock: threading.RLock = threading.RLock()
         self.__ledger: deque = deque(maxlen=max_ledger)
         self.__export_url: str = export_url
-        self.__load_store()
+        self.__sync_counter: int = 0
+        self._repo: TypedStoreRepository[list[dict[str,
+                                                   Any]]] = self.store_repo(
+                                                       "ledger", list)
+        loaded = self._repo.load(default=[])
+        if loaded:
+            self.__ledger.extend(loaded)
 
     def handle(self, event: Event) -> None:
         """Record a redacted version of *event* to the audit ledger.
@@ -59,7 +63,7 @@ class AuditService(BatchPersistenceMixin, NanoService):
             event: The domain event to record. PII fields are redacted
                 automatically before storage.
         """
-        with self.__lock:
+        with self.state_lock:
             record: dict[str, Any] = {
                 "seq": len(self.__ledger) + 1,
                 "event_type": event.event_type,
@@ -69,12 +73,12 @@ class AuditService(BatchPersistenceMixin, NanoService):
                 "recorded_at": datetime.now(timezone.utc).isoformat(),
             }
             self.__ledger.append(record)
-            self.incr_and_maybe_sync()
+            self.__maybe_sync()
 
     @property
     def ledger(self) -> list[dict[str, Any]]:
         """Return a snapshot of all audit records."""
-        with self.__lock:
+        with self.state_lock:
             return list(self.__ledger)
 
     def events_by_type(self, event_type: str) -> list[dict[str, Any]]:
@@ -86,7 +90,7 @@ class AuditService(BatchPersistenceMixin, NanoService):
         Returns:
             List of audit records with matching event_type.
         """
-        with self.__lock:
+        with self.state_lock:
             return [e for e in self.__ledger if e["event_type"] == event_type]
 
     def export(self) -> None:
@@ -123,7 +127,9 @@ class AuditService(BatchPersistenceMixin, NanoService):
         bucket, _, key = path.partition("/")
         try:
             client = boto3.client("s3")
-            client.put_object(Bucket=bucket, Key=key, Body=body.encode("utf-8"))
+            client.put_object(Bucket=bucket,
+                              Key=key,
+                              Body=body.encode("utf-8"))
             logger.info("audit exported to s3://%s/%s (%d bytes)", bucket, key,
                         len(body))
         except Exception as exc:
@@ -193,16 +199,9 @@ class AuditService(BatchPersistenceMixin, NanoService):
 
     # -- state persistence ---------------------------------------------------
 
-    def do_sync_store(self) -> None:
-        """Persist the in-memory ledger to the shared store."""
-        with self.__lock:
-            self.store.set(f"{self.service_id}:ledger", list(self.__ledger))
-
-    def __load_store(self) -> None:
-        """Restore the ledger from the shared store on startup."""
-        raw = self.store.get(f"{self.service_id}:ledger")
-        if raw is None or not isinstance(raw, list):
-            return
-        self.__ledger.clear()
-        for item in raw:
-            self.__ledger.append(item)
+    def __maybe_sync(self) -> None:
+        """Persist ledger to store every SYNC_INTERVAL calls."""
+        self.__sync_counter += 1
+        if self.__sync_counter >= self.SYNC_INTERVAL:
+            self.__sync_counter = 0
+            self._repo.save(list(self.__ledger))

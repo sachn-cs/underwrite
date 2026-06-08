@@ -69,7 +69,7 @@ class TestConfiguration:
                 "dsn": "host=localhost",
                 "pool_size": 10,
                 "read_backend": "filesystem",
-                "read_dsn": "/tmp/read"
+                "read_dsn": "/tmp/read",
             },
             "tracing": {
                 "enabled": True,

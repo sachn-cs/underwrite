@@ -7,7 +7,6 @@ import pytest
 from underwrite.services.risk.model import (
     HeuristicStrategy,
     RiskModel,
-    RiskScoringStrategy,
     StrategyRegistry,
 )
 

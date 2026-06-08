@@ -27,13 +27,15 @@ class TestEarlyWarning:
         svc = risk(bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "alice",
-                      "default_probability": 0.45,
-                      "principal": 10000
-                  }))
+            Event(
+                event_type=EventType.LOAN_ORIGINATED,
+                source="test",
+                payload={
+                    "borrower": "alice",
+                    "default_probability": 0.45,
+                    "principal": 10000
+                },
+            ))
         assert len(received) == 1
         assert received[0].payload["borrower"] == "alice"
         assert received[0].payload["default_probability"] == 0.45
@@ -46,13 +48,15 @@ class TestEarlyWarning:
         svc = risk(bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "bob",
-                      "default_probability": 0.05,
-                      "principal": 10000
-                  }))
+            Event(
+                event_type=EventType.LOAN_ORIGINATED,
+                source="test",
+                payload={
+                    "borrower": "bob",
+                    "default_probability": 0.05,
+                    "principal": 10000
+                },
+            ))
         assert len(received) == 0
 
     def test_no_warning_at_exactly_thirty_percent(self) -> None:
@@ -63,13 +67,15 @@ class TestEarlyWarning:
         svc = risk(bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "carol",
-                      "default_probability": 0.30,
-                      "principal": 10000
-                  }))
+            Event(
+                event_type=EventType.LOAN_ORIGINATED,
+                source="test",
+                payload={
+                    "borrower": "carol",
+                    "default_probability": 0.30,
+                    "principal": 10000
+                },
+            ))
         assert len(received) == 0
 
     def test_warning_just_above_thirty_percent(self) -> None:
@@ -80,13 +86,15 @@ class TestEarlyWarning:
         svc = risk(bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "dave",
-                      "default_probability": 0.3001,
-                      "principal": 10000
-                  }))
+            Event(
+                event_type=EventType.LOAN_ORIGINATED,
+                source="test",
+                payload={
+                    "borrower": "dave",
+                    "default_probability": 0.3001,
+                    "principal": 10000
+                },
+            ))
         assert len(received) == 1
 
     def test_warning_at_one_hundred_percent(self) -> None:
@@ -97,13 +105,15 @@ class TestEarlyWarning:
         svc = risk(bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "eve",
-                      "default_probability": 1.0,
-                      "principal": 10000
-                  }))
+            Event(
+                event_type=EventType.LOAN_ORIGINATED,
+                source="test",
+                payload={
+                    "borrower": "eve",
+                    "default_probability": 1.0,
+                    "principal": 10000
+                },
+            ))
         assert len(received) == 1
 
     def test_missing_default_probability_no_warning(self) -> None:
@@ -130,13 +140,15 @@ class TestEarlyWarning:
         svc = risk(bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "grace",
-                      "default_probability": "0.50",
-                      "principal": 10000
-                  }))
+            Event(
+                event_type=EventType.LOAN_ORIGINATED,
+                source="test",
+                payload={
+                    "borrower": "grace",
+                    "default_probability": "0.50",
+                    "principal": 10000
+                },
+            ))
         assert len(received) == 1
 
 
@@ -145,13 +157,15 @@ class TestEdgeCases:
     def test_no_model_no_crash(self) -> None:
         svc = risk()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "heidi",
-                      "default_probability": 0.02,
-                      "principal": 10000
-                  }))
+            Event(
+                event_type=EventType.LOAN_ORIGINATED,
+                source="test",
+                payload={
+                    "borrower": "heidi",
+                    "default_probability": 0.02,
+                    "principal": 10000
+                },
+            ))
 
     def test_ignores_non_loan_events(self) -> None:
         bus = LocalBus()

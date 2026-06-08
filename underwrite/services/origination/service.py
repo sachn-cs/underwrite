@@ -7,16 +7,14 @@ Emits ``origination.created`` when a new application is started and
 
 from __future__ import annotations
 
-import logging
 import threading
 from datetime import datetime, timezone
 from typing import Any
 
 from underwrite.__events__ import Event, EventType
+from underwrite.__logger__ import logger
 from underwrite.services.base import NanoService
 from underwrite.validate import get_finite
-
-logger = logging.getLogger(__name__)
 
 
 class OriginationService(NanoService):
@@ -43,12 +41,15 @@ class OriginationService(NanoService):
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
             self.store.set(f"origination:{application_id}", app_record)
-            self.emit(EventType.ORIGINATION_CREATED, {
-                "application_id": application_id,
-                "borrower": borrower,
-                "principal": principal,
-            },
-                      correlation_id=event.correlation_id)
+            self.emit(
+                EventType.ORIGINATION_CREATED,
+                {
+                    "application_id": application_id,
+                    "borrower": borrower,
+                    "principal": principal,
+                },
+                correlation_id=event.correlation_id,
+            )
 
         elif event.event_type == EventType.ORIGINATION_SUBMIT:
             application_id = event.payload.get("application_id", "")
@@ -59,9 +60,12 @@ class OriginationService(NanoService):
                 record["status"] = "submitted"
                 record["submitted_at"] = datetime.now(timezone.utc).isoformat()
                 self.store.set(f"origination:{application_id}", record)
-            self.emit(EventType.ORIGINATION_SUBMITTED, {
-                "application_id": application_id,
-                "borrower": record["borrower"],
-                "principal": record["principal"],
-            },
-                      correlation_id=event.correlation_id)
+            self.emit(
+                EventType.ORIGINATION_SUBMITTED,
+                {
+                    "application_id": application_id,
+                    "borrower": record["borrower"],
+                    "principal": record["principal"],
+                },
+                correlation_id=event.correlation_id,
+            )

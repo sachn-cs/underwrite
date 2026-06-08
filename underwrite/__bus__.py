@@ -21,7 +21,6 @@ __all__ = [
 
 import asyncio
 import concurrent.futures
-import logging
 import threading
 import time
 import uuid
@@ -32,9 +31,8 @@ from typing import Any
 
 from underwrite.__events__ import Event
 from underwrite.__exceptions__ import RateLimitError
+from underwrite.__logger__ import logger
 from underwrite.__store__ import Store
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -138,8 +136,7 @@ class DeadLetterQueue:
                 self.__records = valid
             else:
                 logger.warning(
-                    "corrupted DLQ store data (expected list, got %s), "
-                    "starting with empty DLQ",
+                    "corrupted DLQ store data (expected list, got %s), starting with empty DLQ",
                     type(raw).__name__)
 
     def __sync_store(self) -> None:
@@ -357,8 +354,9 @@ class DistributedRateLimiter(RateLimiter):
         self.__store: Store | None = store
         self.__prefix: str = prefix
         if store is None:
-            logger.warning("DistributedRateLimiter created without store, "
-                           "falling back to in-memory rate limiter")
+            logger.warning(
+                "DistributedRateLimiter created without store, falling back to in-memory rate limiter"
+            )
 
     def check(self, key: str) -> bool:
         if self.__store is None:
@@ -366,18 +364,18 @@ class DistributedRateLimiter(RateLimiter):
         if not super().check(key):
             return False
         now = time.time()
-        store_key = f"{self.__prefix}:{key}"
+        window = int(now / (self.interval / self.max_rate))
+        store_key = f"{self.__prefix}:{key}:{window}"
         raw = self.__store.get(store_key)
-        last: float = raw if isinstance(raw, (int, float)) else 0.0
-        if now - last < self.interval / self.max_rate:
+        if raw is not None:
             return False
-        self.__store.set(store_key, now)
+        self.__store.set(store_key, True)
         return True
 
 
 class IdempotencyGuard:
     """Prevents duplicate event processing by tracking seen event IDs per handler.
-    
+
     Bounded per-handler to prevent unbounded memory growth.
     """
 
@@ -466,12 +464,14 @@ class EventBus(ABC):
 class LocalBus(EventBus):
     """Thread-safe in-process event bus with async dispatch and idempotency."""
 
-    def __init__(self,
-                 rate_limit: float = 0.0,
-                 max_workers: int = 0,
-                 max_futures: int = 10000,
-                 max_buffer_size: int = 0,
-                 store: Store | None = None) -> None:
+    def __init__(
+        self,
+        rate_limit: float = 0.0,
+        max_workers: int = 0,
+        max_futures: int = 10000,
+        max_buffer_size: int = 0,
+        store: Store | None = None,
+    ) -> None:
         """Initializes the local bus.
 
         Args:
@@ -555,8 +555,7 @@ class LocalBus(EventBus):
         with self.__lock:
             for event_type in list(self.__handlers):
                 self.__handlers[event_type] = [
-                    (sid, h)
-                    for sid, h in self.__handlers[event_type]
+                    (sid, h) for sid, h in self.__handlers[event_type]
                     if sid != subscription_id
                 ]
 

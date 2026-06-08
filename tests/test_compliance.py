@@ -46,8 +46,9 @@ class TestComplianceService:
             assert len(kyc) == 0
             assert len(aml) == 0
             if expected_reason:
-                assert rejected[0].payload["reason"] == expected_reason, \
+                assert rejected[0].payload["reason"] == expected_reason, (
                     f"Expected reason '{expected_reason}' got '{rejected[0].payload.get('reason')}'"
+                )
 
     def test_verified_with_valid_pan_and_aadhaar(self) -> None:
         self.__assert_events(
@@ -66,13 +67,15 @@ class TestComplianceService:
         svc = compliance(bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type=EventType.USER_ADDED,
-                  source="test",
-                  payload={
-                      "user": "bob",
-                      "pan": "FGHIJ5678K",
-                      "aadhaar": "987654321098"
-                  }))
+            Event(
+                event_type=EventType.USER_ADDED,
+                source="test",
+                payload={
+                    "user": "bob",
+                    "pan": "FGHIJ5678K",
+                    "aadhaar": "987654321098"
+                },
+            ))
         types = [e.event_type for e in all_events]
         assert EventType.KYC_VERIFIED in types
         assert EventType.AML_CLEARED in types

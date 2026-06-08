@@ -7,6 +7,7 @@ when a statement is produced.
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
 from typing import Any
 
@@ -18,6 +19,10 @@ from underwrite.validate import require_finite
 class StatementService(NanoService):
     """Generates account statements showing loan activity and current status."""
 
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.__lock: threading.RLock = threading.RLock()
+
     def handle(self, event: Event) -> None:
         if event.event_type == EventType.STATEMENT_GENERATE:
             loan_id: str = event.payload.get("loan_id", "")
@@ -26,49 +31,53 @@ class StatementService(NanoService):
             if not loan_id or not period_start:
                 return
 
-            statement_id: str = f"stmt_{loan_id}_{period_start}"
-            if self.store.exists(f"statement:{statement_id}"):
-                return
+            with self.__lock:
+                statement_id: str = f"stmt_{loan_id}_{period_start}"
+                if self.store.exists(f"statement:{statement_id}"):
+                    return
 
-            transactions: list[dict[str, Any]] = []
-            for key in self.store.keys(f"payment:pay_{loan_id}"):
-                payment = self.store.get(key)
-                if payment:
-                    transactions.append(payment)
-            total_paid: float = sum(
-                require_finite(t.get("amount", 0), "amount")
-                for t in transactions)
+                transactions: list[dict[str, Any]] = []
+                for key in self.store.keys(f"payment:pay_{loan_id}"):
+                    payment = self.store.get(key)
+                    if payment:
+                        transactions.append(payment)
+                total_paid: float = sum(
+                    require_finite(t.get("amount", 0), "amount")
+                    for t in transactions)
 
-            loan = self.store.get(f"loan:{loan_id}")
-            outstanding: float = require_finite(loan.get("outstanding", 0),
-                                                "outstanding") if loan else 0.0
+                loan = self.store.get(f"loan:{loan_id}")
+                outstanding: float = require_finite(loan.get(
+                    "outstanding", 0), "outstanding") if loan else 0.0
 
-            statement: dict[str, Any] = {
-                "statement_id":
+                statement: dict[str, Any] = {
+                    "statement_id":
                     statement_id,
-                "loan_id":
+                    "loan_id":
                     loan_id,
-                "period_start":
+                    "period_start":
                     period_start,
-                "period_end":
+                    "period_end":
                     period_end or datetime.now(timezone.utc).isoformat(),
-                "outstanding":
+                    "outstanding":
                     outstanding,
-                "total_paid":
+                    "total_paid":
                     total_paid,
-                "transaction_count":
+                    "transaction_count":
                     len(transactions),
-                "generated_at":
+                    "generated_at":
                     datetime.now(timezone.utc).isoformat(),
-            }
-            self.store.set(f"statement:{statement_id}", statement)
-            self.emit(EventType.STATEMENT_GENERATED, {
-                "statement_id": statement_id,
-                "loan_id": loan_id,
-                "outstanding": outstanding,
-                "total_paid": total_paid,
-            },
-                      correlation_id=event.correlation_id)
+                }
+                self.store.set(f"statement:{statement_id}", statement)
+            self.emit(
+                EventType.STATEMENT_GENERATED,
+                {
+                    "statement_id": statement_id,
+                    "loan_id": loan_id,
+                    "outstanding": outstanding,
+                    "total_paid": total_paid,
+                },
+                correlation_id=event.correlation_id,
+            )
 
         elif event.event_type == EventType.COLLECTION_UPDATED:
             loan_id = event.payload.get("loan_id", "")
@@ -78,7 +87,8 @@ class StatementService(NanoService):
                     {
                         "loan_id": loan_id,
                         "trigger": "collection_update",
-                    })
+                    },
+                )
 
         elif event.event_type == EventType.PAYMENT_RECEIVED:
             loan_id = event.payload.get("loan_id", "")
@@ -88,4 +98,5 @@ class StatementService(NanoService):
                     {
                         "loan_id": loan_id,
                         "trigger": "payment",
-                    })
+                    },
+                )

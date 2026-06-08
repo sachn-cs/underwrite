@@ -21,13 +21,12 @@ __all__ = [
 ]
 
 import importlib.metadata
-import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from underwrite.services import NanoService
 
-logger = logging.getLogger(__name__)
+from underwrite.__logger__ import logger
 
 PLUGIN_ENTRYPOINT_GROUP: str = "underwrite.services"
 
@@ -48,5 +47,6 @@ def discover_plugins() -> dict[str, type[NanoService]]:
             plugins[ep.name] = cls
             logger.info("loaded plugin service %s from %s", ep.name, ep.value)
         except Exception:
-            logger.exception("failed to load plugin %s (%s)", ep.name, ep.value)
+            logger.exception("failed to load plugin %s (%s)", ep.name,
+                             ep.value)
     return plugins

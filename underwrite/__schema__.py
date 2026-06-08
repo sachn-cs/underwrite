@@ -29,10 +29,9 @@ __all__ = [
     "SchemaValidationError",
 ]
 
-import logging
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from underwrite.__logger__ import logger
 
 
 class SchemaValidationError(ValueError):
@@ -85,8 +84,8 @@ class EventSchema:
                 continue
             if not isinstance(value, expected):
                 raise SchemaValidationError(
-                    f"field {key!r}: expected {expected.__name__}, "
-                    f"got {type(value).__name__}")
+                    f"field {key!r}: expected {expected.__name__}, got {type(value).__name__}"
+                )
 
 
 class SchemaRegistry:
@@ -105,10 +104,11 @@ class SchemaRegistry:
         existing = self.__schemas.get(event_type)
         if existing is not None and existing.version >= schema.version:
             raise ValueError(
-                f"schema for {event_type!r} already registered "
-                f"at version {existing.version} >= {schema.version}")
+                f"schema for {event_type!r} already registered at version {existing.version} >= {schema.version}"
+            )
         self.__schemas[event_type] = schema
-        logger.debug("registered schema for %s v%s", event_type, schema.version)
+        logger.debug("registered schema for %s v%s", event_type,
+                     schema.version)
 
     def get(self, event_type: str) -> EventSchema | None:
         """Return the registered schema for *event_type*, or ``None``."""

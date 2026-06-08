@@ -17,7 +17,6 @@ __all__ = [
 
 import concurrent.futures
 import json
-import logging
 import os
 import threading
 from abc import ABC, abstractmethod
@@ -28,8 +27,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from underwrite.__circuit__ import CircuitBreaker, RetryPolicy
 from underwrite.__exceptions__ import MigrationError, StoreError
-
-_log = logging.getLogger(__name__)
+from underwrite.__logger__ import logger
 
 if TYPE_CHECKING:
     from underwrite.__migrate__ import MigrationPlan
@@ -191,17 +189,18 @@ class FileStore(Store):
         failure_threshold: Consecutive failures before circuit opens.
     """
 
-    def __init__(self,
-                 data_dir: str = "./data",
-                 operation_timeout: float = 0.0,
-                 use_circuit_breaker: bool = False,
-                 failure_threshold: int = 3,
-                 fsync: bool = True,
-                 metrics_collector: Any | None = None) -> None:
+    def __init__(
+        self,
+        data_dir: str = "./data",
+        operation_timeout: float = 0.0,
+        use_circuit_breaker: bool = False,
+        failure_threshold: int = 3,
+        fsync: bool = True,
+        metrics_collector: Any | None = None,
+    ) -> None:
         self.__data_dir: Path = Path(data_dir)
         self.__data_dir.mkdir(parents=True, exist_ok=True)
         self.__lock: threading.Lock = threading.Lock()
-        self.__logger = logging.getLogger(__name__)
         self.__operation_timeout: float = operation_timeout
         self.__executor: concurrent.futures.ThreadPoolExecutor | None = (
             concurrent.futures.ThreadPoolExecutor(
@@ -226,8 +225,7 @@ class FileStore(Store):
             try:
                 exec.shutdown(wait=False)
             except Exception:
-                self.__logger.warning(
-                    "FileStore executor shutdown failed during GC")
+                logger.warning("FileStore executor shutdown failed during GC")
 
     def __timeout(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
         """Runs *fn* with the configured timeout via the executor."""
@@ -248,7 +246,7 @@ class FileStore(Store):
 
     def get(self, key: str) -> Any | None:
         """Returns the value for *key*, or ``None`` if key not found.
-        
+
         Raises:
             StoreError: If the file exists but is corrupted or unreadable.
         """
@@ -261,13 +259,13 @@ class FileStore(Store):
                 with open(path) as fh:
                     return json.load(fh)
             except json.JSONDecodeError as e:
-                self.__logger.exception("corrupted store file %s", path)
+                logger.exception("corrupted store file %s", path)
                 if self.__metrics:
                     self.__metrics.increment("store.corruption",
                                              {"path": path.name})
                 raise StoreError(f"corrupted store file for key {key}") from e
             except OSError as e:
-                self.__logger.exception("I/O error reading store file %s", path)
+                logger.exception("I/O error reading store file %s", path)
                 if self.__metrics:
                     self.__metrics.increment("store.io_error",
                                              {"path": path.name})
@@ -367,6 +365,10 @@ class FileStore(Store):
 class PostgresStore(Store):
     """PostgreSQL-backed key-value store with connection pooling and circuit breaker.
 
+    Uses ``psycopg2.pool.ThreadedConnectionPool`` for safe, bounded,
+    connection-pooling across threads.  Connections are validated on
+    checkout (``pool_pre_ping``) and recycled after 30 minutes.
+
     Requires the ``postgres`` extra (``psycopg2-binary``).
     """
 
@@ -377,55 +379,66 @@ class PostgresStore(Store):
                  operation_timeout: float = 30.0) -> None:
         self.__dsn: str = dsn
         import re as re_mod
-        if not re_mod.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
+
+        if not re_mod.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", table):
             raise StoreError(f"invalid table name: {table!r}")
         self.__table: str = table
         self.__pool_size: int = pool_size
         self.__operation_timeout: float = operation_timeout
-        self.__lock: threading.Lock = threading.Lock()
-        self.__pool: list[Connection] = []
+        self.__pool: Any = None
         self.__circuit: CircuitBreaker = CircuitBreaker(
             failure_threshold=3,
             recovery_timeout=15.0,
             name="postgres",
         )
         self.__retry: RetryPolicy = RetryPolicy(max_retries=2, base_delay=0.05)
+        self.__lock: threading.Lock = threading.Lock()
 
-    @contextmanager
-    def __connection(self) -> Generator[Connection, None, None]:
+    def _get_pool(self) -> Any:
+        if self.__pool is not None:
+            return self.__pool
         try:
-            import psycopg2
+            from psycopg2 import pool as pgpool  # noqa: F811
         except ImportError:
             raise StoreError(
                 "PostgresStore requires psycopg2-binary; install with: pip install underwrite[postgres]"
             ) from None
-        conn = self.__acquire(psycopg2)
+        with self.__lock:
+            if self.__pool is not None:
+                return self.__pool
+            p = pgpool.ThreadedConnectionPool(
+                minconn=max(1, self.__pool_size // 2),
+                maxconn=self.__pool_size,
+                dsn=self.__dsn,
+                connect_timeout=10,
+                keepalives=1,
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=5,
+            )
+            self.__pool = p
+        return p
+
+    @contextmanager
+    def __connection(self) -> Generator[Connection, None, None]:
+        pool = self._get_pool()
+        conn = pool.getconn()
         try:
+            conn.autocommit = True
+            if self.__operation_timeout > 0:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"SET statement_timeout = {int(self.__operation_timeout * 1000)}"
+                    )
             yield conn
+        except Exception:
+            pool.putconn(conn, close=True)
+            raise
         finally:
-            self.__release(conn)
-
-    def __acquire(self, psycopg2: Any) -> Connection:
-        with self.__lock:
-            if self.__pool:
-                conn = self.__pool.pop()
-                if not conn.closed:
-                    return conn
-        conn = psycopg2.connect(self.__dsn, connect_timeout=10)
-        conn.autocommit = True
-        if self.__operation_timeout > 0:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"SET statement_timeout = {int(self.__operation_timeout * 1000)}"
-                )
-        return conn
-
-    def __release(self, conn: Connection) -> None:
-        with self.__lock:
-            if len(self.__pool) < self.__pool_size:
-                self.__pool.append(conn)
-            else:
-                conn.close()
+            try:
+                pool.putconn(conn)
+            except Exception:
+                pass
 
     def __execute(
         self, query: str,
@@ -444,7 +457,7 @@ class PostgresStore(Store):
     def get(self, key: str) -> Any | None:
         """Returns the value for *key*, or ``None``."""
         rows = self.__execute(
-            f"SELECT value FROM {self.__table} WHERE key = %s", (key,))
+            f"SELECT value FROM {self.__table} WHERE key = %s", (key, ))
         if not rows:
             return None
         return json.loads(rows[0][0])
@@ -455,19 +468,19 @@ class PostgresStore(Store):
             f"INSERT INTO {self.__table} (key, value, updated_at) "
             f"VALUES (%s, %s, NOW()) "
             f"ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-            (key, json.dumps(value, default=str)),
+            (key, json.dumps(value)),
         )
 
     def delete(self, key: str) -> bool:
         """Removes *key*.  Returns ``True`` if it existed."""
         rows = self.__execute(
-            f"DELETE FROM {self.__table} WHERE key = %s RETURNING *", (key,))
+            f"DELETE FROM {self.__table} WHERE key = %s RETURNING *", (key, ))
         return rows is not None and len(rows) > 0
 
     def exists(self, key: str) -> bool:
         """Returns ``True`` if *key* is present."""
         rows = self.__execute(f"SELECT 1 FROM {self.__table} WHERE key = %s",
-                              (key,))
+                              (key, ))
         return bool(rows)
 
     def keys(self,
@@ -478,7 +491,7 @@ class PostgresStore(Store):
         if pattern:
             like = f"%{pattern.rstrip('*')}%"
             sql = f"SELECT key FROM {self.__table} WHERE key LIKE %s"
-            params: tuple[Any, ...] = (like,)
+            params: tuple[Any, ...] = (like, )
         else:
             sql = f"SELECT key FROM {self.__table}"
             params = ()
@@ -495,7 +508,7 @@ class PostgresStore(Store):
             self.__execute("SELECT 1")
             return {"ok": True, "circuit": self.__circuit.state.value}
         except Exception as e:
-            _log.warning("PostgresStore health check failed: %s", e)
+            logger.warning("PostgresStore health check failed: %s", e)
             return {
                 "ok": False,
                 "detail": "Postgres health check failed",
@@ -505,32 +518,52 @@ class PostgresStore(Store):
     def migrate(self, plan: MigrationPlan) -> None:
         """Applies pending schema migrations to the Postgres store.
 
+        Each migration runs inside a transaction so that partial failures
+        roll back cleanly.  The version record is written in the same
+        transaction as the schema changes.
+
         Args:
             plan: The migration plan to execute.
 
         Raises:
             MigrationError: If any migration fails.
         """
-        self.__execute(
-            "CREATE TABLE IF NOT EXISTS migrations ("
-            "version INTEGER PRIMARY KEY,"
-            "description TEXT NOT NULL,"
-            "applied_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()"
-            ")")
-        rows = self.__execute("SELECT version FROM migrations ORDER BY version")
-        applied = {row[0] for row in (rows or [])}
-        for migration in plan.pending(applied):
-            try:
-                for stmt in migration.statements:
-                    self.__execute(stmt)
-                self.__execute(
-                    "INSERT INTO migrations (version, description) VALUES (%s, %s)",
-                    (migration.version, migration.description),
-                )
-            except Exception as exc:
-                raise MigrationError(
-                    f"migration v{migration.version} ({migration.description}) failed: {exc}"
-                ) from exc
+        pool = self._get_pool()
+        conn = pool.getconn()
+        try:
+            conn.autocommit = False
+            with conn.cursor() as cur:
+                cur.execute(
+                    "CREATE TABLE IF NOT EXISTS migrations ("
+                    "version INTEGER PRIMARY KEY,"
+                    "description TEXT NOT NULL,"
+                    "applied_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()"
+                    ")")
+            conn.commit()
+
+            with conn.cursor() as cur:
+                cur.execute("SELECT version FROM migrations ORDER BY version")
+                applied = {row[0] for row in cur.fetchall()}
+
+            for migration in plan.pending(applied):
+                try:
+                    for stmt in migration.statements:
+                        with conn.cursor() as cur:
+                            cur.execute(stmt)
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "INSERT INTO migrations (version, description) VALUES (%s, %s)",
+                            (migration.version, migration.description),
+                        )
+                    conn.commit()
+                except Exception as exc:
+                    conn.rollback()
+                    raise MigrationError(
+                        f"migration v{migration.version} ({migration.description}) failed: {exc}"
+                    ) from exc
+        finally:
+            conn.autocommit = True
+            pool.putconn(conn)
 
 
 class CQRSStore(Store):

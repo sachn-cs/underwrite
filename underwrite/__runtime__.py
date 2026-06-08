@@ -27,6 +27,7 @@ from underwrite.__events__ import Event
 from underwrite.__exceptions__ import ServiceNotFoundError
 from underwrite.__health__ import HealthRegistry
 from underwrite.__identity__ import Identity
+from underwrite.__logger__ import logger
 from underwrite.__metrics__ import MetricsCollector
 from underwrite.__migrate__ import default_plan
 from underwrite.__saga__ import SagaOrchestrator
@@ -36,8 +37,6 @@ from underwrite.__store__ import FileStore, MemoryStore, Store
 from underwrite.__supervisor__ import ServiceSupervisor
 from underwrite.__tracer__ import Tracer
 from underwrite.services import NanoService
-
-logger = logging.getLogger(__name__)
 
 
 class Runtime:
@@ -91,11 +90,11 @@ class Runtime:
         self.__tracer: Tracer | None = self.__build_tracer()
         self.__bus = self.__build_bus()
         self.__secrets = self.__build_secrets()
-        self.__saga = (SagaOrchestrator(
-            store=self.__store) if self.__config.saga.enabled else None)
+        self.__saga = SagaOrchestrator(
+            store=self.__store) if self.__config.saga.enabled else None
         self.__health = HealthRegistry()
-        self.__metrics = (MetricsCollector()
-                          if self.__config.metrics.enabled else None)
+        self.__metrics = MetricsCollector(
+        ) if self.__config.metrics.enabled else None
         self.__authz = self.__build_authz()
         self.__supervisor = self.__build_supervisor()
         self.__metrics_thread = None
@@ -119,8 +118,7 @@ class Runtime:
         handler.setLevel(level)
 
         if cfg.log_format == "json":
-
-            SENSITIVE_FIELDS: frozenset[str] = frozenset({
+            sensitive_fields: frozenset[str] = frozenset({
                 "password",
                 "secret",
                 "token",
@@ -142,9 +140,10 @@ class Runtime:
                     if isinstance(data, dict):
                         return {
                             k:
-                                "***REDACTED***" if any(
-                                    s in k.lower() for s in SENSITIVE_FIELDS)
-                                else self.__redact(v) for k, v in data.items()
+                            "***REDACTED***" if any(s in k.lower()
+                                                    for s in sensitive_fields)
+                            else self.__redact(v)
+                            for k, v in data.items()
                         }
                     if isinstance(data, (list, tuple)):
                         return [self.__redact(i) for i in data]
@@ -182,6 +181,7 @@ class Runtime:
             def filter(self, record: logging_mod.LogRecord) -> bool:
                 if not hasattr(record, "correlation_id"):
                     from underwrite.services.base import get_log_correlation_id
+
                     record.correlation_id = get_log_correlation_id(
                     )  # type: ignore[attr-defined]
                 return True
@@ -211,9 +211,11 @@ class Runtime:
         exporter: Any = None
         if self.__config.tracing.exporter == "console":
             from underwrite.__tracer__ import ConsoleSpanExporter
+
             exporter = ConsoleSpanExporter()
         elif self.__config.tracing.exporter == "otlp":
             from underwrite.__tracer__ import OtlpSpanExporter
+
             exporter = OtlpSpanExporter(service_name="underwrite")
         return Tracer(service_id="runtime", exporter=exporter)
 
@@ -233,6 +235,7 @@ class Runtime:
             return MemoryStore()
         elif cfg.backend == "postgres":
             from underwrite.__store__ import PostgresStore
+
             return PostgresStore(dsn=cfg.dsn, pool_size=cfg.pool_size)
         logger.warning(
             "unrecognized store backend %r, falling back to FileStore",
@@ -245,9 +248,11 @@ class Runtime:
             return None
         if cfg.read_backend == "filesystem":
             from underwrite.__store__ import FileStore
+
             return FileStore(self.__config.data_dir)
         elif cfg.read_backend == "postgres":
             from underwrite.__store__ import PostgresStore
+
             return PostgresStore(dsn=cfg.read_dsn or cfg.dsn,
                                  pool_size=cfg.pool_size)
         if cfg.read_backend != "memory":
@@ -263,6 +268,7 @@ class Runtime:
         policy_file = self.__config.authz.policy_file
         if policy_file:
             import json as json_mod
+
             p = Path(policy_file)
             if p.exists():
                 try:
@@ -309,8 +315,9 @@ class Runtime:
                     metrics_logger.debug(
                         "exporting %d counters, %d timers, %d gauges",
                         len(snap.get("counters", {})),
-                        len(snap.get("timers", {})), len(snap.get("gauges",
-                                                                  {})))
+                        len(snap.get("timers", {})),
+                        len(snap.get("gauges", {})),
+                    )
                 except Exception:
                     logger.exception("metrics export failed")
 
@@ -320,22 +327,46 @@ class Runtime:
         self.__metrics_thread.start()
 
     def __register_subsystem_health(self) -> None:
-        self.__health.register("bus", lambda: {"ok": True})
+
+        def _bus_health() -> dict:
+            subs = 0
+            if hasattr(self.__bus, "_EventBus__subscriptions"):
+                subs = len(self.__bus._EventBus__subscriptions)
+            dlq = 0
+            if hasattr(self.__bus, "dlq") and self.__bus.dlq:
+                dlq = self.__bus.dlq.count
+            return {
+                "ok":
+                not self.__bus.is_stopped()
+                if hasattr(self.__bus, "is_stopped") else True,
+                "subscribers":
+                subs,
+                "dlq_count":
+                dlq,
+            }
+
+        self.__health.register("bus", _bus_health)
         self.__health.register("store", lambda: self.__store.health())
         read_store = self.__read_store
         if read_store is not None:
             self.__health.register("read_store", lambda: read_store.health())
         self.__health.register(
-            "services", lambda: {
+            "services",
+            lambda: {
                 "ok":
-                    True,
+                True,
                 "running": [
                     sid for sid, svc in self.__services.items()
                     if svc.is_running
                 ],
-            })
+            },
+        )
         if self.__metrics:
-            self.__health.register("metrics", lambda: {"ok": True})
+
+            def _metrics_health() -> dict:
+                return {"ok": True}
+
+            self.__health.register("metrics", _metrics_health)
         tracer = self.__tracer
         if tracer is not None:
             self.__health.register(
@@ -347,10 +378,12 @@ class Runtime:
             self.__health.register("saga", lambda: {"ok": True})
         if hasattr(self.__bus, "dlq") and self.__bus.dlq:
             self.__health.register(
-                "dlq", lambda: {
+                "dlq",
+                lambda: {
                     "ok": True,
                     "dead_letter_count": self.__bus.dlq.count,
-                })
+                },
+            )
         if self.__supervisor:
             sup = self.__supervisor
             self.__health.register("supervisor", lambda: sup.health())
@@ -424,8 +457,8 @@ class Runtime:
                 f"no class mapping for service: {service_name}")
         module = importlib.import_module(module_path)
         cls = getattr(module, class_name, None)
-        if cls is None or not (isinstance(cls, type) and
-                               issubclass(cls, NanoService)):
+        if cls is None or not (isinstance(cls, type)
+                               and issubclass(cls, NanoService)):
             raise ServiceNotFoundError(
                 f"class {class_name} not found in {module_path}")
         extra: dict[str, Any] = {}
@@ -499,10 +532,10 @@ class Runtime:
 
     def restart_failing_services(self) -> list[str]:
         """Restarts services that have recorded failures under the supervisor.
-        
+
         Each failing service is stopped, re-registered, re-wired, and started.
         Services that have exceeded max restarts are not restarted.
-        
+
         Returns:
             List of service IDs that were restarted.
         """
@@ -521,8 +554,8 @@ class Runtime:
                     old = self.__services.pop(service_id)
                     old.stop()
                 except Exception:
-                    logger.exception("error stopping service %s during restart",
-                                     service_id)
+                    logger.exception(
+                        "error stopping service %s during restart", service_id)
                     continue
             try:
                 svc = self.register(service_id)
@@ -576,6 +609,7 @@ class Runtime:
         blocking the async event loop.
         """
         import asyncio
+
         return await asyncio.to_thread(self.publish, event_type, payload,
                                        correlation_id)
 

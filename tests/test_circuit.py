@@ -52,6 +52,7 @@ class TestCircuitBreaker:
         except ValueError:
             pass
         import time
+
         time.sleep(0.005)
         assert cb.state == CircuitState.HALF_OPEN
 
@@ -62,6 +63,7 @@ class TestCircuitBreaker:
         except ValueError:
             pass
         import time
+
         time.sleep(0.005)
         assert cb.state == CircuitState.HALF_OPEN
         cb.call(lambda: "ok")
@@ -74,6 +76,7 @@ class TestCircuitBreaker:
         except ValueError:
             pass
         import time
+
         time.sleep(0.005)
         assert cb.state == CircuitState.HALF_OPEN
         try:

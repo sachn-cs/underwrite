@@ -38,7 +38,8 @@ class TestPathQuery:
                 },
                 "seeds": ["bank"],
             },
-            bus=bus)
+            bus=bus,
+        )
         bus.start()
         svc.handle(
             Event(event_type="graph_path",
@@ -74,13 +75,15 @@ class TestPathQuery:
         bus = LocalBus()
         received: list[Event] = []
         bus.subscribe("graph_path_result", lambda e: received.append(e))
-        svc = graph({
-            "parent": {
-                "alice": "bank"
+        svc = graph(
+            {
+                "parent": {
+                    "alice": "bank"
+                },
+                "seeds": ["bank"],
             },
-            "seeds": ["bank"],
-        },
-                    bus=bus)
+            bus=bus,
+        )
         bus.start()
         svc.handle(
             Event(event_type="graph_path",
@@ -121,7 +124,8 @@ class TestCreditLimitQuery:
                 "delegation": {},
                 "children": {},
             },
-            bus=bus)
+            bus=bus,
+        )
         bus.start()
         svc.handle(
             Event(event_type="graph_credit_limit",
@@ -153,7 +157,8 @@ class TestCreditLimitQuery:
                     "bank": ["alice"]
                 },
             },
-            bus=bus)
+            bus=bus,
+        )
         bus.start()
         svc.handle(
             Event(event_type="graph_credit_limit",
@@ -183,7 +188,8 @@ class TestCreditLimitQuery:
                     "bank": ["alice"]
                 },
             },
-            bus=bus)
+            bus=bus,
+        )
         bus.start()
         svc.handle(
             Event(event_type="graph_credit_limit",

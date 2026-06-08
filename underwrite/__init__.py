@@ -34,7 +34,12 @@ from underwrite.__identity__ import Identity
 from underwrite.__runtime__ import Runtime
 from underwrite.__store__ import FileStore, MemoryStore, Store
 from underwrite.services import NanoService
-from underwrite.version import __version__, __version_tuple__  # noqa: F401
+
+try:
+    from underwrite.__version__ import __version__, __version_tuple__  # noqa: F811
+except ImportError:
+    __version__ = "0.0.0"
+    __version_tuple__ = (0, 0, 0)
 
 __all__: list[str] = [
     "Runtime",

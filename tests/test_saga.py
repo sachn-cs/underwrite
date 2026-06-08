@@ -13,9 +13,12 @@ class TestSagaOrchestrator:
 
     def test_start_saga_returns_id(self) -> None:
         so = SagaOrchestrator()
-        sid = so.start_saga("test", [
-            SagaStep("s1", "event.a", {"k": "v"}, "comp.a", {"k": "v"}),
-        ])
+        sid = so.start_saga(
+            "test",
+            [
+                SagaStep("s1", "event.a", {"k": "v"}, "comp.a", {"k": "v"}),
+            ],
+        )
         assert sid is not None
         assert isinstance(sid, str)
 
@@ -26,9 +29,12 @@ class TestSagaOrchestrator:
 
     def test_execute_step_without_emitter_returns_false(self) -> None:
         so = SagaOrchestrator()
-        sid = so.start_saga("test", [
-            SagaStep("s1", "event.a", {"k": "v"}, "comp.a", {"k": "v"}),
-        ])
+        sid = so.start_saga(
+            "test",
+            [
+                SagaStep("s1", "event.a", {"k": "v"}, "comp.a", {"k": "v"}),
+            ],
+        )
         ok = so.execute_step(sid, 0)
         assert ok is False
 
@@ -45,9 +51,12 @@ class TestSagaOrchestrator:
                 emitted.append((et, payload))
 
         so.register_emitter("test", FakeEmitter())
-        sid = so.start_saga("test", [
-            SagaStep("s1", "event.a", {"k": "v"}, "comp.a", {"k": "v"}),
-        ])
+        sid = so.start_saga(
+            "test",
+            [
+                SagaStep("s1", "event.a", {"k": "v"}, "comp.a", {"k": "v"}),
+            ],
+        )
         ok = so.execute_all(sid)
         assert ok is True
         saga = so.get_saga(sid)
@@ -74,10 +83,13 @@ class TestSagaOrchestrator:
                 emitted.append((et, payload))
 
         so.register_emitter("test", FakeEmitter())
-        sid = so.start_saga("test", [
-            SagaStep("s1", "event.a", {"k": "a"}, "comp.a", {"k": "a"}),
-            SagaStep("s2", "event.b", {"k": "b"}, "comp.b", {"k": "b"}),
-        ])
+        sid = so.start_saga(
+            "test",
+            [
+                SagaStep("s1", "event.a", {"k": "a"}, "comp.a", {"k": "a"}),
+                SagaStep("s2", "event.b", {"k": "b"}, "comp.b", {"k": "b"}),
+            ],
+        )
         ok = so.execute_all(sid)
         assert ok is False
         saga = so.get_saga(sid)
@@ -98,6 +110,7 @@ class TestSagaOrchestrator:
             results.append(name)
 
         import threading
+
         t1 = threading.Thread(target=register_emitter, args=("saga-a", ))
         t2 = threading.Thread(target=register_emitter, args=("saga-b", ))
         t1.start()
@@ -129,10 +142,13 @@ class TestSagaOrchestrator:
                 emitted.append((et, payload))
 
         so.register_emitter("test", FailingStepAndCompensateEmitter())
-        sid = so.start_saga("test", [
-            SagaStep("s1", "event.a", {"k": "a"}, "comp.a", {"k": "a"}),
-            SagaStep("s2", "event.b", {"k": "b"}, "comp.b", {"k": "b"}),
-        ])
+        sid = so.start_saga(
+            "test",
+            [
+                SagaStep("s1", "event.a", {"k": "a"}, "comp.a", {"k": "a"}),
+                SagaStep("s2", "event.b", {"k": "b"}, "comp.b", {"k": "b"}),
+            ],
+        )
         ok = so.execute_all(sid)
         assert ok is False
         saga = so.get_saga(sid)
@@ -156,9 +172,12 @@ class TestSagaOrchestrator:
                 emitted.append((et, payload))
 
         so.register_emitter("test", FailingEmitter())
-        sid = so.start_saga("test", [
-            SagaStep("s1", "event.fail", {}, "comp.a", {}),
-        ])
+        sid = so.start_saga(
+            "test",
+            [
+                SagaStep("s1", "event.fail", {}, "comp.a", {}),
+            ],
+        )
         ok = so.execute_step(sid, 0)
         assert ok is False
         saga = so.get_saga(sid)
@@ -182,10 +201,13 @@ class TestSagaOrchestrator:
                 emitted.append((et, payload))
 
         so.register_emitter("test", LockCheckEmitter())
-        sid = so.start_saga("test", [
-            SagaStep("s1", "event.a", {"k": "a"}, "comp.a", {"k": "a"}),
-            SagaStep("s2", "event.b", {"k": "b"}, "comp.b", {"k": "b"}),
-        ])
+        sid = so.start_saga(
+            "test",
+            [
+                SagaStep("s1", "event.a", {"k": "a"}, "comp.a", {"k": "a"}),
+                SagaStep("s2", "event.b", {"k": "b"}, "comp.b", {"k": "b"}),
+            ],
+        )
         ok = so.execute_all(sid)
         assert ok is False
         saga = so.get_saga(sid)
@@ -200,9 +222,12 @@ class TestSagaPersistence:
     def test_saga_persisted_to_store_on_start(self) -> None:
         store = MemoryStore()
         so = SagaOrchestrator(store=store)
-        sid = so.start_saga("test", [
-            SagaStep("s1", "event.a", {"k": "v"}, "comp.a", {"k": "v"}),
-        ])
+        sid = so.start_saga(
+            "test",
+            [
+                SagaStep("s1", "event.a", {"k": "v"}, "comp.a", {"k": "v"}),
+            ],
+        )
         raw = store.get(f"saga:{sid}")
         assert raw is not None
         assert raw["saga_id"] == sid
@@ -211,9 +236,12 @@ class TestSagaPersistence:
     def test_saga_loads_from_store_on_init(self) -> None:
         store = MemoryStore()
         inner = SagaOrchestrator(store=store)
-        sid = inner.start_saga("restore-test", [
-            SagaStep("s1", "event.a", {"k": "v"}, "comp.a", {"k": "v"}),
-        ])
+        sid = inner.start_saga(
+            "restore-test",
+            [
+                SagaStep("s1", "event.a", {"k": "v"}, "comp.a", {"k": "v"}),
+            ],
+        )
         inner2 = SagaOrchestrator(store=store)
         loaded = inner2.get_saga(sid)
         assert loaded is not None
@@ -234,9 +262,12 @@ class TestSagaPersistence:
                 emitted.append((et, payload))
 
         so.register_emitter("test", FakeEmitter())
-        sid = so.start_saga("test", [
-            SagaStep("s1", "event.a", {"k": "v"}, "comp.a", {"k": "v"}),
-        ])
+        sid = so.start_saga(
+            "test",
+            [
+                SagaStep("s1", "event.a", {"k": "v"}, "comp.a", {"k": "v"}),
+            ],
+        )
         so.execute_all(sid)
         raw = store.get(f"saga:{sid}")
         assert raw is not None
@@ -257,10 +288,13 @@ class TestSagaPersistence:
                     raise RuntimeError("step b failed")
 
         so.register_emitter("test", FailingEmitter())
-        sid = so.start_saga("test", [
-            SagaStep("s1", "event.a", {"k": "a"}, "comp.a", {"k": "a"}),
-            SagaStep("s2", "event.b", {"k": "b"}, "comp.b", {"k": "b"}),
-        ])
+        sid = so.start_saga(
+            "test",
+            [
+                SagaStep("s1", "event.a", {"k": "a"}, "comp.a", {"k": "a"}),
+                SagaStep("s2", "event.b", {"k": "b"}, "comp.b", {"k": "b"}),
+            ],
+        )
         so.execute_all(sid)
         raw = store.get(f"saga:{sid}")
         assert raw is not None
@@ -328,7 +362,8 @@ class TestSagaValidation:
     def test_corrupted_saga_rejected_on_load(self) -> None:
         store = MemoryStore()
         store.set(
-            "saga:bad", {
+            "saga:bad",
+            {
                 "saga_id":
                 "bad",
                 "name":
@@ -338,7 +373,7 @@ class TestSagaValidation:
                     "forward_event_type": "ev.a",
                     "forward_payload": {},
                     "compensate_event_type": "comp.a",
-                    "compensate_payload": {}
+                    "compensate_payload": {},
                 }],
                 "completed_steps": [99],
                 "status":
@@ -347,6 +382,7 @@ class TestSagaValidation:
                 "",
                 "started_at":
                 "2024-01-01T00:00:00",
-            })
+            },
+        )
         so = SagaOrchestrator(store=store)
         assert so.get_saga("bad") is None

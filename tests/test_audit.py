@@ -135,6 +135,7 @@ class TestAuditService:
 
     def test_export_s3_calls_boto3(self) -> None:
         from unittest.mock import MagicMock, patch
+
         put_called = [False]
 
         mock_s3 = MagicMock()
@@ -150,6 +151,7 @@ class TestAuditService:
                 __import__("sys").modules.pop(
                     "underwrite.services.audit.service", None)
             from underwrite.services.audit.service import AuditService as AuditSvc2
+
             svc2 = AuditSvc2(service_id="audit",
                              export_url="s3://bucket/path.jsonl")
             svc2.handle(Event(event_type="ev", source="s"))

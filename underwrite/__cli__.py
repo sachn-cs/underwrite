@@ -71,7 +71,7 @@ SERVICE_ARG = typer.Argument(
 
 
 @app.command()
-def run(services: list[str] = SERVICE_ARG,) -> None:
+def run(services: list[str] = SERVICE_ARG, ) -> None:
     """Starts one or more nano services."""
     for name in services:
         if name not in SERVICE_NAMES:
@@ -170,7 +170,7 @@ def dlq(
     for r in dq.records[:20]:
         typer.echo(
             f"  [{r.timestamp:.1f}] {r.subscriber_id}: "
-            f"{r.event.event_type} — {r.error[:60]}",)
+            f"{r.event.event_type} — {r.error[:60]}", )
     if dq.count > 20:
         typer.echo(f"  ... and {dq.count - 20} more")
 
@@ -192,7 +192,7 @@ def metrics() -> None:
     for k, t in snap.get("timers", {}).items():
         typer.echo(
             f"  {k}: count={t['count']} avg={t['avg_ms']:.1f}ms "
-            f"min={t['min_ms']:.1f}ms max={t['max_ms']:.1f}ms",)
+            f"min={t['min_ms']:.1f}ms max={t['max_ms']:.1f}ms", )
 
 
 @app.command()
