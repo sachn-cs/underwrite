@@ -69,7 +69,7 @@ def create_app(
     services: str = "mechanism,audit",
     rate_limit: int = 100,
     require_auth: bool = False,
-    api_token: str = "",
+    api_token: str | None = None,
     shutdown_timeout: int = 30,
 ) -> FastAPI:
     """Create a FastAPI application wrapping an underwrite Runtime.
@@ -96,7 +96,7 @@ def create_app(
     import asyncio as asyncio_mod
     import time as time_mod
 
-    token: str = api_token or os.environ.get("UNDERWRITE_API_TOKEN", "")
+    token: str = (api_token or os.environ.get("UNDERWRITE_API_TOKEN", "") or "")
     if require_auth and not token:
         raise ValueError(
             "UNDERWRITE_API_TOKEN must be set when --require-auth is used")
@@ -175,8 +175,7 @@ def create_app(
                 timeout=shutdown_timeout,
             )
         except asyncio.TimeoutError:
-            logger.warning("runtime stop timed out after %ds",
-                           shutdown_timeout)
+            logger.warning("runtime stop timed out after %ds", shutdown_timeout)
 
     # -- unversioned load-balancer probes ------------------------------------
 
@@ -218,8 +217,9 @@ def create_app(
         "text-format (``text/plain; version=0.0.4``).  Requires the "
         "``underwrite[serve]`` extra.",
         response_description="Prometheus-format metrics text.",
+        response_model=None,
     )
-    async def v1_metrics_endpoint() -> JSONResponse | PlainTextResponse:
+    async def v1_metrics_endpoint():
         try:
             from underwrite.prometheus_export import metrics_as_text
 
@@ -259,8 +259,7 @@ def create_app(
                     payload=body.get("payload", {}),
                     correlation_id=body.get("correlation_id", ""),
                 )
-            return JSONResponse(status_code=202,
-                                content={"status": "accepted"})
+            return JSONResponse(status_code=202, content={"status": "accepted"})
         except ProtocolError:
             return __error_response(400, "invalid request")
         except Exception:
@@ -279,8 +278,9 @@ def create_app(
     @app.get(
         "/metrics",
         include_in_schema=False,
+        response_model=None,
     )
-    async def metrics_endpoint() -> JSONResponse | PlainTextResponse:
+    async def metrics_endpoint():
         try:
             from underwrite.prometheus_export import metrics_as_text
 

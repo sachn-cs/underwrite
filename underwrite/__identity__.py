@@ -50,7 +50,7 @@ class Identity:
         service_id: str,
         private_key_pem: str = "",
         secrets_manager: Any | None = None,
-        encryption_passphrase: str = "",
+        encryption_passphrase: str | None = None,
     ) -> Identity:
         """Creates or derives an identity.
 
@@ -85,12 +85,13 @@ class Identity:
                         encoding=serialization.Encoding.Raw,
                         format=serialization.PublicFormat.Raw,
                     )).decode(),
-                encrypted=bool(encryption_passphrase),
+                encrypted=encryption_passphrase is not None,
                 created_at=now,
             )
-            alg = (serialization.BestAvailableEncryption(
-                encryption_passphrase.encode())
-                   if encryption_passphrase else serialization.NoEncryption())
+            pass_bytes = encryption_passphrase.encode(
+            ) if encryption_passphrase else None
+            alg = (serialization.BestAvailableEncryption(pass_bytes)
+                   if pass_bytes else serialization.NoEncryption())
             object.__setattr__(
                 identity,
                 "_Identity__private_key",
@@ -111,12 +112,13 @@ class Identity:
                     encoding=serialization.Encoding.Raw,
                     format=serialization.PublicFormat.Raw,
                 )).decode(),
-            encrypted=bool(encryption_passphrase),
+            encrypted=encryption_passphrase is not None,
             created_at=now,
         )
-        alg = (serialization.BestAvailableEncryption(
-            encryption_passphrase.encode())
-               if encryption_passphrase else serialization.NoEncryption())
+        pass_bytes = encryption_passphrase.encode(
+        ) if encryption_passphrase else None
+        alg = (serialization.BestAvailableEncryption(pass_bytes)
+               if pass_bytes else serialization.NoEncryption())
         object.__setattr__(
             identity,
             "_Identity__private_key",
@@ -129,7 +131,7 @@ class Identity:
         )
         return identity
 
-    def sign(self, payload: str, passphrase: str = "") -> str:
+    def sign(self, payload: str, passphrase: str | None = None) -> str:
         """Signs a string payload and returns a base64-encoded signature.
 
         Args:
@@ -139,7 +141,7 @@ class Identity:
         raw = base64.b64decode(self.__private_key)
         if self.encrypted:
             loaded = serialization.load_der_private_key(
-                raw, password=passphrase.encode())
+                raw, password=passphrase.encode() if passphrase else b"")
             if not isinstance(loaded, ed25519.Ed25519PrivateKey):
                 raise IdentityError("encrypted key is not Ed25519")
             private = loaded

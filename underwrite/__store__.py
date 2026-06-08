@@ -393,6 +393,19 @@ class PostgresStore(Store):
         )
         self.__retry: RetryPolicy = RetryPolicy(max_retries=2, base_delay=0.05)
         self.__lock: threading.Lock = threading.Lock()
+        self.__sql_get: str = "SELECT value FROM %s WHERE key = %%s" % table  # nosec B608: table validated ^[a-zA-Z_][a-zA-Z0-9_]*$
+        self.__sql_set: str = (
+            "INSERT INTO %s (key, value, updated_at) "
+            "VALUES (%%s, %%s, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"
+        ) % table  # nosec B608: table validated ^[a-zA-Z_][a-zA-Z0-9_]*$
+        self.__sql_delete: str = "DELETE FROM %s WHERE key = %%s RETURNING *" % table  # nosec B608: table validated ^[a-zA-Z_][a-zA-Z0-9_]*$
+        self.__sql_exists: str = "SELECT 1 FROM %s WHERE key = %%s" % table  # nosec B608: table validated ^[a-zA-Z_][a-zA-Z0-9_]*$
+        self.__sql_keys_all: str = "SELECT key FROM %s" % table  # nosec B608: table validated ^[a-zA-Z_][a-zA-Z0-9_]*$
+        self.__sql_keys_pattern: str = "SELECT key FROM %s WHERE key LIKE %%s" % table  # nosec B608: table validated ^[a-zA-Z_][a-zA-Z0-9_]*$
+        self.__timeout_sql: str = "SET statement_timeout = %d" % int(
+            operation_timeout *
+            1000)  # nosec B608: integer literal, no injection vector
 
     def _get_pool(self) -> Any:
         if self.__pool is not None:
@@ -427,9 +440,7 @@ class PostgresStore(Store):
             conn.autocommit = True
             if self.__operation_timeout > 0:
                 with conn.cursor() as cur:
-                    cur.execute(
-                        f"SET statement_timeout = {int(self.__operation_timeout * 1000)}"
-                    )
+                    cur.execute(self.__timeout_sql)
             yield conn
         except Exception:
             pool.putconn(conn, close=True)
@@ -438,7 +449,8 @@ class PostgresStore(Store):
             try:
                 pool.putconn(conn)
             except Exception:
-                pass
+                logger.warning("failed to return connection to pool",
+                               exc_info=True)
 
     def __execute(
         self, query: str,
@@ -456,8 +468,7 @@ class PostgresStore(Store):
 
     def get(self, key: str) -> Any | None:
         """Returns the value for *key*, or ``None``."""
-        rows = self.__execute(
-            f"SELECT value FROM {self.__table} WHERE key = %s", (key, ))
+        rows = self.__execute(self.__sql_get, (key,))
         if not rows:
             return None
         return json.loads(rows[0][0])
@@ -465,22 +476,18 @@ class PostgresStore(Store):
     def set(self, key: str, value: Any) -> None:
         """Persists *value* under *key* with an upsert."""
         self.__execute(
-            f"INSERT INTO {self.__table} (key, value, updated_at) "
-            f"VALUES (%s, %s, NOW()) "
-            f"ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
+            self.__sql_set,
             (key, json.dumps(value)),
         )
 
     def delete(self, key: str) -> bool:
         """Removes *key*.  Returns ``True`` if it existed."""
-        rows = self.__execute(
-            f"DELETE FROM {self.__table} WHERE key = %s RETURNING *", (key, ))
+        rows = self.__execute(self.__sql_delete, (key,))
         return rows is not None and len(rows) > 0
 
     def exists(self, key: str) -> bool:
         """Returns ``True`` if *key* is present."""
-        rows = self.__execute(f"SELECT 1 FROM {self.__table} WHERE key = %s",
-                              (key, ))
+        rows = self.__execute(self.__sql_exists, (key,))
         return bool(rows)
 
     def keys(self,
@@ -490,10 +497,10 @@ class PostgresStore(Store):
         """Returns all keys, optionally filtered by a LIKE pattern."""
         if pattern:
             like = f"%{pattern.rstrip('*')}%"
-            sql = f"SELECT key FROM {self.__table} WHERE key LIKE %s"
-            params: tuple[Any, ...] = (like, )
+            sql: str = self.__sql_keys_pattern
+            params: tuple[Any, ...] = (like,)
         else:
-            sql = f"SELECT key FROM {self.__table}"
+            sql = self.__sql_keys_all
             params = ()
         if limit > 0:
             sql += f" LIMIT {int(limit)}"
