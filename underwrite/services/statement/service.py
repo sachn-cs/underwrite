@@ -51,21 +51,21 @@ class StatementService(NanoService):
 
                 statement: dict[str, Any] = {
                     "statement_id":
-                        statement_id,
+                    statement_id,
                     "loan_id":
-                        loan_id,
+                    loan_id,
                     "period_start":
-                        period_start,
+                    period_start,
                     "period_end":
-                        period_end or datetime.now(timezone.utc).isoformat(),
+                    period_end or datetime.now(timezone.utc).isoformat(),
                     "outstanding":
-                        outstanding,
+                    outstanding,
                     "total_paid":
-                        total_paid,
+                    total_paid,
                     "transaction_count":
-                        len(transactions),
+                    len(transactions),
                     "generated_at":
-                        datetime.now(timezone.utc).isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
                 }
                 self.store.set(f"statement:{statement_id}", statement)
             self.emit(

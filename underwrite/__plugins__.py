@@ -47,5 +47,6 @@ def discover_plugins() -> dict[str, type[NanoService]]:
             plugins[ep.name] = cls
             logger.info("loaded plugin service %s from %s", ep.name, ep.value)
         except Exception:
-            logger.exception("failed to load plugin %s (%s)", ep.name, ep.value)
+            logger.exception("failed to load plugin %s (%s)", ep.name,
+                             ep.value)
     return plugins

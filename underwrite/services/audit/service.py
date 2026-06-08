@@ -127,7 +127,9 @@ class AuditService(StatefulService):
         bucket, _, key = path.partition("/")
         try:
             client = boto3.client("s3")
-            client.put_object(Bucket=bucket, Key=key, Body=body.encode("utf-8"))
+            client.put_object(Bucket=bucket,
+                              Key=key,
+                              Body=body.encode("utf-8"))
             logger.info("audit exported to s3://%s/%s (%d bytes)", bucket, key,
                         len(body))
         except Exception as exc:

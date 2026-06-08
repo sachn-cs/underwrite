@@ -41,7 +41,8 @@ class CommunicationService(NanoService):
         subject: str = event.payload.get("subject", "")
         channel: str = event.payload.get("channel", "email")
         if not recipient:
-            logger.warning("dropping COMMUNICATION_SEND with missing recipient")
+            logger.warning(
+                "dropping COMMUNICATION_SEND with missing recipient")
             return
         message_id: str = f"msg_{recipient}_{int(datetime.now(timezone.utc).timestamp())}"
         msg = {

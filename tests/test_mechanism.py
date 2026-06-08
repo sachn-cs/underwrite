@@ -510,7 +510,8 @@ class TestRevoke:
             "new_delegation": 10
         })
         state = svc.store.get("protocol:state")
-        assert state is None or "bank->alice" not in state.get("delegation", {})
+        assert state is None or "bank->alice" not in state.get(
+            "delegation", {})
 
 
 class TestCreditLimit:

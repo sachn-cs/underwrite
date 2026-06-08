@@ -68,7 +68,8 @@ class BusConfig(ForbidExtra):
     def check_backend(cls, v: str) -> str:
         allowed = {"local", "sqs", "modal"}
         if v not in allowed:
-            raise ValueError(f"bus.backend must be one of {allowed}, got {v!r}")
+            raise ValueError(
+                f"bus.backend must be one of {allowed}, got {v!r}")
         return v
 
 
@@ -323,7 +324,8 @@ class Configuration(ForbidExtra):
             from pydantic import ValidationError
 
             merged = cfg.model_copy(update={
-                k: v for k, v in data_map.items() if k in model_cls.model_fields
+                k: v
+                for k, v in data_map.items() if k in model_cls.model_fields
             })
             try:
                 return model_cls(**merged.model_dump())
@@ -342,8 +344,8 @@ class Configuration(ForbidExtra):
             overrides = dict(data["logging"])
             if "format" in overrides and "log_format" not in overrides:
                 overrides["log_format"] = overrides.pop("format")
-            config.logging = merge_sub(LoggingConfig, "logging", config.logging,
-                                       overrides)
+            config.logging = merge_sub(LoggingConfig, "logging",
+                                       config.logging, overrides)
         if "identity" in data:
             config.identity = merge_sub(IdentityConfig, "identity",
                                         config.identity, data["identity"])
@@ -351,20 +353,20 @@ class Configuration(ForbidExtra):
             config.authz = merge_sub(AuthzConfig, "authz", config.authz,
                                      data["authz"])
         if "metrics" in data:
-            config.metrics = merge_sub(MetricsConfig, "metrics", config.metrics,
-                                       data["metrics"])
+            config.metrics = merge_sub(MetricsConfig, "metrics",
+                                       config.metrics, data["metrics"])
         if "migration" in data:
             config.migration = merge_sub(MigrationConfig, "migration",
                                          config.migration, data["migration"])
         if "tracing" in data:
-            config.tracing = merge_sub(TracingConfig, "tracing", config.tracing,
-                                       data["tracing"])
+            config.tracing = merge_sub(TracingConfig, "tracing",
+                                       config.tracing, data["tracing"])
         if "saga" in data:
             config.saga = merge_sub(SagaConfig, "saga", config.saga,
                                     data["saga"])
         if "secrets" in data:
-            config.secrets = merge_sub(SecretsConfig, "secrets", config.secrets,
-                                       data["secrets"])
+            config.secrets = merge_sub(SecretsConfig, "secrets",
+                                       config.secrets, data["secrets"])
         if "recovery" in data:
             config.recovery = merge_sub(RecoveryConfig, "recovery",
                                         config.recovery, data["recovery"])
@@ -385,8 +387,7 @@ class Configuration(ForbidExtra):
                 config.governance.param_defaults.update(defaults)
         if "audit" in data:
             config.audit = config.audit.model_copy(update=dict(
-                (k, data["audit"][k])
-                for k in data["audit"]
+                (k, data["audit"][k]) for k in data["audit"]
                 if k in AuditConfig.model_fields))
         if "data_dir" in data:
             config.data_dir = data["data_dir"]
@@ -419,7 +420,7 @@ class Configuration(ForbidExtra):
             "UNDERWRITE_AUTHZ_POLICY_FILE": ("authz", "policy_file", str),
             "UNDERWRITE_METRICS_ENABLED": ("metrics", "enabled", bool),
             "UNDERWRITE_METRICS_EXPORT_INTERVAL":
-                ("metrics", "export_interval", int),
+            ("metrics", "export_interval", int),
             "UNDERWRITE_TRACING_ENABLED": ("tracing", "enabled", bool),
             "UNDERWRITE_TRACING_EXPORTER": ("tracing", "exporter", str),
             "UNDERWRITE_SAGA_ENABLED": ("saga", "enabled", bool),
@@ -430,11 +431,11 @@ class Configuration(ForbidExtra):
             "UNDERWRITE_SECRETS_VAULT_TOKEN": ("secrets", "token", str),
             "UNDERWRITE_SECRETS_AWS_REGION": ("secrets", "region", str),
             "UNDERWRITE_RECOVERY_AUTO_RESTART":
-                ("recovery", "auto_restart", bool),
+            ("recovery", "auto_restart", bool),
             "UNDERWRITE_RECOVERY_MAX_RESTARTS":
-                ("recovery", "max_restarts", int),
+            ("recovery", "max_restarts", int),
             "UNDERWRITE_RECOVERY_BACKOFF":
-                ("recovery", "backoff_seconds", float),
+            ("recovery", "backoff_seconds", float),
             "UNDERWRITE_AUDIT_MAX_LEDGER": ("audit", "max_ledger", int),
             "UNDERWRITE_AUDIT_EXPORT_URL": ("audit", "export_url", str),
         }

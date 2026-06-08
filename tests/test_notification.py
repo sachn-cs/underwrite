@@ -19,10 +19,12 @@ class TestNotificationService:
     def __assert_forwards(self, event_type: str, payload: dict) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe(EventType.NOTIFICATION_SENT, lambda e: received.append(e))
+        bus.subscribe(EventType.NOTIFICATION_SENT,
+                      lambda e: received.append(e))
         svc = notify(bus=bus)
         bus.start()
-        svc.handle(Event(event_type=event_type, source="test", payload=payload))
+        svc.handle(Event(event_type=event_type, source="test",
+                         payload=payload))
         assert len(received) == 1
         assert received[0].payload["original_event"] == event_type
         assert received[0].payload["payload"] == payload
@@ -60,7 +62,8 @@ class TestNotificationService:
     def test_ignores_non_alert_events(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe(EventType.NOTIFICATION_SENT, lambda e: received.append(e))
+        bus.subscribe(EventType.NOTIFICATION_SENT,
+                      lambda e: received.append(e))
         svc = notify(bus=bus)
         bus.start()
         for et in [

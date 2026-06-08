@@ -175,7 +175,8 @@ def create_app(
                 timeout=shutdown_timeout,
             )
         except asyncio.TimeoutError:
-            logger.warning("runtime stop timed out after %ds", shutdown_timeout)
+            logger.warning("runtime stop timed out after %ds",
+                           shutdown_timeout)
 
     # -- unversioned load-balancer probes ------------------------------------
 
@@ -258,7 +259,8 @@ def create_app(
                     payload=body.get("payload", {}),
                     correlation_id=body.get("correlation_id", ""),
                 )
-            return JSONResponse(status_code=202, content={"status": "accepted"})
+            return JSONResponse(status_code=202,
+                                content={"status": "accepted"})
         except ProtocolError:
             return __error_response(400, "invalid request")
         except Exception:

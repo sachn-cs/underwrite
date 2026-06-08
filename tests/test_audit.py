@@ -146,7 +146,8 @@ class TestAuditService:
         mock_boto3_mod.client = MagicMock(return_value=mock_s3)
 
         with patch.dict("sys.modules", {"boto3": mock_boto3_mod}):
-            if "underwrite.services.audit.service" in __import__("sys").modules:
+            if "underwrite.services.audit.service" in __import__(
+                    "sys").modules:
                 __import__("sys").modules.pop(
                     "underwrite.services.audit.service", None)
             from underwrite.services.audit.service import AuditService as AuditSvc2

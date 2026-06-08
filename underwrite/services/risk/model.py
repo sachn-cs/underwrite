@@ -52,8 +52,8 @@ class StrategyRegistry:
         Raises:
             TypeError: If *strategy_cls* is not a ``RiskScoringStrategy`` subclass.
         """
-        if not (isinstance(strategy_cls, type) and
-                issubclass(strategy_cls, RiskScoringStrategy)):
+        if not (isinstance(strategy_cls, type)
+                and issubclass(strategy_cls, RiskScoringStrategy)):
             raise TypeError(
                 f"{strategy_cls} is not a RiskScoringStrategy subclass")
         with self.__lock:

@@ -159,11 +159,12 @@ class AsyncLocalBus(AsyncEventBus):
         try:
             result = handler(event)
             if result is not None and hasattr(result, "__await__"):
-                result = await asyncio.wait_for(result, timeout=HANDLER_TIMEOUT)
+                result = await asyncio.wait_for(result,
+                                                timeout=HANDLER_TIMEOUT)
         except asyncio.TimeoutError:
             msg = f"handler timed out after {HANDLER_TIMEOUT}s"
-            logger.warning("async handler timed out for %s: %s", event.event_id,
-                           handler.__name__)
+            logger.warning("async handler timed out for %s: %s",
+                           event.event_id, handler.__name__)
             self.__dlq.put(event, msg, handler.__name__)
         except Exception as exc:
             logger.exception("async handler failed for %s", event.event_id)

@@ -141,8 +141,8 @@ class Tracer:
         Returns:
             A ``SpanContext`` context manager.
         """
-        return SpanContext(self, operation, trace_id, parent_span_id, tags or
-                           {})
+        return SpanContext(self, operation, trace_id, parent_span_id, tags
+                           or {})
 
 
 class SpanContext:
@@ -221,7 +221,7 @@ class OtlpSpanExporter(SpanExporter):
             return True
         try:
             from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-                OTLPSpanExporter,)
+                OTLPSpanExporter, )
             from opentelemetry.sdk.resources import Resource
             from opentelemetry.sdk.trace import TracerProvider as SdkTracerProvider
             from opentelemetry.sdk.trace.export import BatchSpanProcessor

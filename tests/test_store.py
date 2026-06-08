@@ -62,7 +62,8 @@ class TestFileStoreCorruption:
             with pytest.raises(StoreError):
                 store.get("key1")
         snapshot = metrics.snapshot()
-        assert any(k.startswith("store.io_error") for k in snapshot["counters"])
+        assert any(
+            k.startswith("store.io_error") for k in snapshot["counters"])
 
 
 class TestMemoryStore:

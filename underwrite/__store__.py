@@ -457,7 +457,7 @@ class PostgresStore(Store):
     def get(self, key: str) -> Any | None:
         """Returns the value for *key*, or ``None``."""
         rows = self.__execute(
-            f"SELECT value FROM {self.__table} WHERE key = %s", (key,))
+            f"SELECT value FROM {self.__table} WHERE key = %s", (key, ))
         if not rows:
             return None
         return json.loads(rows[0][0])
@@ -474,13 +474,13 @@ class PostgresStore(Store):
     def delete(self, key: str) -> bool:
         """Removes *key*.  Returns ``True`` if it existed."""
         rows = self.__execute(
-            f"DELETE FROM {self.__table} WHERE key = %s RETURNING *", (key,))
+            f"DELETE FROM {self.__table} WHERE key = %s RETURNING *", (key, ))
         return rows is not None and len(rows) > 0
 
     def exists(self, key: str) -> bool:
         """Returns ``True`` if *key* is present."""
         rows = self.__execute(f"SELECT 1 FROM {self.__table} WHERE key = %s",
-                              (key,))
+                              (key, ))
         return bool(rows)
 
     def keys(self,
@@ -491,7 +491,7 @@ class PostgresStore(Store):
         if pattern:
             like = f"%{pattern.rstrip('*')}%"
             sql = f"SELECT key FROM {self.__table} WHERE key LIKE %s"
-            params: tuple[Any, ...] = (like,)
+            params: tuple[Any, ...] = (like, )
         else:
             sql = f"SELECT key FROM {self.__table}"
             params = ()

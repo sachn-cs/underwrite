@@ -323,8 +323,8 @@ class NanoService(ABC):
         start = time.perf_counter()
         with (self.__tracer.trace(
                 f"handle.{event.event_type}",
-                trace_id=event.trace_id or event.correlation_id or
-                event.event_id,
+                trace_id=event.trace_id or event.correlation_id
+                or event.event_id,
                 parent_span_id=event.parent_span_id,
                 tags={
                     "service": self.__service_id,

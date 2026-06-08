@@ -55,7 +55,8 @@ class VaultSecretsBackend(SecretsBackend):
             import hvac
         except ImportError:
             raise ImportError(
-                "VaultSecretsBackend requires hvac; pip install hvac") from None
+                "VaultSecretsBackend requires hvac; pip install hvac"
+            ) from None
         from hvac.exceptions import VaultError
 
         client = hvac.Client(url=self.__url, token=self.__token)
@@ -78,7 +79,8 @@ class VaultSecretsBackend(SecretsBackend):
             import hvac
         except ImportError:
             raise ImportError(
-                "VaultSecretsBackend requires hvac; pip install hvac") from None
+                "VaultSecretsBackend requires hvac; pip install hvac"
+            ) from None
         client = hvac.Client(url=self.__url, token=self.__token)
         client.secrets.kv.v2.create_or_update_secret(
             path=key, secret={"value": value}, mount_point=self.__mount_point)
@@ -98,7 +100,8 @@ class AwsSecretsBackend(SecretsBackend):
             import boto3
         except ImportError:
             raise ImportError(
-                "AwsSecretsBackend requires boto3; pip install boto3") from None
+                "AwsSecretsBackend requires boto3; pip install boto3"
+            ) from None
         return boto3.client("secretsmanager", region_name=self.__region)
 
     def get(self, key: str) -> str | None:

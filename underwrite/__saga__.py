@@ -241,8 +241,9 @@ class SagaOrchestrator:
             step = saga.steps[step_index]
             emitter = self.__emitters.get(saga.name)
             if not emitter:
-                logger.warning("saga %s no emitter registered for saga type %r",
-                               saga_id, saga.name)
+                logger.warning(
+                    "saga %s no emitter registered for saga type %r", saga_id,
+                    saga.name)
                 return False
             try:
                 emitter.emit(step.forward_event_type, step.forward_payload)

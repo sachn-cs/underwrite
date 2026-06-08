@@ -24,7 +24,10 @@ class TestPIISanitizer:
         assert result["user"]["pan"] == PII_REDACTED
 
     def test_sanitize_redacts_nested_list(self) -> None:
-        result = PIISanitizer.sanitize({"items": [{"aadhaar": "123456789012"}]})
+        result = PIISanitizer.sanitize(
+            {"items": [{
+                "aadhaar": "123456789012"
+            }]})
         assert result["items"][0]["aadhaar"] == PII_REDACTED
 
     def test_sanitize_handles_empty_dict(self) -> None:

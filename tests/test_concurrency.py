@@ -77,7 +77,8 @@ class TestLocalBusConcurrency:
 class TestKeyRotationManagerConcurrency:
     """Verify KeyRotationManager thread safety under concurrent rotation."""
 
-    def test_concurrent_get_or_create_returns_consistent_identity(self) -> None:
+    def test_concurrent_get_or_create_returns_consistent_identity(
+            self) -> None:
         krm = KeyRotationManager(ttl_seconds=99999)
         results: list[str] = []
 
@@ -155,7 +156,7 @@ class TestMechanismServiceConcurrency:
                 errors.append(e)
 
         threads = [
-            threading.Thread(target=add_seed, args=(i,)) for i in range(20)
+            threading.Thread(target=add_seed, args=(i, )) for i in range(20)
         ]
         for t in threads:
             t.start()
@@ -198,7 +199,7 @@ class TestMechanismServiceConcurrency:
                 errors.append(e)
 
         threads = [
-            threading.Thread(target=add_user, args=(i,)) for i in range(20)
+            threading.Thread(target=add_user, args=(i, )) for i in range(20)
         ]
         for t in threads:
             t.start()
@@ -264,7 +265,7 @@ class TestMemoryStoreConcurrency:
                 store.get(f"key_{i}")
 
         threads = [threading.Thread(target=writer) for _ in range(5)
-                  ] + [threading.Thread(target=reader) for _ in range(5)]
+                   ] + [threading.Thread(target=reader) for _ in range(5)]
         for t in threads:
             t.start()
         for t in threads:

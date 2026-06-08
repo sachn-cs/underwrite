@@ -29,11 +29,12 @@ class ServiceSupervisor:
             count = self.__failures.get(service_id, 0) + 1
             self.__failures[service_id] = count
             if count > self.__max_restarts:
-                logger.error("service %s exceeded max restarts (%d); giving up",
-                             service_id, self.__max_restarts)
+                logger.error(
+                    "service %s exceeded max restarts (%d); giving up",
+                    service_id, self.__max_restarts)
                 return False
-            logger.warning("service %s failure %d/%d; will restart", service_id,
-                           count, self.__max_restarts)
+            logger.warning("service %s failure %d/%d; will restart",
+                           service_id, count, self.__max_restarts)
             return True
 
     def record_success(self, service_id: str) -> None:
@@ -70,12 +71,12 @@ class ServiceSupervisor:
         with self.__lock:
             return {
                 "ok":
-                    all(c <= self.__max_restarts
-                        for c in self.__failures.values()),
+                all(c <= self.__max_restarts
+                    for c in self.__failures.values()),
                 "total_failures":
-                    sum(self.__failures.values()),
+                sum(self.__failures.values()),
                 "restarting":
-                    list(self.__failures.keys()),
+                list(self.__failures.keys()),
             }
 
 

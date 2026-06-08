@@ -204,7 +204,10 @@ class TestVaultSecretsBackend:
 
     def test_raises_on_missing_hvac_package(self) -> None:
         backend = VaultSecretsBackend()
-        with patch.dict("sys.modules", {"hvac": None, "hvac.exceptions": None}):
+        with patch.dict("sys.modules", {
+                "hvac": None,
+                "hvac.exceptions": None
+        }):
             with patch("builtins.__import__") as mock_import:
                 mock_import.side_effect = ImportError("no hvac")
                 with pytest.raises(ImportError,

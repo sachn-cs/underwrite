@@ -127,7 +127,8 @@ class DelegationGraph:
         if self.credit_limit(borrower) < principal:
             raise InfeasibleOperationError("principal exceeds credit limit")
         protocol_premium: float = protocol_rate * principal * term
-        self.principal[borrower] = self.principal.get(borrower, 0.0) + principal
+        self.principal[borrower] = self.principal.get(borrower,
+                                                      0.0) + principal
         loan: dict[str, Any] = {
             "borrower": borrower,
             "principal": principal,
@@ -206,14 +207,16 @@ class DelegationGraph:
             "seeds": set(self.seeds),
             "parent": dict(self.parent),
             "children": {
-                k: list(v) for k, v in self.children.items()
+                k: list(v)
+                for k, v in self.children.items()
             },
             "delegation": dict(self.delegation),
             "base_budget": dict(self.base_budget),
             "earned": dict(self.earned),
             "principal": dict(self.principal),
             "loans": {
-                k: list(v) for k, v in self.loans.items()
+                k: list(v)
+                for k, v in self.loans.items()
             },
         }
 
@@ -232,21 +235,23 @@ class DelegationGraph:
         """Serialize to a JSON-safe dict for store persistence."""
         return {
             "seeds":
-                sorted(self.seeds),
+            sorted(self.seeds),
             "parent":
-                dict(self.parent),
+            dict(self.parent),
             "children": {
-                k: list(v) for k, v in self.children.items()
+                k: list(v)
+                for k, v in self.children.items()
             },
             "delegation": {
-                f"{s}->{c}": v for (s, c), v in self.delegation.items()
+                f"{s}->{c}": v
+                for (s, c), v in self.delegation.items()
             },
             "base_budget":
-                dict(self.base_budget),
+            dict(self.base_budget),
             "earned":
-                dict(self.earned),
+            dict(self.earned),
             "principal":
-                dict(self.principal),
+            dict(self.principal),
             "loans": [
                 loan for borrower_loans in self.loans.values()
                 for loan in borrower_loans

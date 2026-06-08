@@ -212,7 +212,8 @@ class TestMetricsE2E:
         snap = rt.metrics.snapshot()
         counters = snap.get("counters", {})
         emitted_key = next(
-            (k for k in counters if "events.emitted" in k and "mechanism" in k),
+            (k
+             for k in counters if "events.emitted" in k and "mechanism" in k),
             None)
         assert emitted_key is not None
         rt.stop()

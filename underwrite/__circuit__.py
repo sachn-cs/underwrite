@@ -123,8 +123,8 @@ class CircuitBreaker:
         logger.warning("circuit %s failure %d/%d", self.__name, count,
                        self.__failure_threshold)
         if tripped:
-            logger.warning("circuit %s tripped open (%d failures)", self.__name,
-                           self.__failure_threshold)
+            logger.warning("circuit %s tripped open (%d failures)",
+                           self.__name, self.__failure_threshold)
 
 
 class RetryPolicy:
@@ -155,9 +155,10 @@ class RetryPolicy:
         self.__max_delay: float = max_delay
         self.__retryable_exceptions: tuple[type[Exception],
                                            ...] = retryable_exceptions or (
-                                               Exception,)
+                                               Exception, )
 
-    def execute(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    def execute(self, fn: Callable[..., Any], *args: Any,
+                **kwargs: Any) -> Any:
         """Executes a callable with exponential-backoff retry.
 
         Args:

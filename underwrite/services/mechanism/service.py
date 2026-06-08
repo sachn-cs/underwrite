@@ -217,7 +217,8 @@ class MechanismService(NanoService):
         clamped_dp: float = max(min(dp, 1.0 - EPSILON), EPSILON)
         clamped_term: float = max(term, EPSILON)
         one_minus_dp: float = max(1.0 - clamped_dp, EPSILON)
-        break_even: float = min(clamped_dp / (one_minus_dp * clamped_term), 1e6)
+        break_even: float = min(clamped_dp / (one_minus_dp * clamped_term),
+                                1e6)
         protocol_premium: float = pr * principal * term
         self.emit(
             EventType.QUOTE_CALCULATED,

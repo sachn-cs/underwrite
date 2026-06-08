@@ -41,8 +41,8 @@ class TestComplianceService:
             assert len(aml) == 1, f"Expected AML_CLEARED but got {len(aml)}"
             assert len(rejected) == 0
         else:
-            assert len(
-                rejected) == 1, f"Expected KYC_REJECTED but got {len(rejected)}"
+            assert len(rejected
+                       ) == 1, f"Expected KYC_REJECTED but got {len(rejected)}"
             assert len(kyc) == 0
             assert len(aml) == 0
             if expected_reason:

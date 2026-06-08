@@ -68,7 +68,8 @@ class ServicingService(NanoService):
         elif event.event_type == EventType.DEFAULT_OCCURRED:
             loan_id = event.payload.get("loan_id", "")
             if not loan_id:
-                logger.warning("dropping DEFAULT_OCCURRED with missing loan_id")
+                logger.warning(
+                    "dropping DEFAULT_OCCURRED with missing loan_id")
                 return
             with self.__lock:
                 record = self.store.get(f"loan:{loan_id}")

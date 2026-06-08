@@ -181,13 +181,13 @@ class TestCircuitBreakerHalfOpenTransition:
 
         assert cb.state == CircuitState.CLOSED
         with pytest.raises(ValueError):
-            cb.call(
-                lambda:
-                (_ for _ in ()).throw(ValueError("fail")))  # type: ignore[misc]
+            cb.call(lambda:
+                    (_ for _ in
+                     ()).throw(ValueError("fail")))  # type: ignore[misc]
         with pytest.raises(ValueError):
-            cb.call(
-                lambda:
-                (_ for _ in ()).throw(ValueError("fail")))  # type: ignore[misc]
+            cb.call(lambda:
+                    (_ for _ in
+                     ()).throw(ValueError("fail")))  # type: ignore[misc]
 
         import time
 

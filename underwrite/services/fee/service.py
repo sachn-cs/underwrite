@@ -34,12 +34,8 @@ class FeeService(StatefulService):
                                                    dict(DEFAULT_FEE_SCHEDULES))
         super().__init__(**kwargs)
         self.__fees: dict[str, dict[str, Any]] = {}
-        self._repo: BatchedStoreRepository[dict[str,
-                                                dict[str,
-                                                     Any]]] = self.batched_repo(
-                                                         "fees",
-                                                         dict,
-                                                         sync_interval=10)
+        self._repo: BatchedStoreRepository[dict[str, dict[
+            str, Any]]] = self.batched_repo("fees", dict, sync_interval=10)
         loaded = self._repo.load(default={})
         if loaded:
             self.__fees = loaded
@@ -139,8 +135,8 @@ class FeeService(StatefulService):
     def health_check(self) -> dict[str, Any]:
         """Fee-specific health: reports total fee count and pending fees."""
         with self.state_lock:
-            pending = sum(
-                1 for r in self.__fees.values() if not r.get("paid", False))
+            pending = sum(1 for r in self.__fees.values()
+                          if not r.get("paid", False))
             return {
                 **super().health_check(),
                 "fee_count": len(self.__fees),

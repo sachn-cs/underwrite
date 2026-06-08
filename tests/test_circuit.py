@@ -118,7 +118,7 @@ class TestRetryPolicy:
     def test_non_retryable_exception_not_retried(self) -> None:
         rp = RetryPolicy(max_retries=3,
                          base_delay=0.001,
-                         retryable_exceptions=(ValueError,))
+                         retryable_exceptions=(ValueError, ))
         calls: list = []
         try:
             rp.execute(lambda: (_ for _ in ()).throw(TypeError("fatal")))
@@ -129,7 +129,7 @@ class TestRetryPolicy:
     def test_only_retryable_exceptions_retried(self) -> None:
         rp = RetryPolicy(max_retries=3,
                          base_delay=0.001,
-                         retryable_exceptions=(ValueError,))
+                         retryable_exceptions=(ValueError, ))
         calls: list = []
 
         def flaky() -> str:
@@ -145,7 +145,7 @@ class TestRetryPolicy:
     def test_non_retryable_exception_skips_retries_and_raises(self) -> None:
         rp = RetryPolicy(max_retries=3,
                          base_delay=0.001,
-                         retryable_exceptions=(ValueError,))
+                         retryable_exceptions=(ValueError, ))
         try:
             rp.execute(lambda: (_ for _ in ()).throw(TypeError("fatal")))
             raise AssertionError("expected TypeError")
@@ -169,7 +169,7 @@ class TestRetryPolicy:
     def test_non_retryable_exception_preserves_traceback(self) -> None:
         rp = RetryPolicy(max_retries=1,
                          base_delay=0.001,
-                         retryable_exceptions=(ValueError,))
+                         retryable_exceptions=(ValueError, ))
 
         def deeply_nested() -> str:
 

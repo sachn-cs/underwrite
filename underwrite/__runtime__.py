@@ -140,9 +140,10 @@ class Runtime:
                     if isinstance(data, dict):
                         return {
                             k:
-                                "***REDACTED***" if any(
-                                    s in k.lower() for s in sensitive_fields)
-                                else self.__redact(v) for k, v in data.items()
+                            "***REDACTED***" if any(s in k.lower()
+                                                    for s in sensitive_fields)
+                            else self.__redact(v)
+                            for k, v in data.items()
                         }
                     if isinstance(data, (list, tuple)):
                         return [self.__redact(i) for i in data]
@@ -336,12 +337,12 @@ class Runtime:
                 dlq = self.__bus.dlq.count
             return {
                 "ok":
-                    not self.__bus.is_stopped() if hasattr(
-                        self.__bus, "is_stopped") else True,
+                not self.__bus.is_stopped()
+                if hasattr(self.__bus, "is_stopped") else True,
                 "subscribers":
-                    subs,
+                subs,
                 "dlq_count":
-                    dlq,
+                dlq,
             }
 
         self.__health.register("bus", _bus_health)
@@ -353,7 +354,7 @@ class Runtime:
             "services",
             lambda: {
                 "ok":
-                    True,
+                True,
                 "running": [
                     sid for sid, svc in self.__services.items()
                     if svc.is_running
@@ -456,8 +457,8 @@ class Runtime:
                 f"no class mapping for service: {service_name}")
         module = importlib.import_module(module_path)
         cls = getattr(module, class_name, None)
-        if cls is None or not (isinstance(cls, type) and
-                               issubclass(cls, NanoService)):
+        if cls is None or not (isinstance(cls, type)
+                               and issubclass(cls, NanoService)):
             raise ServiceNotFoundError(
                 f"class {class_name} not found in {module_path}")
         extra: dict[str, Any] = {}
@@ -553,8 +554,8 @@ class Runtime:
                     old = self.__services.pop(service_id)
                     old.stop()
                 except Exception:
-                    logger.exception("error stopping service %s during restart",
-                                     service_id)
+                    logger.exception(
+                        "error stopping service %s during restart", service_id)
                     continue
             try:
                 svc = self.register(service_id)

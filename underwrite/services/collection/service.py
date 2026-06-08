@@ -71,7 +71,8 @@ class CollectionService(StatefulService):
                     emit_data = {
                         "borrower": user,
                         "paid": round(loan["paid"], 2),
-                        "remaining": round(loan["principal"] - loan["paid"], 2),
+                        "remaining": round(loan["principal"] - loan["paid"],
+                                           2),
                         "status": loan["status"],
                     }
             if emit_data is not None:

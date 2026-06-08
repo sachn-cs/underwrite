@@ -8,7 +8,8 @@ COPY underwrite/ underwrite/
 RUN pip install --no-cache-dir build && \
     pip install --no-cache-dir cryptography pydantic typer && \
     SETUPTOOLS_SCM_PRETEND_VERSION=0.1.0 python -m build --wheel && \
-    pip install --no-cache-dir dist/*.whl[serve,postgres,otlp]
+    WHEEL=$(echo dist/*.whl) && \
+    pip install --no-cache-dir "${WHEEL}[serve,postgres,otlp]"
 
 FROM python:3.12-slim
 

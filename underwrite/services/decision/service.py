@@ -41,10 +41,14 @@ class DecisionService(StatefulService):
         if event.event_type == EventType.FRAUD_ALERT:
             with self.state_lock:
                 self.__signals.setdefault(entity_id, []).append({
-                    "source": "fraud",
-                    "type": "alert",
-                    "severity": event.payload.get("severity", "high"),
-                    "detail": event.payload.get("reason", ""),
+                    "source":
+                    "fraud",
+                    "type":
+                    "alert",
+                    "severity":
+                    event.payload.get("severity", "high"),
+                    "detail":
+                    event.payload.get("reason", ""),
                 })
                 self.__sync()
 
@@ -68,10 +72,10 @@ class DecisionService(StatefulService):
         elif event.event_type == EventType.DECISION_EVALUATE:
             with self.state_lock:
                 signals = list(self.__signals.get(entity_id, []))
-            high_signals: int = sum(
-                1 for s in signals if s.get("severity") == "high")
-            medium_signals: int = sum(
-                1 for s in signals if s.get("severity") == "medium")
+            high_signals: int = sum(1 for s in signals
+                                    if s.get("severity") == "high")
+            medium_signals: int = sum(1 for s in signals
+                                      if s.get("severity") == "medium")
 
             if high_signals > 0:
                 action: str = "reject"

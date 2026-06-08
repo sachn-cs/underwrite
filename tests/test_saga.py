@@ -111,8 +111,8 @@ class TestSagaOrchestrator:
 
         import threading
 
-        t1 = threading.Thread(target=register_emitter, args=("saga-a",))
-        t2 = threading.Thread(target=register_emitter, args=("saga-b",))
+        t1 = threading.Thread(target=register_emitter, args=("saga-a", ))
+        t2 = threading.Thread(target=register_emitter, args=("saga-b", ))
         t1.start()
         t2.start()
         t1.join(timeout=1.0)
@@ -364,8 +364,10 @@ class TestSagaValidation:
         store.set(
             "saga:bad",
             {
-                "saga_id": "bad",
-                "name": "test",
+                "saga_id":
+                "bad",
+                "name":
+                "test",
                 "steps": [{
                     "name": "a",
                     "forward_event_type": "ev.a",
@@ -374,9 +376,12 @@ class TestSagaValidation:
                     "compensate_payload": {},
                 }],
                 "completed_steps": [99],
-                "status": "started",
-                "error": "",
-                "started_at": "2024-01-01T00:00:00",
+                "status":
+                "started",
+                "error":
+                "",
+                "started_at":
+                "2024-01-01T00:00:00",
             },
         )
         so = SagaOrchestrator(store=store)

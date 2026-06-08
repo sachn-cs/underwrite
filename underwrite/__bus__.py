@@ -555,8 +555,7 @@ class LocalBus(EventBus):
         with self.__lock:
             for event_type in list(self.__handlers):
                 self.__handlers[event_type] = [
-                    (sid, h)
-                    for sid, h in self.__handlers[event_type]
+                    (sid, h) for sid, h in self.__handlers[event_type]
                     if sid != subscription_id
                 ]
 

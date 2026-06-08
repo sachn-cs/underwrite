@@ -121,7 +121,9 @@ class TestOriginationService:
         received: list = []
         bus.subscribe(EventType.ORIGINATION_SUBMITTED,
                       lambda e: received.append(e))
-        svc = OriginationService(service_id="origination", bus=bus, store=store)
+        svc = OriginationService(service_id="origination",
+                                 bus=bus,
+                                 store=store)
         store.set("origination:app_1", {
             "borrower": "eve",
             "principal": 5000,

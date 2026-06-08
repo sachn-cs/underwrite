@@ -171,7 +171,8 @@ class PayloadValidator:
         if len(pattern) > _RE_SAFETY_MAX_PATTERN_LENGTH:
             raise ProtocolError(f"{name} pattern too long")
         if _RE_SAFETY_UNSAFE_PATTERN.search(pattern):
-            raise ProtocolError(f"{name} pattern rejected (nested quantifiers)")
+            raise ProtocolError(
+                f"{name} pattern rejected (nested quantifiers)")
         try:
             if not re.match(pattern, s):
                 raise ProtocolError(f"{name} does not match required pattern")
@@ -262,7 +263,8 @@ class PayloadValidator:
         Raises:
             ProtocolError: If the value is negative.
         """
-        return self.require_non_negative(payload.get(key, default), name or key)
+        return self.require_non_negative(payload.get(key, default), name
+                                         or key)
 
     def in_range(self,
                  payload: dict[str, Any],
@@ -287,8 +289,8 @@ class PayloadValidator:
         Raises:
             ProtocolError: If the value is outside [*lo*, *hi*].
         """
-        return self.require_in_range(payload.get(key, default), lo, hi, name or
-                                     key)
+        return self.require_in_range(payload.get(key, default), lo, hi, name
+                                     or key)
 
     def match(self,
               payload: dict[str, Any],

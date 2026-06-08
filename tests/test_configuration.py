@@ -139,7 +139,8 @@ class TestConfiguration:
             Configuration.load(str(p))
         assert "invalid_exporter" in str(exc.value)
 
-    def test_schema_rejects_invalid_logging_level(self, tmp_path: Path) -> None:
+    def test_schema_rejects_invalid_logging_level(self,
+                                                  tmp_path: Path) -> None:
         p = tmp_path / "config.json"
         p.write_text(json.dumps({"logging": {"level": "INVALID_LEVEL"}}))
         with pytest.raises(ConfigurationError) as exc:
@@ -240,8 +241,8 @@ class TestConfiguration:
         assert isinstance(config.bus.rate_limit, float)
         assert config.bus.rate_limit == 150.5
 
-    def test_env_override_coerces_bool(self,
-                                       monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_env_override_coerces_bool(
+            self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("UNDERWRITE_AUTHZ_ENABLED", "true")
         config = Configuration.load()
         assert config.authz.enabled is True
