@@ -23,7 +23,7 @@ jobs:
           pip install --upgrade pip
           pip install -e '.[dev,risk,serve,postgres,otlp,vault,aws]'
       - name: Lint
-        run: ruff check underwrite/ tests/
+        run: yapf --diff --recursive underwrite/ tests/
       - name: Type check
         run: mypy underwrite/
       - name: Security audit
