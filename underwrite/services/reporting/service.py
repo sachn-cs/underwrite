@@ -31,8 +31,7 @@ class ReportingService(StatefulService):
         if event.event_type == EventType.LOAN_ORIGINATED:
             with self.state_lock:
                 self.__originations += 1
-                self.__total_principal += get_finite(event.payload,
-                                                     "principal")
+                self.__total_principal += get_finite(event.payload, "principal")
                 self.__sync()
         elif event.event_type == EventType.DEFAULT_OCCURRED:
             with self.state_lock:
@@ -41,7 +40,7 @@ class ReportingService(StatefulService):
 
     def generate_report(self,
                         report_type: str = "portfolio_summary"
-                        ) -> dict[str, Any]:
+                       ) -> dict[str, Any]:
         """Generate a regulatory report from accumulated metrics.
 
         Args:

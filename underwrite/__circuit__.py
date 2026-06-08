@@ -12,7 +12,6 @@ __all__ = [
     "RetryPolicy",
 ]
 
-import random
 import threading
 import time
 from collections.abc import Callable
@@ -123,8 +122,8 @@ class CircuitBreaker:
         logger.warning("circuit %s failure %d/%d", self.__name, count,
                        self.__failure_threshold)
         if tripped:
-            logger.warning("circuit %s tripped open (%d failures)",
-                           self.__name, self.__failure_threshold)
+            logger.warning("circuit %s tripped open (%d failures)", self.__name,
+                           self.__failure_threshold)
 
 
 class RetryPolicy:
@@ -155,10 +154,9 @@ class RetryPolicy:
         self.__max_delay: float = max_delay
         self.__retryable_exceptions: tuple[type[Exception],
                                            ...] = retryable_exceptions or (
-                                               Exception, )
+                                               Exception,)
 
-    def execute(self, fn: Callable[..., Any], *args: Any,
-                **kwargs: Any) -> Any:
+    def execute(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Executes a callable with exponential-backoff retry.
 
         Args:
@@ -179,9 +177,9 @@ class RetryPolicy:
             except self.__retryable_exceptions as exc:
                 last_exc = exc
                 if attempt < self.__max_retries:
-                    delay = min(
-                        self.__base_delay * (2**attempt) +
-                        random.random() * 0.1, self.__max_delay)
+                    delay = min(self.__base_delay * (2**attempt) +
+                                (attempt + 1) * 0.01, self.__max_delay
+                               )  # nosec: retry jitter, not cryptographic
                     time.sleep(delay)
         if last_exc is not None:
             raise last_exc

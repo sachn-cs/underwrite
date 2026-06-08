@@ -18,8 +18,9 @@ STAGES: dict[str, list[str]] = {
         "created", "kyc_pending", "risk_review", "underwriting", "approved",
         "disbursed"
     ],
-    "recovery":
-    ["started", "contact_made", "negotiation", "settlement", "closed"],
+    "recovery": [
+        "started", "contact_made", "negotiation", "settlement", "closed"
+    ],
     "default": [
         "noticed", "npa_classified", "collateral_review", "recovery",
         "chargeoff"

@@ -107,8 +107,7 @@ class SchemaRegistry:
                 f"schema for {event_type!r} already registered at version {existing.version} >= {schema.version}"
             )
         self.__schemas[event_type] = schema
-        logger.debug("registered schema for %s v%s", event_type,
-                     schema.version)
+        logger.debug("registered schema for %s v%s", event_type, schema.version)
 
     def get(self, event_type: str) -> EventSchema | None:
         """Return the registered schema for *event_type*, or ``None``."""
