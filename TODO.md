@@ -16,12 +16,12 @@ Based on comprehensive codebase analysis (June 2026). Covers unimplemented backe
 
 ## 🟢 Critical Bugs (from ROADMAP)
 
-- [ ] **CD2** Exclude `token` from `Configuration.to_dict()` — `underwrite/__config__.py:465-470`
-- [ ] **CD4/HD6** Fix path traversal in `FileStore.__path` — `underwrite/__store__.py:244-253`
-- [ ] **HD3** Bound `FraudService.__records` with `deque(maxlen=100000)` — `underwrite/services/fraud/service.py:25`
-- [ ] **CD5** Add `FileStore` thread cleanup in `ServiceSupervisor.shutdown()` — `underwrite/__store__.py:157`
-- [ ] **HD8** Add `PrometheusMiddleware` import-failure warning — `underwrite/__serve__.py:24-29`
-- [ ] **MD5** Fix env var type coercion in `Configuration.__apply_env_overrides` — `underwrite/__config__.py:609-613`
+- [x] **CD2** Exclude `token` from `Configuration.to_dict()` — `underwrite/__config__.py:265-284` (also excludes `encryption_passphrase`)
+- [x] **CD4/HD6** Fix path traversal in `FileStore.__path` — `underwrite/__store__.py:343-362` (verified, resolved)
+- [x] **HD3** Bound `FraudService.__records` with `deque(maxlen=100000)` — `underwrite/services/fraud/service.py:28,93,115` (bounded defaults fixed)
+- [x] **CD5** Add `FileStore` thread cleanup in `ServiceSupervisor.shutdown()` — `underwrite/__supervisor__.py:81-84`, `underwrite/__runtime__.py:581`
+- [x] **HD8** Add `PrometheusMiddleware` import-failure warning — `underwrite/__serve__.py:56-64` (verified, resolved)
+- [x] **MD5** Fix env var type coercion in `Configuration.__apply_env_overrides` — `underwrite/__config__.py:403-459` (verified, resolved)
 
 ---
 
@@ -47,9 +47,9 @@ Based on comprehensive codebase analysis (June 2026). Covers unimplemented backe
 
 ### Services
 
-- [ ] **Real Recovery Service** — Currently a stub: immediately completes at flat 30% recovery rate with no workflow
-  - References: `underwrite/services/recovery/service.py` (entire 53-line file)
-  - Needs: negotiation workflows, payment plans, escalation, actual recovery rate computation
+- [x] **Real Recovery Service** — Now implements multi-stage recovery (negotiation → payment plan → escalation → settlement) with in-memory state tracking per borrower
+  - References: `underwrite/services/recovery/service.py` (152 lines)
+  - Implements: negotiation workflows, payment plans, escalation, recovery rate computation
 
 ### Observability (v1.0.0 must-have)
 
@@ -74,8 +74,8 @@ Based on comprehensive codebase analysis (June 2026). Covers unimplemented backe
   - References: `docs/ADR/002-event-driven-communication.md:49`, `__schema__.py`
 - [ ] **Async Event Bus** — `AsyncLocalBus` exists but not integrated as a first-class backend option
   - References: `__async_bus__.py`, `docs/ROADMAP.md:27`
-- [ ] **`EnvSecretsBackend.set()` Implementation** — Currently a no-op `pass  # read-only`
-  - References: `underwrite/__secrets__.py:34-35`
+- [x] **`EnvSecretsBackend.set()` Implementation** — Now writes to `os.environ` at runtime
+  - References: `underwrite/__secrets__.py:34-37`
 
 ### Missing Tests (High Risk)
 
@@ -90,8 +90,8 @@ Based on comprehensive codebase analysis (June 2026). Covers unimplemented backe
 
 ### Code Quality
 
-- [ ] **`BatchPersistenceMixin` Concrete Implementation** — Abstract `do_sync_store()` method with no service using the mixin
-  - References: `underwrite/services/base.py:88-90`
+- [x] **`BatchPersistenceMixin` Concrete Implementation** — Removed dead abstraction (no service ever used the mixin)
+  - References: `underwrite/services/base.py:44` (removed)
 - [ ] **`StoreRepository.serialize/deserialize` Real Implementations** — Currently passthrough methods meant to be overridden
   - References: `underwrite/services/persistence.py:83-89`
 - [ ] **`postgres_dsn` Session-Scoped Skip Bug** — Missing `testcontainers` skips the entire test session (should be `pytest.importorskip`)
@@ -114,8 +114,8 @@ Based on comprehensive codebase analysis (June 2026). Covers unimplemented backe
 
 ### Dependencies
 
-- [ ] **`twilio` Missing from `pyproject.toml`** — Imported and used in notification service but not declared as a dependency
-  - File: `underwrite/services/notification/service.py:117`
+- [x] **`twilio` Missing from `pyproject.toml`** — Added `notify` extra with `twilio>=8.0`; added import-failure guard in notification service
+  - File: `pyproject.toml:72`, `underwrite/services/notification/service.py:117-121`
 
 ### Redundancy / Cleanup
 

@@ -32,7 +32,9 @@ class EnvSecretsBackend(SecretsBackend):
         return os.environ.get(env_key)
 
     def set(self, key: str, value: str) -> None:
-        pass  # read-only
+        """Stores a secret as an environment variable at runtime."""
+        env_key = f"{self.__prefix}{key.upper().replace('/', '_').replace('-', '_')}"
+        os.environ[env_key] = value
 
 
 class VaultSecretsBackend(SecretsBackend):

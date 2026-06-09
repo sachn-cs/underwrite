@@ -1,6 +1,9 @@
-"""Tests for RecoveryService — post-default recovery orchestration.
+"""Tests for RecoveryService — multi-stage post-default recovery orchestration.
 
-Tests verify behavior through emitted RECOVERY_STARTED and RECOVERY_COMPLETED events.
+Tests verify the full recovery workflow:
+  DEFAULT_OCCURRED -> RECOVERY_STARTED -> recovery.offer ->
+  recovery.offer_response (accepted) -> PAYMENT_PLAN ->
+  PAYMENT_RECEIVED -> RECOVERY_COMPLETED
 """
 
 from __future__ import annotations
@@ -32,13 +35,15 @@ class TestRecoveryService:
         assert len(received) == 1
         assert received[0].payload["borrower"] == "alice"
         assert received[0].payload["principal"] == 50000.0
+        assert received[0].payload["stage"] == "negotiation"
         assert "started_at" in received[0].payload
 
-    def test_emits_completed_with_recovery_amount(self) -> None:
+    def test_default_triggers_offer(self) -> None:
         bus = LocalBus()
-        received: list[Event] = []
-        bus.subscribe(EventType.RECOVERY_COMPLETED,
-                      lambda e: received.append(e))
+        started: list[Event] = []
+        offers: list[Event] = []
+        bus.subscribe(EventType.RECOVERY_STARTED, lambda e: started.append(e))
+        bus.subscribe("recovery.offer", lambda e: offers.append(e))
         svc = recovery(bus=bus)
         bus.start()
         svc.handle(
@@ -48,15 +53,16 @@ class TestRecoveryService:
                       "borrower": "bob",
                       "principal": 100000
                   }))
-        assert len(received) == 1
-        assert received[0].payload["borrower"] == "bob"
-        assert received[0].payload["recovered"] == 30000.0
-        assert received[0].payload["outstanding"] == 70000.0
+        assert len(started) == 1
+        assert len(offers) == 1
+        assert offers[0].payload["borrower"] == "bob"
+        assert offers[0].payload["offer_amount"] == 30000.0
 
-    def test_emits_both_events_for_default(self) -> None:
+    def test_does_not_emit_completed_on_default(self) -> None:
         bus = LocalBus()
-        all_events: list[Event] = []
-        bus.subscribe("*", lambda e: all_events.append(e))
+        completed: list[Event] = []
+        bus.subscribe(EventType.RECOVERY_COMPLETED,
+                      lambda e: completed.append(e))
         svc = recovery(bus=bus)
         bus.start()
         svc.handle(
@@ -66,11 +72,9 @@ class TestRecoveryService:
                       "borrower": "carol",
                       "principal": 50000
                   }))
-        types = [e.event_type for e in all_events]
-        assert EventType.RECOVERY_STARTED in types
-        assert EventType.RECOVERY_COMPLETED in types
+        assert len(completed) == 0
 
-    def test_zero_principal_default(self) -> None:
+    def test_emits_completed_after_full_recovery(self) -> None:
         bus = LocalBus()
         completed: list[Event] = []
         bus.subscribe(EventType.RECOVERY_COMPLETED,
@@ -82,22 +86,18 @@ class TestRecoveryService:
                   source="test",
                   payload={
                       "borrower": "dave",
-                      "principal": 0
+                      "principal": 10000
                   }))
-        assert completed[0].payload["recovered"] == 0.0
-        assert completed[0].payload["outstanding"] == 0.0
-
-    def test_principal_defaults_to_zero(self) -> None:
-        bus = LocalBus()
-        started: list[Event] = []
-        bus.subscribe(EventType.RECOVERY_STARTED, lambda e: started.append(e))
-        svc = recovery(bus=bus)
-        bus.start()
         svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
+            Event(event_type=EventType.PAYMENT_RECEIVED,
                   source="test",
-                  payload={"borrower": "eve"}))
-        assert started[0].payload["principal"] == 0.0
+                  payload={
+                      "borrower": "dave",
+                      "amount": 10000
+                  }))
+        assert len(completed) == 1
+        assert completed[0].payload["recovered"] == 10000.0
+        assert completed[0].payload["outstanding"] == 0.0
 
     def test_ignores_non_default_events(self) -> None:
         bus = LocalBus()

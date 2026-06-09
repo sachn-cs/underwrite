@@ -579,6 +579,8 @@ class Runtime:
         self.__store.shutdown()
         if self.__read_store is not None:
             self.__read_store.shutdown()
+        if self.__supervisor is not None:
+            self.__supervisor.shutdown()
 
     def get(self, service_name: str) -> NanoService | None:
         """Returns a registered service by name, or ``None``."""

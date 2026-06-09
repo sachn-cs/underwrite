@@ -43,11 +43,13 @@ class SpanExporter:
     """Exports completed spans to a backend.  No-op by default."""
 
     def export(self, spans: list[Span]) -> None:
-        """Exports completed spans.  No-op by default.
+        """Exports completed spans.  Logs span count in the base implementation.
 
         Args:
             spans: Completed spans to export.
         """
+        if spans:
+            logger.debug("exporting %d spans (no-op base exporter)", len(spans))
 
 
 class Tracer:

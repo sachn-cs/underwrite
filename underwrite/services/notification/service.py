@@ -114,8 +114,13 @@ class NotificationService(NanoService):
         from_number = os.environ.get("TWILIO_FROM_NUMBER", "")
         if account_sid and auth_token and from_number:
             try:
-                from twilio.rest import Client
-
+                try:
+                    from twilio.rest import Client
+                except ImportError:
+                    logger.warning(
+                        "twilio not installed; install underwrite[notify] "
+                        "or pip install twilio")
+                    return
                 client = Client(account_sid, auth_token)
                 client.messages.create(
                     body=f"Underwrite Alert ({event_type}): {payload}",
