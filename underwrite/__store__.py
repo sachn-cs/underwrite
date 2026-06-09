@@ -219,13 +219,7 @@ class FileStore(Store):
             self.__executor = None
 
     def __del__(self) -> None:
-        exec = self.__executor
-        if exec is not None:
-            self.__executor = None
-            try:
-                exec.shutdown(wait=False)
-            except Exception:
-                logger.warning("FileStore executor shutdown failed during GC")
+        pass
 
     def __timeout(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
         """Runs *fn* with the configured timeout via the executor."""

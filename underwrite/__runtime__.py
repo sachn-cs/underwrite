@@ -219,6 +219,22 @@ class Runtime:
         return Tracer(service_id="runtime", exporter=exporter)
 
     def __build_bus(self) -> EventBus:
+        backend = self.__config.bus.backend
+        if backend == "sqs":
+            from underwrite.__bus_sqs__ import SqsBus
+
+            return SqsBus(
+                queue_url=self.__config.bus.sqs_queue_url,
+                region=self.__config.bus.sqs_region,
+                store=self.__store,
+            )
+        if backend == "modal":
+            from underwrite.__bus_modal__ import ModalBus
+
+            return ModalBus(
+                queue_name=self.__config.bus.modal_queue_name,
+                store=self.__store,
+            )
         return LocalBus(
             rate_limit=self.__config.bus.rate_limit,
             max_workers=self.__config.bus.max_workers,
@@ -335,9 +351,8 @@ class Runtime:
             if hasattr(self.__bus, "dlq") and self.__bus.dlq:
                 dlq = self.__bus.dlq.count
             return {
-                "ok":
-                    not self.__bus.is_stopped() if hasattr(
-                        self.__bus, "is_stopped") else True,
+                "ok": (not self.__bus.is_stopped()) if hasattr(
+                    self.__bus, "is_stopped") else True,
                 "subscribers":
                     subs,
                 "dlq_count":
@@ -486,7 +501,8 @@ class Runtime:
             supervisor=self.__supervisor,
             **extra,
         )
-        self.__services[service_name] = svc
+        with self.__lock:
+            self.__services[service_name] = svc
         if self.__health:
             svc_id = service_name
             self.__health.register(f"service:{svc_id}", svc.health_check)
@@ -522,11 +538,19 @@ class Runtime:
         self.__service_names = list(service_names)
         self.__run_migrations()
         self.__start_metrics_export()
+        with self.__lock:
+            registered: list[str] = [
+                n for n in service_names if n not in self.__services
+            ]
+        for name in registered:
+            self.register(name)
         for name in service_names:
-            if name not in self.__services:
-                self.register(name)
             self.wire(name)
-            self.__services[name].start()
+        with self.__lock:
+            for name in service_names:
+                svc = self.__services.get(name)
+                if svc:
+                    svc.start()
         self.__bus.start()
 
     def restart_failing_services(self) -> list[str]:

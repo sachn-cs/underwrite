@@ -10,7 +10,7 @@ __all__ = [
 
 import enum
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 from typing import Any
 
@@ -57,6 +57,17 @@ class Event:
             from underwrite.__exceptions__ import ProtocolError
             raise ProtocolError(f"event payload exceeds MAX_PAYLOAD_SIZE "
                                 f"({payload_size} > {MAX_PAYLOAD_SIZE})")
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for f in fields(self):
+            result[f.name] = getattr(self, f.name)
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Event:
+        return cls(
+            **{k: data[k] for k in [f.name for f in fields(cls)] if k in data})
 
 
 class EventType(str, enum.Enum):

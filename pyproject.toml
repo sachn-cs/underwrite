@@ -72,6 +72,7 @@ serve = ["uvicorn[standard]>=0.24", "fastapi>=0.104"]
 vault = ["hvac>=2.0"]
 notify = ["twilio>=8.0"]
 aws = ["boto3>=1.33"]
+modal = ["modal>=0.60"]
 all = [
     "underwrite[postgres]",
     "underwrite[otlp]",
@@ -79,6 +80,7 @@ all = [
     "underwrite[vault]",
     "underwrite[aws]",
     "underwrite[gcs]",
+    "underwrite[modal]",
 ]
 
 [project.urls]

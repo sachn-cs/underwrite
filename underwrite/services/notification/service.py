@@ -21,11 +21,13 @@ class NotificationService(NanoService):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self.__executor: concurrent.futures.ThreadPoolExecutor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=4)
+        self.__executor: concurrent.futures.ThreadPoolExecutor | None = (
+            concurrent.futures.ThreadPoolExecutor(max_workers=4))
 
     def stop(self) -> None:
-        self.__executor.shutdown(wait=False)
+        if self.__executor is not None:
+            self.__executor.shutdown(wait=False)
+            self.__executor = None
         super().stop()
 
     def handle(self, event: Event) -> None:
@@ -40,6 +42,7 @@ class NotificationService(NanoService):
         if event.event_type not in notify_types:
             return
 
+        assert self.__executor is not None
         self.__executor.submit(self.__dispatch_notification, event)
         self.emit(
             EventType.NOTIFICATION_SENT,

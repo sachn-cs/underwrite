@@ -1,12 +1,14 @@
-"""Tests for Saga orchestration — execution and rollback."""
+"""Tests for Saga orchestration — execution, rollback, and persistence."""
 
 from __future__ import annotations
+
+import tempfile
 
 import pytest
 
 from underwrite.__exceptions__ import ProtocolError
 from underwrite.__saga__ import Saga, SagaOrchestrator, SagaStep
-from underwrite.__store__ import MemoryStore
+from underwrite.__store__ import FileStore, MemoryStore
 
 
 class TestSagaOrchestrator:
@@ -381,3 +383,73 @@ class TestSagaValidation:
         )
         so = SagaOrchestrator(store=store)
         assert so.get_saga("bad") is None
+
+
+class TestSagaFileStorePersistence:
+
+    def test_saga_survives_orchestrator_restart_with_filestore(self) -> None:
+        emitted: list[tuple[str, dict]] = []
+
+        class FakeEmitter:
+
+            def emit(self,
+                     event_type: str,
+                     payload: dict,
+                     correlation_id: str = "") -> None:
+                emitted.append((event_type, payload))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = FileStore(data_dir=tmpdir)
+            so1 = SagaOrchestrator(store=store)
+            so1.register_emitter("loan", FakeEmitter())
+            sid = so1.start_saga(
+                "loan",
+                [
+                    SagaStep("s1", "ev.a", {"k": "v"}, "comp.a", {"k": "c"}),
+                ],
+            )
+            so1.execute_all(sid)
+            saga1 = so1.get_saga(sid)
+            assert saga1 is not None
+            assert saga1.status == "completed"
+
+            so2 = SagaOrchestrator(store=store)
+            saga2 = so2.get_saga(sid)
+            assert saga2 is not None
+            assert saga2.status == "completed"
+            assert len(saga2.steps) == 1
+            assert saga2.completed_steps == [0]
+
+    def test_incomplete_saga_loaded_and_replayable_with_filestore(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = FileStore(data_dir=tmpdir)
+            emitted: list[tuple[str, dict]] = []
+
+            class FakeEmitter:
+
+                def emit(self,
+                         event_type: str,
+                         payload: dict,
+                         correlation_id: str = "") -> None:
+                    emitted.append((event_type, payload))
+
+            so1 = SagaOrchestrator(store=store)
+            sid = so1.start_saga(
+                "multi",
+                [
+                    SagaStep("s1", "ev.a", {}, "comp.a", {}),
+                    SagaStep("s2", "ev.b", {}, "comp.b", {}),
+                ],
+            )
+            so1.register_emitter("multi", FakeEmitter())
+            so1.execute_step(sid, 0)
+            assert len(emitted) == 1
+
+            so2 = SagaOrchestrator(store=store)
+            so2.register_emitter("multi", FakeEmitter())
+            result = so2.replay_saga(sid)
+            assert result is True
+            assert so2.get_saga(sid) is not None
+            assert so2.get_saga(
+                sid).status == "completed"  # type: ignore[union-attr]
+            assert len(emitted) == 2

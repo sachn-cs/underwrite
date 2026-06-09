@@ -25,6 +25,7 @@ import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -166,7 +167,6 @@ class DeadLetterQueue:
             error: Description of the failure.
             subscriber_id: Identifier of the subscriber that failed.
         """
-        should_sync = False
         with self.__lock:
             if len(self.__records) >= self.__max_records:
                 self.__records.pop(0)
@@ -174,9 +174,8 @@ class DeadLetterQueue:
                 DeadLetterRecord(event=event,
                                  error=error,
                                  subscriber_id=subscriber_id))
-            should_sync = self.__should_sync()
-        if should_sync:
-            self.__sync_store()
+            if self.__should_sync():
+                self.__sync_store()
 
     @property
     def records(self) -> list[DeadLetterRecord]:
@@ -211,11 +210,16 @@ class DeadLetterQueue:
             to_replay = list(self.__records)
             if max_count > 0:
                 to_replay = to_replay[:max_count]
+        for record in to_replay:
+            try:
+                bus.publish(record.event)
+            except Exception:
+                logger.exception("DLQ replay failed for event %s",
+                                 record.event.event_id)
+        with self.__lock:
             self.__records = self.__records[len(to_replay):]
             self.__sync_counter = 0
             self.__sync_store()
-        for record in to_replay:
-            bus.publish(record.event)
         return len(to_replay)
 
 
@@ -388,7 +392,7 @@ class IdempotencyGuard:
         """
         self.__lock: threading.Lock = threading.Lock()
         self.__seen: dict[str, set[str]] = {}
-        self.__order: dict[str, list[str]] = {}
+        self.__order: dict[str, deque[str]] = {}
         self.__max_ids: int = max_ids_per_handler
 
     @property
@@ -412,13 +416,13 @@ class IdempotencyGuard:
         """
         with self.__lock:
             seen = self.__seen.setdefault(handler_id, set())
-            order = self.__order.setdefault(handler_id, [])
+            order = self.__order.setdefault(handler_id, deque())
             if event_id in seen:
                 return True
             seen.add(event_id)
             order.append(event_id)
             if len(seen) > self.__max_ids:
-                evicted = order.pop(0)
+                evicted = order.popleft()
                 seen.discard(evicted)
             return False
 

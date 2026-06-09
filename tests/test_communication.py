@@ -70,18 +70,6 @@ class TestCommunicationService:
                   }))
         assert len(svc.store.keys("message:")) == 0
 
-    def test_handles_document_generated(self) -> None:
-        svc = CommunicationService(service_id="comm")
-        svc.handle(
-            Event(event_type=EventType.DOCUMENT_GENERATED,
-                  source="test",
-                  payload={
-                      "loan_id": "L1",
-                      "type": "agreement"
-                  }))
-        keys = svc.store.keys("comm_doc:L1:")
-        assert len(keys) == 1
-
     def test_handles_statement_generated(self) -> None:
         svc = CommunicationService(service_id="comm")
         svc.handle(

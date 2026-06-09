@@ -153,21 +153,19 @@ class BatchedStoreRepository(TypedStoreRepository[T]):
         Returns:
             True if a sync was triggered, False otherwise.
         """
-        should_sync = False
         with self.__batch_lock:
             self.__sync_counter += 1
             if self.__sync_counter >= self.__sync_interval:
                 self.__sync_counter = 0
-                should_sync = True
-        if should_sync:
-            self.save(data)
-        return True
+                self.save(data)
+                return True
+        return False
 
     def force_sync(self, data: T) -> None:
         """Immediately persists regardless of the counter."""
         with self.__batch_lock:
             self.__sync_counter = 0
-        self.save(data)
+            self.save(data)
 
     def reset_counter(self) -> None:
         """Resets the internal sync counter without persisting."""

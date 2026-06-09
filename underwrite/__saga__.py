@@ -171,7 +171,9 @@ class SagaOrchestrator:
             logger.exception("failed to persist saga %s", saga.saga_id)
 
     def __remove_saga(self, saga_id: str) -> None:
-        """Remove saga from the store."""
+        """Remove saga from the store and in-memory state."""
+        self.__sagas.pop(saga_id, None)
+        self.__saga_locks.pop(saga_id, None)
         try:
             self.__store.delete(self.__saga_store_key(saga_id))
         except Exception:
@@ -364,19 +366,14 @@ class SagaOrchestrator:
                 if i not in completed:
                     next_idx = i
                     break
-        if next_idx < 0:
-            return True  # all steps already completed
-        from_index = next_idx
-        if from_index == 0:
-            return self.execute_all(saga_id)
-        saga_lock = self.__get_saga_lock(saga_id)
-        with saga_lock:
-            saga_ref = self.__sagas.get(saga_id)
-            if not saga_ref:
-                return False
-            for i in range(from_index, len(saga_ref.steps)):
+            if next_idx < 0:
+                return True  # all steps already completed
+            from_index = next_idx
+            if from_index == 0:
+                return self.execute_all(saga_id)
+            for i in range(from_index, len(saga.steps)):
                 if not self.execute_step(saga_id, i):
                     return False
-            saga_ref.status = "completed"
-            self.__persist_saga(saga_ref)
+            saga.status = "completed"
+            self.__persist_saga(saga)
         return True

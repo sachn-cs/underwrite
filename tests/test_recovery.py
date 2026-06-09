@@ -99,6 +99,164 @@ class TestRecoveryService:
         assert completed[0].payload["recovered"] == 10000.0
         assert completed[0].payload["outstanding"] == 0.0
 
+    def test_offer_rejection_retriggers_offer(self) -> None:
+        bus = LocalBus()
+        offers: list[Event] = []
+        bus.subscribe("recovery.offer", lambda e: offers.append(e))
+        svc = recovery(bus=bus)
+        bus.start()
+        svc.handle(
+            Event(event_type=EventType.DEFAULT_OCCURRED,
+                  source="test",
+                  payload={
+                      "borrower": "eve",
+                      "principal": 30000
+                  }))
+        offers.clear()
+        svc.handle(
+            Event(event_type="recovery.offer_response",
+                  source="test",
+                  payload={
+                      "borrower": "eve",
+                      "accepted": False
+                  }))
+        assert len(offers) == 1
+        assert offers[0].payload["offer_amount"] == 9000.0
+
+    def test_three_rejections_escalates(self) -> None:
+        bus = LocalBus()
+        escalated: list[Event] = []
+        bus.subscribe("recovery.escalated", lambda e: escalated.append(e))
+        svc = recovery(bus=bus)
+        bus.start()
+        svc.handle(
+            Event(event_type=EventType.DEFAULT_OCCURRED,
+                  source="test",
+                  payload={
+                      "borrower": "faythe",
+                      "principal": 10000
+                  }))
+        for _ in range(3):
+            svc.handle(
+                Event(event_type="recovery.offer_response",
+                      source="test",
+                      payload={
+                          "borrower": "faythe",
+                          "accepted": False
+                      }))
+        assert len(escalated) == 1
+        assert escalated[0].payload["borrower"] == "faythe"
+        assert escalated[0].payload["stage"] == "escalation"
+
+    def test_offer_accepted_enters_payment_plan(self) -> None:
+        bus = LocalBus()
+        started: list[Event] = []
+        bus.subscribe(EventType.RECOVERY_STARTED, lambda e: started.append(e))
+        svc = recovery(bus=bus)
+        bus.start()
+        svc.handle(
+            Event(event_type=EventType.DEFAULT_OCCURRED,
+                  source="test",
+                  payload={
+                      "borrower": "grace",
+                      "principal": 20000
+                  }))
+        started.clear()
+        svc.handle(
+            Event(event_type="recovery.offer_response",
+                  source="test",
+                  payload={
+                      "borrower": "grace",
+                      "accepted": True
+                  }))
+        assert len(started) == 1
+        assert started[0].payload["stage"] == "payment_plan"
+
+    def test_partial_payment_emits_progress(self) -> None:
+        bus = LocalBus()
+        progress: list[Event] = []
+        bus.subscribe("recovery.progress", lambda e: progress.append(e))
+        svc = recovery(bus=bus)
+        bus.start()
+        svc.handle(
+            Event(event_type=EventType.DEFAULT_OCCURRED,
+                  source="test",
+                  payload={
+                      "borrower": "heidi",
+                      "principal": 5000
+                  }))
+        svc.handle(
+            Event(event_type=EventType.PAYMENT_RECEIVED,
+                  source="test",
+                  payload={
+                      "borrower": "heidi",
+                      "amount": 2000
+                  }))
+        assert len(progress) == 1
+        assert progress[0].payload["recovered"] == 2000.0
+        assert progress[0].payload["outstanding"] == 3000.0
+
+    def test_partial_then_full_payment_completes(self) -> None:
+        bus = LocalBus()
+        completed: list[Event] = []
+        bus.subscribe(EventType.RECOVERY_COMPLETED,
+                      lambda e: completed.append(e))
+        svc = recovery(bus=bus)
+        bus.start()
+        svc.handle(
+            Event(event_type=EventType.DEFAULT_OCCURRED,
+                  source="test",
+                  payload={
+                      "borrower": "ivan",
+                      "principal": 8000
+                  }))
+        svc.handle(
+            Event(event_type=EventType.PAYMENT_RECEIVED,
+                  source="test",
+                  payload={
+                      "borrower": "ivan",
+                      "amount": 5000
+                  }))
+        svc.handle(
+            Event(event_type=EventType.PAYMENT_RECEIVED,
+                  source="test",
+                  payload={
+                      "borrower": "ivan",
+                      "amount": 3000
+                  }))
+        assert len(completed) == 1
+        assert completed[0].payload["recovered"] == 8000.0
+
+    def test_unknown_borrower_payment_silently_ignored(self) -> None:
+        bus = LocalBus()
+        progress: list[Event] = []
+        bus.subscribe("recovery.progress", lambda e: progress.append(e))
+        svc = recovery(bus=bus)
+        bus.start()
+        svc.handle(
+            Event(event_type=EventType.PAYMENT_RECEIVED,
+                  source="test",
+                  payload={
+                      "borrower": "nobody",
+                      "amount": 1000
+                  }))
+        assert len(progress) == 0
+
+    def test_unknown_borrower_offer_response_silently_ignored(self) -> None:
+        bus = LocalBus()
+        started: list[Event] = []
+        bus.subscribe(EventType.RECOVERY_STARTED, lambda e: started.append(e))
+        svc = recovery(bus=bus)
+        bus.start()
+        svc.handle(
+            Event(event_type="recovery.offer_response",
+                  source="test",
+                  payload={
+                      "borrower": "nobody",
+                      "accepted": True
+                  }))
+        assert len(started) == 0
+
     def test_ignores_non_default_events(self) -> None:
         bus = LocalBus()
         started: list[Event] = []

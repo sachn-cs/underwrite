@@ -68,6 +68,9 @@ class BusConfig(ForbidExtra):
     rate_limit: float = Field(default=0.0, ge=0)
     max_workers: int = Field(default=0, ge=0)
     max_futures: int = Field(default=10000, ge=1)
+    sqs_queue_url: str = ""
+    sqs_region: str = ""
+    modal_queue_name: str = "underwrite-bus"
 
     @field_validator("backend")
     @classmethod

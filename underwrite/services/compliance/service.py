@@ -23,7 +23,6 @@ AADHAAR_PATTERN: str = r"^\d{12}$"
 
 BLOCKLIST_PATH: str = "aml_blocklist.json"
 
-DEFAULT_RISKY_JURISDICTIONS: frozenset[str] = frozenset()
 DEFAULT_RISKY_KEYWORDS: list[str] = [
     "pep", "politically exposed", "sanctions", "watchlist"
 ]
@@ -56,8 +55,6 @@ class ComplianceService(NanoService):
         blocklist_path: str = os.environ.get("AML_BLOCKLIST_PATH",
                                              BLOCKLIST_PATH)
         self.__blocklist: set[str] = _load_blocklist(blocklist_path)
-        self.__risky_jurisdictions: frozenset[str] = (
-            DEFAULT_RISKY_JURISDICTIONS)
         if self.__blocklist:
             logger.info("AML blocklist loaded with %d entries",
                         len(self.__blocklist))

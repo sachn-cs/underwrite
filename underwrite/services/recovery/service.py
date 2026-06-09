@@ -108,6 +108,11 @@ class RecoveryService(NanoService):
         recovery = self.__recoveries.get(borrower)
         if not recovery:
             return
+        if recovery["stage"] in (
+                RecoveryStage.ESCALATION.value,
+                RecoveryStage.SETTLEMENT.value,
+        ):
+            return
 
         if accepted:
             recovery["stage"] = RecoveryStage.PAYMENT_PLAN.value
@@ -163,6 +168,8 @@ class RecoveryService(NanoService):
         recovery = self.__recoveries.get(borrower)
         if not recovery:
             return
+        if recovery["stage"] == RecoveryStage.SETTLEMENT.value:
+            return
 
         recovery["recovered"] += amount
         recovery["last_action"] = datetime.now(timezone.utc).isoformat()
@@ -183,7 +190,6 @@ class RecoveryService(NanoService):
                 correlation_id=event.correlation_id,
             )
         else:
-            recovery["plan_failures"] += 0
             recovery["last_action"] = datetime.now(timezone.utc).isoformat()
             logger.info(
                 "recovery progress for %s: recovered=%.2f "

@@ -3,10 +3,16 @@
 Tests verify behavior through emitted events only:
   - KYC_VERIFIED for valid PAN + Aadhaar
   - KYC_REJECTED for invalid PAN or Aadhaar
+  - AML_FROZEN for blocklist matches
   - Edge cases: empty fields, case sensitivity, missing payload
 """
 
 from __future__ import annotations
+
+import json
+import os
+import tempfile
+from unittest.mock import patch
 
 from underwrite.__bus__ import LocalBus
 from underwrite.__events__ import Event, EventType
@@ -240,3 +246,131 @@ class TestComplianceService:
             ))
         assert len(kyc) == 1
         assert kyc[0].payload["user"] == ""
+
+    # ------------------------------------------------------------------ #
+    #  AML blocklist tests                                               #
+    # ------------------------------------------------------------------ #
+
+    def test_aml_cleared_when_no_blocklist_file(self) -> None:
+        bus = LocalBus()
+        cleared: list[Event] = []
+        bus.subscribe(EventType.AML_CLEARED, lambda e: cleared.append(e))
+        svc = compliance(bus=bus)
+        bus.start()
+        svc.handle(
+            Event(event_type=EventType.USER_ADDED,
+                  source="test",
+                  payload={
+                      "user": "oscar",
+                      "pan": "ABCDE1234F",
+                      "aadhaar": "123456789012",
+                      "name": "Oscar Wilde",
+                  }))
+        assert len(cleared) == 1
+
+    def test_aml_frozen_on_user_blocklist_match(self) -> None:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                         delete=False) as f:
+            json.dump(["oscar"], f)
+            bl_path = f.name
+        try:
+            with patch.dict(os.environ, {"AML_BLOCKLIST_PATH": bl_path},
+                            clear=False):
+                bus = LocalBus()
+                frozen: list[Event] = []
+                bus.subscribe(EventType.AML_FROZEN, lambda e: frozen.append(e))
+                svc = compliance(bus=bus)
+                bus.start()
+                svc.handle(
+                    Event(event_type=EventType.USER_ADDED,
+                          source="test",
+                          payload={
+                              "user": "oscar",
+                              "pan": "ABCDE1234F",
+                              "aadhaar": "123456789012",
+                          }))
+                assert len(frozen) == 1
+                assert frozen[0].payload["aml_status"] == "frozen"
+        finally:
+            os.unlink(bl_path)
+
+    def test_aml_frozen_on_name_blocklist_match(self) -> None:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                         delete=False) as f:
+            json.dump(["wilde"], f)
+            bl_path = f.name
+        try:
+            with patch.dict(os.environ, {"AML_BLOCKLIST_PATH": bl_path},
+                            clear=False):
+                bus = LocalBus()
+                frozen: list[Event] = []
+                bus.subscribe(EventType.AML_FROZEN, lambda e: frozen.append(e))
+                svc = compliance(bus=bus)
+                bus.start()
+                svc.handle(
+                    Event(event_type=EventType.USER_ADDED,
+                          source="test",
+                          payload={
+                              "user": "oscar",
+                              "pan": "ABCDE1234F",
+                              "aadhaar": "123456789012",
+                              "name": "Oscar Wilde",
+                          }))
+                assert len(frozen) == 1
+        finally:
+            os.unlink(bl_path)
+
+    def test_aml_cleared_when_no_blocklist_match(self) -> None:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                         delete=False) as f:
+            json.dump(["mallory"], f)
+            bl_path = f.name
+        try:
+            with patch.dict(os.environ, {"AML_BLOCKLIST_PATH": bl_path},
+                            clear=False):
+                bus = LocalBus()
+                cleared: list[Event] = []
+                bus.subscribe(EventType.AML_CLEARED,
+                              lambda e: cleared.append(e))
+                svc = compliance(bus=bus)
+                bus.start()
+                svc.handle(
+                    Event(event_type=EventType.USER_ADDED,
+                          source="test",
+                          payload={
+                              "user": "oscar",
+                              "pan": "ABCDE1234F",
+                              "aadhaar": "123456789012",
+                          }))
+                assert len(cleared) == 1
+        finally:
+            os.unlink(bl_path)
+
+    def test_aml_frozen_emitted_after_kyc_verified(self) -> None:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                         delete=False) as f:
+            json.dump(["blocked_user"], f)
+            bl_path = f.name
+        try:
+            with patch.dict(os.environ, {"AML_BLOCKLIST_PATH": bl_path},
+                            clear=False):
+                bus = LocalBus()
+                all_events: list[Event] = []
+                bus.subscribe("*", lambda e: all_events.append(e))
+                svc = compliance(bus=bus)
+                bus.start()
+                svc.handle(
+                    Event(event_type=EventType.USER_ADDED,
+                          source="test",
+                          payload={
+                              "user": "blocked_user",
+                              "pan": "ABCDE1234F",
+                              "aadhaar": "123456789012",
+                          }))
+                types = [e.event_type for e in all_events]
+                assert EventType.KYC_VERIFIED in types
+                assert EventType.AML_FROZEN in types
+                assert EventType.AML_CLEARED not in types
+                assert len(all_events) == 2
+        finally:
+            os.unlink(bl_path)

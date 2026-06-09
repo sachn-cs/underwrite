@@ -193,8 +193,11 @@ class NanoService(ABC):
         self.__running = True
 
     def stop(self) -> None:
-        """Stops event processing and unsubscribes from the bus."""
+        """Stops event processing, shuts down executor, and unsubscribes."""
         self.__running = False
+        if self.__executor is not None:
+            self.__executor.shutdown(wait=False)
+            self.__executor = None
         for sid in self.__subscriptions:
             self.__bus.unsubscribe(sid)
         self.__subscriptions.clear()
@@ -204,6 +207,9 @@ class NanoService(ABC):
              payload: dict[str, Any],
              correlation_id: str = "") -> Event:
         """Creates, signs, publishes and returns a new event."""
+        if self.__authz:
+            self.__authz.assert_publish(self.__service_id, event_type)
+            self.__authz.trust(self.__service_id, self.__identity.public_key)
         trace_id: str = ""
         parent_span_id: str = ""
         if self.__tracer:
@@ -229,9 +235,6 @@ class NanoService(ABC):
             correlation_id=event.correlation_id,
             signature=self.__identity.sign(to_sign),
         )
-        if self.__authz:
-            self.__authz.assert_publish(self.__service_id, event_type)
-            self.__authz.trust(self.__service_id, self.__identity.public_key)
         self.__bus.publish(signed)
         if self.__metrics:
             self.__metrics.increment(
@@ -264,11 +267,15 @@ class NanoService(ABC):
                             "event_type": event.event_type,
                         },
                     )
+                if hasattr(self.__bus, "dlq") and self.__bus.dlq:
+                    self.__bus.dlq.put(event, "authz_failed", self.__service_id)
                 return
         if self.__bus.idempotency.is_duplicate(self.__service_id,
                                                event.event_id):
             logger.debug("duplicate event %s dropped by %s", event.event_id,
                          self.__service_id)
+            if hasattr(self.__bus, "dlq") and self.__bus.dlq:
+                self.__bus.dlq.put(event, "duplicate", self.__service_id)
             return
         if self.__executor is not None:
             self.__executor.submit(self.__handle_event, event)
@@ -288,8 +295,12 @@ class NanoService(ABC):
                 },
         ) if self.__tracer else contextlib.nullcontext()):
             try:
+                old_cid = getattr(log_context, 'correlation_id', None)
                 log_context.correlation_id = event.correlation_id or ""
-                self.handle(event)
+                try:
+                    self.handle(event)
+                finally:
+                    log_context.correlation_id = old_cid
                 with self.__counter_lock:
                     self.__events_handled += 1
                     self.__last_event_time = start

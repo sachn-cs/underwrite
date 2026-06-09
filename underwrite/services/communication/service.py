@@ -27,7 +27,6 @@ class CommunicationService(NanoService):
         super().__init__(**kwargs)
         self._handlers: dict[str, Any] = {
             EventType.COMMUNICATION_SEND: self.__on_communication_send,
-            EventType.DOCUMENT_GENERATED: self.__on_document_generated,
             EventType.STATEMENT_GENERATED: self.__on_statement_generated,
         }
 
@@ -61,21 +60,6 @@ class CommunicationService(NanoService):
             },
             correlation_id=event.correlation_id,
         )
-
-    def __on_document_generated(self, event: Event) -> None:
-        loan_id: str = event.payload.get("loan_id", "")
-        doc_type: str = event.payload.get("type", "")
-        if not loan_id or not doc_type:
-            logger.warning(
-                "dropping DOCUMENT_GENERATED with missing loan_id or type")
-            return
-        doc_notification = {
-            "loan_id": loan_id,
-            "type": doc_type,
-            "notified": True,
-            "notified_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self.store.set(f"comm_doc:{loan_id}:{doc_type}", doc_notification)
 
     def __on_statement_generated(self, event: Event) -> None:
         loan_id = event.payload.get("loan_id", "")
