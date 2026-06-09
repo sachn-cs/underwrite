@@ -78,5 +78,10 @@ class ServiceSupervisor:
                     list(self.__failures.keys()),
             }
 
+    def shutdown(self) -> None:
+        """Clears all tracked failure state during shutdown."""
+        with self.__lock:
+            self.__failures.clear()
+
 
 __all__ = ["ServiceSupervisor"]

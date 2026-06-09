@@ -90,7 +90,7 @@ class FraudService(StatefulService):
         self.__maybe_sync()
 
     def __check_wash(self, borrower: str, correlation_id: str) -> None:
-        records = self.__records.get(borrower, deque())
+        records = self.__records.get(borrower, deque(maxlen=1000))
         cycles: int = 0
         i: int = 0
         while i < len(records) - 1:
@@ -112,7 +112,7 @@ class FraudService(StatefulService):
             )
 
     def __check_burst(self, borrower: str, correlation_id: str) -> None:
-        records = self.__records.get(borrower, deque())
+        records = self.__records.get(borrower, deque(maxlen=1000))
         recent = [r for r in records if r["event_type"] == "origination"]
         if len(recent) > 3:
             self.emit(

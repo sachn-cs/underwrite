@@ -46,10 +46,14 @@ from underwrite.__logger__ import logger
 
 
 class ForbidExtra(BaseModel):
+    """Base model that rejects unknown fields on instantiation."""
+
     model_config = {"extra": "forbid"}
 
 
 class ServiceConfig(ForbidExtra):
+    """Per-service enable/disable and priority assignment."""
+
     enabled: bool = False
     priority: int = 0
 
@@ -58,6 +62,8 @@ BACKENDS = Annotated[str, Field(validate_default=True)]
 
 
 class BusConfig(ForbidExtra):
+    """Configuration for the event bus backend (local, sqs, or modal)."""
+
     backend: str = "local"
     rate_limit: float = Field(default=0.0, ge=0)
     max_workers: int = Field(default=0, ge=0)
@@ -73,6 +79,8 @@ class BusConfig(ForbidExtra):
 
 
 class StoreConfig(ForbidExtra):
+    """Configuration for the persistence store (memory, filesystem, or postgres)."""
+
     backend: str = "memory"
     dsn: str = ""
     pool_size: int = Field(default=5, ge=1)
@@ -90,6 +98,8 @@ class StoreConfig(ForbidExtra):
 
 
 class LoggingConfig(ForbidExtra):
+    """Configuration for logging level, output destination, and format."""
+
     level: str = "INFO"
     output: str = "stdout"
     log_format: str = "text"
@@ -114,6 +124,8 @@ class LoggingConfig(ForbidExtra):
 
 
 class IdentityConfig(ForbidExtra):
+    """Cryptographic identity settings — keys, passphrase, and TTL."""
+
     private_key: str = ""
     public_key: str = ""
     encryption_passphrase: str = ""
@@ -122,20 +134,28 @@ class IdentityConfig(ForbidExtra):
 
 
 class AuthzConfig(ForbidExtra):
+    """Authorization policy settings."""
+
     enabled: bool = True
     policy_file: str = ""
 
 
 class MetricsConfig(ForbidExtra):
+    """Prometheus-style metrics export configuration."""
+
     enabled: bool = True
     export_interval: int = Field(default=60, ge=0)
 
 
 class MigrationConfig(ForbidExtra):
+    """Schema migration behaviour."""
+
     auto_migrate: bool = True
 
 
 class TracingConfig(ForbidExtra):
+    """Distributed tracing configuration (console, otlp, or noop)."""
+
     enabled: bool = False
     exporter: str = "console"
 
@@ -150,10 +170,14 @@ class TracingConfig(ForbidExtra):
 
 
 class SagaConfig(ForbidExtra):
+    """Saga orchestration settings."""
+
     enabled: bool = True
 
 
 class SecretsConfig(ForbidExtra):
+    """Secrets backend configuration (env, vault, or aws)."""
+
     backend: str = "env"
     url: str = ""
     token: str = ""
@@ -161,12 +185,16 @@ class SecretsConfig(ForbidExtra):
 
 
 class RecoveryConfig(ForbidExtra):
+    """Service auto-recovery and restart back-off settings."""
+
     auto_restart: bool = True
     max_restarts: int = Field(default=3, ge=0)
     backoff_seconds: float = Field(default=1.0, ge=0)
 
 
 class FeeConfig(ForbidExtra):
+    """Fee schedules for late payment, origination, prepayment, and service fees."""
+
     schedules: dict[str, float] = Field(
         default_factory=lambda: {
             "late_payment": 25.0,
@@ -177,6 +205,8 @@ class FeeConfig(ForbidExtra):
 
 
 class GovernanceConfig(ForbidExtra):
+    """Protocol governance parameter ranges and defaults."""
+
     param_ranges: dict[str, list[float]] = Field(
         default_factory=lambda: {
             "protocol_rate": [0.0, 1.0],
@@ -196,11 +226,19 @@ class GovernanceConfig(ForbidExtra):
 
 
 class AuditConfig(ForbidExtra):
+    """Audit ledger capacity and remote export URL."""
+
     max_ledger: int = Field(default=100000, ge=1)
     export_url: str = ""
 
 
 class Configuration(ForbidExtra):
+    """Top-level configuration for the underwrite platform.
+
+    Aggregates all sub-configs (bus, store, logging, identity, etc.) and
+    provides load/save/merge logic driven by JSON files and env vars.
+    """
+
     bus: BusConfig = Field(default_factory=BusConfig)
     store: StoreConfig = Field(default_factory=StoreConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
@@ -226,7 +264,6 @@ class Configuration(ForbidExtra):
             config.services[service_name] = ServiceConfig(enabled=False)
         return config
 
-    @classmethod
     @classmethod
     def load(cls, path: str | None = None) -> Configuration:
         config = cls.default()
@@ -280,6 +317,7 @@ class Configuration(ForbidExtra):
                 d.pop("secrets")
         if "identity" in d:
             d["identity"].pop("private_key", None)
+            d["identity"].pop("encryption_passphrase", None)
         return d
 
     def enabled_services(self) -> list[str]:

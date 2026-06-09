@@ -182,7 +182,7 @@ class RiskModel:
         import os
 
         expected = os.environ.get("RISK_MODEL_SHA256", "")
-        sidecar = Path(str(model_path) + ".sha256")
+        sidecar = Path(f"{model_path}.sha256")
         if not expected and sidecar.exists():
             expected = sidecar.read_text().strip()
         if not expected:

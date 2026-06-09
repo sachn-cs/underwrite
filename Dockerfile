@@ -21,7 +21,7 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin/underwrite /usr/local/bin/underwrite
 
-RUN mkdir -p /data && chown underwrite:underwrite /data
+RUN mkdir -p /app/data /data && chown underwrite:underwrite /app/data /data
 
 EXPOSE 8080
 

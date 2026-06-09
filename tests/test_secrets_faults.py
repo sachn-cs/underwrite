@@ -66,11 +66,11 @@ class TestEnvSecretsBackend:
             result = backend.get(key)
         assert result == expected
 
-    def test_set_is_noop(self) -> None:
+    def test_set_writes_env_var(self) -> None:
         backend = EnvSecretsBackend()
-        env_before = dict(os.environ)
-        backend.set("SOME_KEY", "some-value")
-        assert dict(os.environ) == env_before
+        backend.set("SET_TEST_KEY", "test-value")
+        assert os.environ.get("UNDERWRITE_SECRET_SET_TEST_KEY") == "test-value"
+        del os.environ["UNDERWRITE_SECRET_SET_TEST_KEY"]
 
 
 def make_hvac_mock() -> Mock:
@@ -204,10 +204,7 @@ class TestVaultSecretsBackend:
 
     def test_raises_on_missing_hvac_package(self) -> None:
         backend = VaultSecretsBackend()
-        with patch.dict("sys.modules", {
-                "hvac": None,
-                "hvac.exceptions": None
-        }):
+        with patch.dict("sys.modules", {"hvac": None, "hvac.exceptions": None}):
             with patch("builtins.__import__") as mock_import:
                 mock_import.side_effect = ImportError("no hvac")
                 with pytest.raises(ImportError,

@@ -24,7 +24,7 @@ Usage::
 from __future__ import annotations
 
 import threading
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar, cast
 
 from underwrite.__logger__ import logger
 from underwrite.__store__ import Store
@@ -82,7 +82,7 @@ class StoreRepository(Generic[T]):
 
     def deserialize(self, raw: Any) -> T:
         """Override in subclasses for custom deserialization."""
-        return raw  # type: ignore[return-value]
+        return cast(T, raw)
 
     def serialize(self, data: T) -> Any:
         """Override in subclasses for custom serialization."""

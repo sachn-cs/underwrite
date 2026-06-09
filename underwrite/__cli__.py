@@ -40,7 +40,7 @@ def load_config() -> Configuration:
     config_path: str = "underwrite.json"
     if Path(config_path).exists():
         return Configuration.load(config_path)
-    return Configuration.default()
+    return Configuration.load()
 
 
 @app.command()

@@ -70,6 +70,7 @@ postgres = [
 ]
 serve = ["uvicorn[standard]>=0.24", "fastapi>=0.104"]
 vault = ["hvac>=2.0"]
+notify = ["twilio>=8.0"]
 aws = ["boto3>=1.33"]
 all = [
     "underwrite[postgres]",

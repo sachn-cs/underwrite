@@ -315,7 +315,7 @@ class SagaOrchestrator:
                 s = self.__sagas[saga_id]
                 s.status = "rolled_back"
                 if compensation_errors:
-                    s.error += "; " + "; ".join(compensation_errors)
+                    s.error += f"; {'; '.join(compensation_errors)}"
                 self.__persist_saga(s)
 
     def get_saga(self, saga_id: str) -> Saga | None:
