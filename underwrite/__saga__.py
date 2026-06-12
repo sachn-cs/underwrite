@@ -172,8 +172,9 @@ class SagaOrchestrator:
 
     def __remove_saga(self, saga_id: str) -> None:
         """Remove saga from the store and in-memory state."""
-        self.__sagas.pop(saga_id, None)
-        self.__saga_locks.pop(saga_id, None)
+        with self.__global_lock:
+            self.__sagas.pop(saga_id, None)
+            self.__saga_locks.pop(saga_id, None)
         try:
             self.__store.delete(self.__saga_store_key(saga_id))
         except Exception:

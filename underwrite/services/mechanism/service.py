@@ -244,4 +244,4 @@ class MechanismService(NanoService):
     def __sync_store(self) -> None:
         with self.state_lock:
             state = self.__graph.to_dict()
-        self.store.set("protocol:state", state)
+            self.store.set("protocol:state", state)

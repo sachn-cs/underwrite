@@ -14,6 +14,8 @@ from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 from typing import Any
 
+from underwrite.__logger__ import logger
+
 MAX_PAYLOAD_SIZE: int = 1_000_000  # 1 MB max event payload
 
 
@@ -66,8 +68,13 @@ class Event:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Event:
+        known = {f.name for f in fields(cls)}
+        extra = set(data) - known
+        if extra:
+            logger.warning("Event.from_dict dropping unknown field(s): %s",
+                           sorted(extra))
         return cls(
-            **{k: data[k] for k in [f.name for f in fields(cls)] if k in data})
+            **{k: data[k] for k in known if k in data})
 
 
 class EventType(str, enum.Enum):

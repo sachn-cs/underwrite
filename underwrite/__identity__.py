@@ -92,13 +92,15 @@ class Identity:
             ) if encryption_passphrase else None
             alg = (serialization.BestAvailableEncryption(pass_bytes)
                    if pass_bytes else serialization.NoEncryption())
+            enc = serialization.Encoding.DER if pass_bytes else serialization.Encoding.Raw
+            fmt = serialization.PrivateFormat.PKCS8 if pass_bytes else serialization.PrivateFormat.Raw
             object.__setattr__(
                 identity,
                 "_Identity__private_key",
                 base64.b64encode(
                     private.private_bytes(
-                        encoding=serialization.Encoding.Raw,
-                        format=serialization.PrivateFormat.Raw,
+                        encoding=enc,
+                        format=fmt,
                         encryption_algorithm=alg,
                     )).decode(),
             )
@@ -119,13 +121,15 @@ class Identity:
         ) if encryption_passphrase else None
         alg = (serialization.BestAvailableEncryption(pass_bytes)
                if pass_bytes else serialization.NoEncryption())
+        enc = serialization.Encoding.DER if pass_bytes else serialization.Encoding.Raw
+        fmt = serialization.PrivateFormat.PKCS8 if pass_bytes else serialization.PrivateFormat.Raw
         object.__setattr__(
             identity,
             "_Identity__private_key",
             base64.b64encode(
                 private.private_bytes(
-                    encoding=serialization.Encoding.Raw,
-                    format=serialization.PrivateFormat.Raw,
+                    encoding=enc,
+                    format=fmt,
                     encryption_algorithm=alg,
                 )).decode(),
         )

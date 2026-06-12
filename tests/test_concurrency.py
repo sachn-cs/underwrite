@@ -53,7 +53,7 @@ class TestLocalBusConcurrency:
         # No crash = success
 
     def test_circuit_breaker_thread_safety(self) -> None:
-        from underwrite.__bus__ import CircuitBreaker
+        from underwrite.__bus__ import PerSubscriberCircuitBreaker as CircuitBreaker
 
         cb = CircuitBreaker(failure_threshold=3, cooldown_seconds=0.01)
 

@@ -12,6 +12,7 @@ __all__ = [
     "HealthRegistry",
 ]
 
+import concurrent.futures
 import threading
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -25,10 +26,25 @@ HealthCheck = Callable[[], dict[str, Any]]
 class HealthRegistry:
     """Thread-safe registry of health checks."""
 
-    def __init__(self) -> None:
-        """Initializes an empty health-check registry."""
+    def __init__(
+        self,
+        timeout: float = 10.0,
+    ) -> None:
+        """Initializes an empty health-check registry.
+
+        Args:
+            timeout: Max seconds per health check. If a check takes
+                longer, it is considered failed (prevents hang-ups).
+        """
         self.__lock: threading.Lock = threading.Lock()
         self.__checks: dict[str, HealthCheck] = {}
+        self.__timeout: float = timeout
+        self.__executor: concurrent.futures.ThreadPoolExecutor = (
+            concurrent.futures.ThreadPoolExecutor(
+                max_workers=4,
+                thread_name_prefix="health",
+            )
+        )
 
     def register(self, name: str, check: HealthCheck) -> None:
         """Registers a health check.
@@ -63,7 +79,15 @@ class HealthRegistry:
             checks_snapshot = dict(self.__checks)
         for name, check in checks_snapshot.items():
             try:
-                result = check()
+                fut = self.__executor.submit(check)
+                result = fut.result(timeout=self.__timeout)
+            except concurrent.futures.TimeoutError:
+                logger.warning("health check %s timed out after %.1fs", name,
+                               self.__timeout)
+                result = {
+                    "ok": False,
+                    "detail": f"timed out after {self.__timeout}s",
+                }
             except Exception as exc:
                 logger.exception("health check %s failed", name)
                 result = {
@@ -79,3 +103,7 @@ class HealthRegistry:
             "checks": results,
             "checked_at": datetime.now(timezone.utc).isoformat(),
         }
+
+    def shutdown(self) -> None:
+        """Shuts down the health check thread pool."""
+        self.__executor.shutdown(wait=False)

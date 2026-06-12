@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from underwrite.__exceptions__ import InfeasibleOperationError, ProtocolError
+from underwrite.__logger__ import logger
 
 
 class DelegationGraph:
@@ -271,5 +272,9 @@ class DelegationGraph:
         g.loans = {}
         for loan in data.get("loans", []):
             b = loan.get("borrower", "")
+            if not b:
+                logger.warning("Dropping loan with empty/missing borrower: %s",
+                               loan.get("loan_id", "unknown"))
+                continue
             g.loans.setdefault(b, []).append(loan)
         return g

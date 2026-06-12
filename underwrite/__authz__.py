@@ -66,8 +66,11 @@ class Policy:
 class AccessControl:
     """Thread-safe access control evaluator.
 
-    Policies are evaluated in order.  The first matching rule decides.
-    If no rule matches, the default is deny.
+    Deny rules are evaluated first; if any deny rule matches, access
+    is denied.  Then allow rules are evaluated; if any allow rule
+    matches, access is granted.  If no rule matches, the default is
+    deny.  This means deny rules always take priority over allow
+    rules, regardless of insertion order.
     """
 
     def __init__(self) -> None:

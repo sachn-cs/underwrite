@@ -42,7 +42,10 @@ class NotificationService(NanoService):
         if event.event_type not in notify_types:
             return
 
-        assert self.__executor is not None
+        if self.__executor is None:
+            logger.warning("notification executor not available, dispatching synchronously")
+            self.__dispatch_notification(event)
+            return
         self.__executor.submit(self.__dispatch_notification, event)
         self.emit(
             EventType.NOTIFICATION_SENT,
