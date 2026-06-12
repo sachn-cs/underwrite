@@ -24,6 +24,8 @@ DEFAULT_FEE_SCHEDULES: dict[str, float] = {
     "service": 5.0,
 }
 
+MAX_FEE_PER_LOAN: float = 1000.0
+
 
 class FeeService(StatefulService):
     """Manages fee assessment, tracking, and lifecycle."""
@@ -59,6 +61,16 @@ class FeeService(StatefulService):
                     logger.warning(
                         "fee.assess with unknown fee_type %r, ignored",
                         fee_type)
+                return
+            total_assessed = sum(
+                r.get("amount", 0.0) for r in self.__fees.values()
+                if f"fee:{loan_id}" in r.get("fee_id", "")
+                or loan_id in r.get("loan_id", ""))
+            if total_assessed >= MAX_FEE_PER_LOAN:
+                logger.warning(
+                    "fee cap reached for loan %s (total %.2f >= %.2f), "
+                    "skipping fee assessment",
+                    loan_id, total_assessed, MAX_FEE_PER_LOAN)
                 return
             if fee_type == "origination":
                 amount = principal * schedules["origination"]

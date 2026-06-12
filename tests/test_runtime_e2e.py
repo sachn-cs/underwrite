@@ -41,6 +41,7 @@ class TestPublishFlow:
                 },
             ))
         audit = rt.get("audit")
+        assert audit is not None
         records = [
             e for e in audit.ledger
             if e["event_type"] == EventType.LOAN_ORIGINATED
@@ -74,6 +75,7 @@ class TestPublishFlow:
         bus.start()
         rt.start(["mechanism", "audit"])
         mechanism = rt.get("mechanism")
+        assert mechanism is not None
         mechanism.handle(
             Event(
                 event_type="mechanism",
@@ -139,6 +141,7 @@ class TestPublishFlow:
                 },
             ))
         audit = rt.get("audit")
+        assert audit is not None
         seed_records = audit.events_by_type(EventType.SEED_ADDED)
         assert len(seed_records) >= 1
         rt.stop()

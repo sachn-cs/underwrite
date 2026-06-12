@@ -16,6 +16,7 @@ __all__ = [
     "EventBus",
     "IdempotencyGuard",
     "LocalBus",
+    "PerSubscriberCircuitBreaker",
     "RateLimiter",
 ]
 
@@ -199,6 +200,11 @@ class DeadLetterQueue:
     def replay(self, bus: EventBus, max_count: int = 0) -> int:
         """Re-publishes dead-letter events to a bus.
 
+        Events are removed from the DLQ *before* replay to prevent
+        concurrent ``dead()`` calls from re-adding them while we
+        iterate.  If an individual replay fails the event is put back
+        on the DLQ with a new error entry.
+
         Args:
             bus: The event bus to publish on.
             max_count: Maximum events to replay (0 = all).
@@ -210,20 +216,23 @@ class DeadLetterQueue:
             to_replay = list(self.__records)
             if max_count > 0:
                 to_replay = to_replay[:max_count]
-        for record in to_replay:
-            try:
-                bus.publish(record.event)
-            except Exception:
-                logger.exception("DLQ replay failed for event %s",
-                                 record.event.event_id)
-        with self.__lock:
             self.__records = self.__records[len(to_replay):]
             self.__sync_counter = 0
             self.__sync_store()
-        return len(to_replay)
+        replayed = 0
+        for record in to_replay:
+            try:
+                bus.publish(record.event)
+                replayed += 1
+            except Exception:
+                logger.exception("DLQ replay failed for event %s",
+                                 record.event.event_id)
+                self.put(record.event,
+                         f"replay_failed: {record.error}", record.subscriber_id)
+        return replayed
 
 
-class CircuitBreaker:
+class PerSubscriberCircuitBreaker:
     """Per-subscriber circuit breaker that stops dispatching to failing subscribers.
 
     Transitions: CLOSED -> OPEN (after *failure_threshold* consecutive failures)
@@ -492,7 +501,7 @@ class LocalBus(EventBus):
         self.__running: bool = False
         self.__dlq: DeadLetterQueue = DeadLetterQueue(store=store)
         self.__idempotency: IdempotencyGuard = IdempotencyGuard()
-        self.__circuit_breaker: CircuitBreaker = CircuitBreaker()
+        self.__circuit_breaker: PerSubscriberCircuitBreaker = PerSubscriberCircuitBreaker()
         self.__max_buffer_size: int = max_buffer_size
         self.__rate_limiter: RateLimiter | None = RateLimiter(
             rate_limit) if rate_limit > 0 else None

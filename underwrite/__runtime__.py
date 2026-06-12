@@ -593,18 +593,47 @@ class Runtime:
 
     def stop(self) -> None:
         """Stops all services, the metrics export loop, and the event bus."""
-        if self.__metrics_stop:
-            self.__metrics_stop.set()
-        if self.__metrics_thread and self.__metrics_thread.is_alive():
-            self.__metrics_thread.join(timeout=5.0)
+        errors: list[str] = []
+        try:
+            if self.__metrics_stop:
+                self.__metrics_stop.set()
+        except Exception as exc:
+            errors.append(f"metrics_stop: {exc}")
+        try:
+            if self.__metrics_thread and self.__metrics_thread.is_alive():
+                self.__metrics_thread.join(timeout=5.0)
+        except Exception as exc:
+            errors.append(f"metrics_thread: {exc}")
         for svc in self.__services.values():
-            svc.stop()
-        self.__bus.stop()
-        self.__store.shutdown()
+            try:
+                svc.stop()
+            except Exception as exc:
+                errors.append(f"service {svc.service_id}: {exc}")
+        try:
+            self.__bus.stop()
+        except Exception as exc:
+            errors.append(f"bus: {exc}")
+        try:
+            self.__store.shutdown()
+        except Exception as exc:
+            errors.append(f"store: {exc}")
         if self.__read_store is not None:
-            self.__read_store.shutdown()
+            try:
+                self.__read_store.shutdown()
+            except Exception as exc:
+                errors.append(f"read_store: {exc}")
         if self.__supervisor is not None:
-            self.__supervisor.shutdown()
+            try:
+                self.__supervisor.shutdown()
+            except Exception as exc:
+                errors.append(f"supervisor: {exc}")
+        try:
+            self.__health.shutdown()
+        except Exception as exc:
+            errors.append(f"health: {exc}")
+        if errors:
+            logger.error("Runtime.stop completed with %d error(s): %s",
+                         len(errors), "; ".join(errors))
 
     def get(self, service_name: str) -> NanoService | None:
         """Returns a registered service by name, or ``None``."""

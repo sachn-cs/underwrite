@@ -13,7 +13,7 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-from underwrite.__bus__ import DeadLetterQueue, EventBus, IdempotencyGuard
+from underwrite.__bus__ import DeadLetterQueue, EventBus, IdempotencyGuard, PerSubscriberCircuitBreaker
 from underwrite.__events__ import Event
 from underwrite.__logger__ import logger
 from underwrite.__store__ import Store
@@ -28,6 +28,8 @@ class SqsBus(EventBus):
         region: str = "",
         max_messages: int = 10,
         wait_time: int = 20,
+        failure_threshold: int = 5,
+        cooldown_seconds: float = 60.0,
         store: Store | None = None,
     ) -> None:
         self.__queue_url: str = queue_url
@@ -42,6 +44,10 @@ class SqsBus(EventBus):
         self.__lock: threading.Lock = threading.Lock()
         self.__dlq: DeadLetterQueue = DeadLetterQueue(store=store)
         self.__idempotency: IdempotencyGuard = IdempotencyGuard()
+        self.__circuit_breaker: PerSubscriberCircuitBreaker = PerSubscriberCircuitBreaker(
+            failure_threshold=failure_threshold,
+            cooldown_seconds=cooldown_seconds,
+        )
         self.__import_boto3()
 
     def __import_boto3(self) -> None:
@@ -151,8 +157,16 @@ class SqsBus(EventBus):
             specific: list[tuple[str, Callable[[Event], None]]] = \
                 self.__handlers.get(event.event_type, [])
         for sid, handler in wildcards + specific:
+            if not self.__circuit_breaker.allow_request(sid):
+                logger.warning(
+                    "circuit open for subscriber %s, sending %s to DLQ",
+                    sid, event.event_type)
+                self.__dlq.put(event, "circuit_open", sid)
+                continue
             try:
                 handler(event)
+                self.__circuit_breaker.record_success(sid)
             except Exception as exc:
                 logger.exception("handler failed for %s", event.event_type)
                 self.__dlq.put(event, f"{type(exc).__name__}: {exc}", sid)
+                self.__circuit_breaker.record_failure(sid)

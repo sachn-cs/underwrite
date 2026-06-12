@@ -437,9 +437,13 @@ class PostgresStore(Store):
                     cur.execute(self.__timeout_sql)
             yield conn
         except Exception:
-            pool.putconn(conn, close=True)
+            try:
+                pool.putconn(conn, close=True)
+            except Exception:
+                logger.warning("failed to close and return broken connection",
+                               exc_info=True)
             raise
-        finally:
+        else:
             try:
                 pool.putconn(conn)
             except Exception:

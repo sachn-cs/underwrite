@@ -233,6 +233,8 @@ class NanoService(ABC):
             timestamp=event.timestamp,
             payload=event.payload,
             correlation_id=event.correlation_id,
+            trace_id=event.trace_id,
+            parent_span_id=event.parent_span_id,
             signature=self.__identity.sign(to_sign),
         )
         self.__bus.publish(signed)

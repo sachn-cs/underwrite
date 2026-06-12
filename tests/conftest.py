@@ -11,6 +11,7 @@ import pytest
 
 from underwrite.__bus__ import LocalBus
 from underwrite.__events__ import Event, EventType
+from underwrite.__exceptions__ import StoreError
 from underwrite.__store__ import MemoryStore, Store
 
 # -- Domain event fixture ------------------------------------------------------
@@ -148,7 +149,7 @@ class FailAfterCountStore(MemoryStore):
         self.__ops += 1
         if self.__ops > self.__fail_after:
             msg = "simulated store failure"
-            raise RuntimeError(msg)
+            raise StoreError(msg)
 
     def get(self, key: str) -> Any | None:
         self._maybe_fail()
