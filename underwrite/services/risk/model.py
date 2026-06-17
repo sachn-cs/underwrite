@@ -52,10 +52,7 @@ class StrategyRegistry:
             TypeError: If *strategy_cls* is not a ``RiskScoringStrategy``
                 subclass.
         """
-        if not (
-            isinstance(strategy_cls, type)
-            and issubclass(strategy_cls, RiskScoringStrategy)
-        ):
+        if not (isinstance(strategy_cls, type) and issubclass(strategy_cls, RiskScoringStrategy)):
             raise TypeError(f"{strategy_cls} is not a RiskScoringStrategy subclass")
         with self.__lock:
             self.__strategies[name] = strategy_cls
@@ -73,7 +70,7 @@ class StrategyRegistry:
             return self.__strategies.get(name)
 
 
-_module_strategy_registry: StrategyRegistry = StrategyRegistry()
+module_strategy_registry: StrategyRegistry = StrategyRegistry()
 
 
 def register_strategy(name: str, strategy_cls: type[RiskScoringStrategy]) -> None:
@@ -83,7 +80,7 @@ def register_strategy(name: str, strategy_cls: type[RiskScoringStrategy]) -> Non
         name: Short name (e.g. ``"xgboost"``, ``"linear"``).
         strategy_cls: A concrete ``RiskScoringStrategy`` subclass.
     """
-    _module_strategy_registry.register(name, strategy_cls)
+    module_strategy_registry.register(name, strategy_cls)
 
 
 def get_strategy(name: str) -> type[RiskScoringStrategy] | None:
@@ -95,7 +92,7 @@ def get_strategy(name: str) -> type[RiskScoringStrategy] | None:
     Returns:
         The registered strategy class, or None.
     """
-    return _module_strategy_registry.get(name)
+    return module_strategy_registry.get(name)
 
 
 # -- Strategy pattern ---------------------------------------------------------
@@ -236,9 +233,7 @@ class RiskModel:
         with open(model_path, "rb") as f:
             actual = hashlib.sha256(f.read()).hexdigest()
         if actual != expected:
-            raise ValueError(
-                f"Model integrity check failed: expected {expected}, got {actual}"
-            )
+            raise ValueError(f"Model integrity check failed: expected {expected}, got {actual}")
 
     def predict(self, principal: float, term: float) -> float:
         """Return a default-probability score in [0.0, 1.0].
@@ -309,7 +304,5 @@ class RiskModel:
             raise ValueError(f"Failed to parse model file {model_path}: {exc}") from exc
 
         if not isinstance(params, dict):
-            raise ValueError(
-                f"JSON model file must contain a JSON object, got {type(params).__name__}"
-            )
+            raise ValueError(f"JSON model file must contain a JSON object, got {type(params).__name__}")
         return JsonModelStrategy(params)

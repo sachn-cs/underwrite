@@ -39,11 +39,10 @@ class HealthRegistry:
         self.__lock: threading.Lock = threading.Lock()
         self.__checks: dict[str, HealthCheck] = {}
         self.__timeout: float = timeout
-        self.__executor: concurrent.futures.ThreadPoolExecutor = (
-            concurrent.futures.ThreadPoolExecutor(
-                max_workers=4,
-                thread_name_prefix="health",
-            ))
+        self.__executor: concurrent.futures.ThreadPoolExecutor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=4,
+            thread_name_prefix="health",
+        )
 
     def register(self, name: str, check: HealthCheck) -> None:
         """Registers a health check.
@@ -81,18 +80,14 @@ class HealthRegistry:
                 fut = self.__executor.submit(check)
                 result = fut.result(timeout=self.__timeout)
             except concurrent.futures.TimeoutError:
-                logger.warning("health check %s timed out after %.1fs", name,
-                               self.__timeout)
+                logger.warning("health check %s timed out after %.1fs", name, self.__timeout)
                 result = {
                     "ok": False,
                     "detail": f"timed out after {self.__timeout}s",
                 }
             except Exception as exc:
                 logger.exception("health check %s failed", name)
-                result = {
-                    "ok": False,
-                    "detail": f"{type(exc).__name__}: {name}"
-                }
+                result = {"ok": False, "detail": f"{type(exc).__name__}: {name}"}
             if not result.get("ok", False):
                 overall = False
             results[name] = result
@@ -105,4 +100,4 @@ class HealthRegistry:
 
     def shutdown(self) -> None:
         """Shuts down the health check thread pool."""
-        self.__executor.shutdown(wait=False)
+        self.__executor.shutdown(wait=True)

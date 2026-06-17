@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from underwrite.__events__ import Event, EventType
+from underwrite.__logger__ import logger
 from underwrite.services.base import NanoService
 from underwrite.validate import require_finite
 
@@ -43,6 +44,7 @@ class StatementService(NanoService):
         period_start: str = event.payload.get("period_start", "")
         period_end: str = event.payload.get("period_end", "")
         if not loan_id or not period_start:
+            logger.warning("dropping STATEMENT_GENERATE with missing loan_id or period_start")
             return
 
         with self.__lock:
@@ -55,16 +57,10 @@ class StatementService(NanoService):
                 payment = self.store.get(key)
                 if payment:
                     transactions.append(payment)
-            total_paid: float = sum(
-                require_finite(t.get("amount", 0), "amount") for t in transactions
-            )
+            total_paid: float = sum(require_finite(t.get("amount", 0), "amount") for t in transactions)
 
             loan = self.store.get(f"loan:{loan_id}")
-            outstanding: float = (
-                require_finite(loan.get("outstanding", 0), "outstanding")
-                if loan
-                else 0.0
-            )
+            outstanding: float = require_finite(loan.get("outstanding", 0), "outstanding") if loan else 0.0
 
             statement: dict[str, Any] = {
                 "statement_id": statement_id,

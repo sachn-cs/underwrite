@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from collections import deque
 
+import pytest
+
 from underwrite.__bus__ import LocalBus
 from underwrite.__events__ import Event, EventType
 from underwrite.__exceptions__ import ProtocolError
@@ -23,26 +25,17 @@ def fraud(bus=None) -> FraudService:
 
 def originate(svc: FraudService, borrower: str, principal: int = 1000) -> None:
     svc.handle(
-        Event(event_type=EventType.LOAN_ORIGINATED,
-              source="test",
-              payload={
-                  "borrower": borrower,
-                  "principal": principal
-              }))
+        Event(
+            event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": borrower, "principal": principal}
+        )
+    )
 
 
 def repay(svc: FraudService, user: str, amount: int = 1000) -> None:
-    svc.handle(
-        Event(event_type=EventType.REPAID,
-              source="test",
-              payload={
-                  "user": user,
-                  "delta_earned": amount
-              }))
+    svc.handle(Event(event_type=EventType.REPAID, source="test", payload={"user": user, "delta_earned": amount}))
 
 
 class TestWashLending:
-
     def test_no_wash_with_zero_cycles(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
@@ -113,7 +106,6 @@ class TestWashLending:
 
 
 class TestBurstDetection:
-
     def test_no_burst_below_threshold(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
@@ -161,7 +153,6 @@ class TestBurstDetection:
 
 
 class TestLargeOrigination:
-
     def test_alert_on_large_principal(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
@@ -198,24 +189,22 @@ class TestLargeOrigination:
         svc = fraud(bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "trent",
-                      "principal": 1_500_000
-                  }))
+            Event(
+                event_type=EventType.LOAN_ORIGINATED,
+                source="test",
+                payload={"borrower": "trent", "principal": 1_500_000},
+            )
+        )
         assert received[0].payload["rule"] == "large_origination"
         assert received[0].payload["borrower"] == "trent"
 
 
 class TestEdgeCases:
-
     def test_ignores_unrelated_events(self) -> None:
         svc = fraud()
         svc.handle(Event(event_type="seed.added", source="test", payload={}))
         svc.handle(Event(event_type="user.added", source="test", payload={}))
-        svc.handle(
-            Event(event_type="quote.calculated", source="test", payload={}))
+        svc.handle(Event(event_type="quote.calculated", source="test", payload={}))
 
     def test_handles_empty_payload(self) -> None:
         bus = LocalBus()
@@ -224,41 +213,28 @@ class TestEdgeCases:
         svc = fraud(bus=bus)
         bus.start()
         for _ in range(2):
-            try:
-                svc.handle(
-                    Event(event_type=EventType.LOAN_ORIGINATED,
-                          source="test",
-                          payload={}))
-            except ProtocolError:
-                pass
-        try:
-            svc.handle(
-                Event(event_type=EventType.REPAID, source="test", payload={}))
-        except ProtocolError:
-            pass
+            with pytest.raises(ProtocolError):
+                svc.handle(Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={}))
+        with pytest.raises(ProtocolError):
+            svc.handle(Event(event_type=EventType.REPAID, source="test", payload={}))
         assert len(received) == 0
 
     def test_missing_borrower_does_not_crash(self) -> None:
         svc = fraud()
-        try:
-            svc.handle(
-                Event(event_type=EventType.LOAN_ORIGINATED,
-                      source="test",
-                      payload={}))
-        except ProtocolError:
-            pass
+        with pytest.raises(ProtocolError):
+            svc.handle(Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={}))
 
     def test_records_use_deque_maxlen(self) -> None:
         svc = fraud()
         borrower = "maxlen_test"
         for _ in range(2000):
             svc.handle(
-                Event(event_type=EventType.LOAN_ORIGINATED,
-                      source="test",
-                      payload={
-                          "borrower": borrower,
-                          "principal": 100
-                      }))
+                Event(
+                    event_type=EventType.LOAN_ORIGINATED,
+                    source="test",
+                    payload={"borrower": borrower, "principal": 100},
+                )
+            )
         records = svc.records
         recs = records.get(borrower)
         assert recs is not None

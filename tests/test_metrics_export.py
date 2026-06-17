@@ -16,7 +16,6 @@ def _mock_runtime(snapshot: dict) -> MagicMock:
 
 
 class TestMetricsExporter:
-
     def test_empty_metrics_returns_trailing_newline(self) -> None:
         rt = _mock_runtime({})
         text = MetricsExporter.to_prometheus_text(rt)
@@ -29,16 +28,7 @@ class TestMetricsExporter:
         assert text == ""
 
     def test_counter_output_format(self) -> None:
-        snap = {
-            "counters": {
-                "events.handled": {
-                    "value": 42,
-                    "tags": {
-                        "service": "test"
-                    }
-                }
-            }
-        }
+        snap = {"counters": {"events.handled": {"value": 42, "tags": {"service": "test"}}}}
         rt = _mock_runtime(snap)
         text = MetricsExporter.to_prometheus_text(rt)
         assert "# HELP events_handled Counter metric" in text
@@ -46,16 +36,7 @@ class TestMetricsExporter:
         assert 'events_handled{service="test"} 42' in text
 
     def test_gauge_output_format(self) -> None:
-        snap = {
-            "gauges": {
-                "active.loans": {
-                    "value": 10,
-                    "tags": {
-                        "type": "unsecured"
-                    }
-                }
-            }
-        }
+        snap = {"gauges": {"active.loans": {"value": 10, "tags": {"type": "unsecured"}}}}
         rt = _mock_runtime(snap)
         text = MetricsExporter.to_prometheus_text(rt)
         assert "# HELP active_loans Gauge metric" in text
@@ -70,9 +51,7 @@ class TestMetricsExporter:
                     "avg_ms": 10.0,
                     "min_ms": 2.0,
                     "max_ms": 25.0,
-                    "tags": {
-                        "service": "test"
-                    }
+                    "tags": {"service": "test"},
                 }
             }
         }

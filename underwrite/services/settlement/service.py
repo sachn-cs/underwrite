@@ -20,9 +20,7 @@ class SettlementService(StatefulService):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.__settlements: list[dict[str, Any]] = []
-        self.repo: TypedStoreRepository[list[dict[str, Any]]] = self.store_repo(
-            "settlements", list
-        )
+        self.repo: TypedStoreRepository[list[dict[str, Any]]] = self.store_repo("settlements", list)
         loaded = self.repo.load(default=[])
         if loaded:
             self.__settlements = loaded

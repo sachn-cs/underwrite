@@ -20,7 +20,6 @@ def npa(bus=None) -> NPAService:
 
 
 class TestBucketClassification:
-
     def test_standard_0_days(self) -> None:
         assert NPAService.classify_overdue_days(0) == "standard"
 
@@ -53,25 +52,18 @@ class TestBucketClassification:
 
 
 class TestLoanTracking:
-
     def test_creates_account_on_origination(self) -> None:
         bus = LocalBus()
         bucket_events: list[Event] = []
-        bus.subscribe(EventType.NPA_BUCKET_CHANGED,
-                      lambda e: bucket_events.append(e))
+        bus.subscribe(EventType.NPA_BUCKET_CHANGED, lambda e: bucket_events.append(e))
         svc = npa(bus=bus)
         bus.start()
+        svc.handle(Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "alice"}))
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={"borrower": "alice"}))
-        svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={
-                      "borrower": "alice",
-                      "principal": 50000
-                  }))
+            Event(
+                event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "alice", "principal": 50000}
+            )
+        )
         assert len(bucket_events) == 1
         assert bucket_events[0].payload["borrower"] == "alice"
         assert bucket_events[0].payload["bucket"] == "standard"
@@ -82,18 +74,11 @@ class TestLoanTracking:
         bus.subscribe(EventType.DLG_TRIGGERED, lambda e: dlg.append(e))
         svc = npa(bus=bus)
         bus.start()
-        svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={"borrower": "bob"}))
+        svc.handle(Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "bob"}))
         svc.mark_overdue("bob", 150)
         svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={
-                      "borrower": "bob",
-                      "principal": 30000
-                  }))
+            Event(event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "bob", "principal": 30000})
+        )
         assert len(dlg) == 1
         assert dlg[0].payload["recovery_amount"] == 30000.0
 
@@ -103,17 +88,12 @@ class TestLoanTracking:
         bus.subscribe(EventType.DLG_TRIGGERED, lambda e: dlg.append(e))
         svc = npa(bus=bus)
         bus.start()
+        svc.handle(Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "carol"}))
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={"borrower": "carol"}))
-        svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={
-                      "borrower": "carol",
-                      "principal": 10000
-                  }))
+            Event(
+                event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "carol", "principal": 10000}
+            )
+        )
         assert len(dlg) == 0
 
     def test_dlg_only_invoked_once(self) -> None:
@@ -122,33 +102,23 @@ class TestLoanTracking:
         bus.subscribe(EventType.DLG_TRIGGERED, lambda e: dlg.append(e))
         svc = npa(bus=bus)
         bus.start()
-        svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={"borrower": "dave"}))
+        svc.handle(Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "dave"}))
         svc.mark_overdue("dave", 150)
         svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={
-                      "borrower": "dave",
-                      "principal": 20000
-                  }))
+            Event(
+                event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "dave", "principal": 20000}
+            )
+        )
         svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={
-                      "borrower": "dave",
-                      "principal": 20000
-                  }))
+            Event(
+                event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "dave", "principal": 20000}
+            )
+        )
         assert len(dlg) == 1
 
     def test_default_unknown_borrower_does_not_crash(self) -> None:
         svc = npa()
-        svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={"borrower": "ghost"}))
+        svc.handle(Event(event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "ghost"}))
 
     def test_ignores_unrelated_events(self) -> None:
         bus = LocalBus()
@@ -166,88 +136,63 @@ class TestLoanTracking:
         bus.subscribe(EventType.DLG_TRIGGERED, lambda e: dlg.append(e))
         svc = npa(bus=bus)
         bus.start()
-        svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={"borrower": "x"}))
-        svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={"borrower": "y"}))
+        svc.handle(Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "x"}))
+        svc.handle(Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "y"}))
         svc.mark_overdue("x", 150)
         svc.mark_overdue("y", 50)
         svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={
-                      "borrower": "x",
-                      "principal": 5000
-                  }))
+            Event(event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "x", "principal": 5000})
+        )
         svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={
-                      "borrower": "y",
-                      "principal": 5000
-                  }))
+            Event(event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "y", "principal": 5000})
+        )
         assert len(dlg) == 1  # only x exceeds threshold
         assert dlg[0].payload["loan_id"] == "x"
 
 
 class TestSmaClassification:
-
     def test_sma_0_at_1_day(self) -> None:
-        assert NPAService._sma_classify(1) == "sma_0"
+        assert NPAService.sma_classify(1) == "sma_0"
 
     def test_sma_0_at_30_days(self) -> None:
-        assert NPAService._sma_classify(30) == "sma_0"
+        assert NPAService.sma_classify(30) == "sma_0"
 
     def test_sma_1_at_31_days(self) -> None:
-        assert NPAService._sma_classify(31) == "sma_1"
+        assert NPAService.sma_classify(31) == "sma_1"
 
     def test_sma_1_at_60_days(self) -> None:
-        assert NPAService._sma_classify(60) == "sma_1"
+        assert NPAService.sma_classify(60) == "sma_1"
 
     def test_sma_2_at_61_days(self) -> None:
-        assert NPAService._sma_classify(61) == "sma_2"
+        assert NPAService.sma_classify(61) == "sma_2"
 
     def test_sma_2_at_90_days(self) -> None:
-        assert NPAService._sma_classify(90) == "sma_2"
+        assert NPAService.sma_classify(90) == "sma_2"
 
     def test_sma_empty_for_0_days(self) -> None:
-        assert NPAService._sma_classify(0) == ""
+        assert NPAService.sma_classify(0) == ""
 
     def test_sma_empty_for_negative_days(self) -> None:
-        assert NPAService._sma_classify(-1) == ""
+        assert NPAService.sma_classify(-1) == ""
 
     def test_sma_empty_beyond_90_days(self) -> None:
-        assert NPAService._sma_classify(91) == ""
+        assert NPAService.sma_classify(91) == ""
 
 
 class TestProvisioningAndIncomeSuspension:
-
     def test_provisioning_amount_computed(self) -> None:
         bus = LocalBus()
         prov_events: list[Event] = []
-        bus.subscribe(EventType.PROVISIONING_COMPUTED,
-                      lambda e: prov_events.append(e))
+        bus.subscribe(EventType.PROVISIONING_COMPUTED, lambda e: prov_events.append(e))
         svc = npa(bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "p1",
-                      "principal": 100000
-                  }))
+            Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "p1", "principal": 100000})
+        )
         svc.mark_overdue("p1", 150)
         svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={
-                      "borrower": "p1",
-                      "principal": 100000
-                  }))
+            Event(event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "p1", "principal": 100000})
+        )
         assert len(prov_events) >= 1
         payload = prov_events[-1].payload
         assert payload["borrower"] == "p1"
@@ -258,25 +203,16 @@ class TestProvisioningAndIncomeSuspension:
     def test_npa_account_suspends_income_recognition(self) -> None:
         bus = LocalBus()
         income_events: list[Event] = []
-        bus.subscribe(EventType.INCOME_RECOGNITION_SUSPENDED,
-                      lambda e: income_events.append(e))
+        bus.subscribe(EventType.INCOME_RECOGNITION_SUSPENDED, lambda e: income_events.append(e))
         svc = npa(bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "p2",
-                      "principal": 50000
-                  }))
+            Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "p2", "principal": 50000})
+        )
         svc.mark_overdue("p2", 150)
         svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={
-                      "borrower": "p2",
-                      "principal": 50000
-                  }))
+            Event(event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "p2", "principal": 50000})
+        )
         assert len(income_events) == 1
         payload = income_events[0].payload
         assert payload["borrower"] == "p2"
@@ -285,78 +221,51 @@ class TestProvisioningAndIncomeSuspension:
     def test_income_suspension_only_once(self) -> None:
         bus = LocalBus()
         income_events: list[Event] = []
-        bus.subscribe(EventType.INCOME_RECOGNITION_SUSPENDED,
-                      lambda e: income_events.append(e))
+        bus.subscribe(EventType.INCOME_RECOGNITION_SUSPENDED, lambda e: income_events.append(e))
         svc = npa(bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "p3",
-                      "principal": 50000
-                  }))
+            Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "p3", "principal": 50000})
+        )
         svc.mark_overdue("p3", 150)
         svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={
-                      "borrower": "p3",
-                      "principal": 50000
-                  }))
+            Event(event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "p3", "principal": 50000})
+        )
         svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={
-                      "borrower": "p3",
-                      "principal": 50000
-                  }))
+            Event(event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "p3", "principal": 50000})
+        )
         assert len(income_events) == 1
 
     def test_standard_account_does_not_suspend_income(self) -> None:
         bus = LocalBus()
         income_events: list[Event] = []
-        bus.subscribe(EventType.INCOME_RECOGNITION_SUSPENDED,
-                      lambda e: income_events.append(e))
+        bus.subscribe(EventType.INCOME_RECOGNITION_SUSPENDED, lambda e: income_events.append(e))
         svc = npa(bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "p4",
-                      "principal": 50000
-                  }))
+            Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "p4", "principal": 50000})
+        )
         svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={
-                      "borrower": "p4",
-                      "principal": 50000
-                  }))
+            Event(event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "p4", "principal": 50000})
+        )
         assert len(income_events) == 0  # standard bucket, no suspension
 
     def test_sma_event_emitted(self) -> None:
         bus = LocalBus()
         sma_events: list[Event] = []
-        bus.subscribe(EventType.SMA_CLASSIFIED,
-                      lambda e: sma_events.append(e))
+        bus.subscribe(EventType.SMA_CLASSIFIED, lambda e: sma_events.append(e))
         svc = npa(bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "sma1",
-                      "principal": 100000
-                  }))
+            Event(
+                event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "sma1", "principal": 100000}
+            )
+        )
         svc.mark_overdue("sma1", 45)
         svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={
-                      "borrower": "sma1",
-                      "principal": 100000
-                  }))
+            Event(
+                event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "sma1", "principal": 100000}
+            )
+        )
         assert len(sma_events) == 1
         assert sma_events[0].payload["sma_bucket"] == "sma_1"

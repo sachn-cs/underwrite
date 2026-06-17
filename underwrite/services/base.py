@@ -110,9 +110,7 @@ class NanoService(ABC):
         self.__last_event_time: float = 0.0
         self.__state_lock: threading.RLock = threading.RLock()
         self.__executor: concurrent.futures.ThreadPoolExecutor | None = (
-            concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent)
-            if max_concurrent > 0
-            else None
+            concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) if max_concurrent > 0 else None
         )
 
         self.__validator: PayloadValidator = PayloadValidator()
@@ -170,9 +168,7 @@ class NanoService(ABC):
         try:
             return self.__store.get(key)
         except Exception:
-            logger.exception(
-                "store get failed for %s in service %s", key, self.__service_id
-            )
+            logger.exception("store get failed for %s in service %s", key, self.__service_id)
             return default
 
     def safe_store_set(self, key: str, value: Any) -> bool:
@@ -189,9 +185,7 @@ class NanoService(ABC):
             self.__store.set(key, value)
             return True
         except Exception:
-            logger.exception(
-                "store set failed for %s in service %s", key, self.__service_id
-            )
+            logger.exception("store set failed for %s in service %s", key, self.__service_id)
             return False
 
     def subscribe(self, event_type: str) -> None:
@@ -200,12 +194,8 @@ class NanoService(ABC):
         Args:
             event_type: The event type string to subscribe to.
         """
-        if self.__authz and not self.__authz.check_subscribe(
-            self.__service_id, event_type
-        ):
-            logger.warning(
-                "%s not authorized to subscribe to %s", self.__service_id, event_type
-            )
+        if self.__authz and not self.__authz.check_subscribe(self.__service_id, event_type):
+            logger.warning("%s not authorized to subscribe to %s", self.__service_id, event_type)
             return
         sid: str = self.__bus.subscribe(event_type, self.__dispatch)
         self.__subscriptions.append(sid)
@@ -218,7 +208,7 @@ class NanoService(ABC):
         """Stop event processing, shut down executor, and unsubscribe."""
         self.__running = False
         if self.__executor is not None:
-            self.__executor.shutdown(wait=False)
+            self.__executor.shutdown(wait=True)
             self.__executor = None
         for sid in self.__subscriptions:
             self.__bus.unsubscribe(sid)
@@ -257,9 +247,7 @@ class NanoService(ABC):
             parent_span_id=parent_span_id,
         )
         payload_str: str = json.dumps(payload, sort_keys=True)
-        to_sign: str = (
-            f"{event.event_id}:{event.timestamp}:{event.event_type}:{payload_str}"
-        )
+        to_sign: str = f"{event.event_id}:{event.timestamp}:{event.event_type}:{payload_str}"
         signed: Event = Event(
             event_id=event.event_id,
             event_type=event.event_type,
@@ -319,13 +307,25 @@ class NanoService(ABC):
                     self.__bus.dlq.put(event, "authz_failed", self.__service_id)
                 return
         if self.__bus.idempotency.is_duplicate(self.__service_id, event.event_id):
-            logger.debug(
-                "duplicate event %s dropped by %s", event.event_id, self.__service_id
-            )
+            logger.debug("duplicate event %s dropped by %s", event.event_id, self.__service_id)
             if hasattr(self.__bus, "dlq") and self.__bus.dlq:
                 self.__bus.dlq.put(event, "duplicate", self.__service_id)
             return
         if self.__executor is not None:
+            worker_count = self.__executor._max_workers if hasattr(self.__executor, "_max_workers") else 0
+            queue_size = self.__executor._work_queue.qsize() if hasattr(self.__executor, "_work_queue") else 0
+            # Allow up to 2x worker count queued before dropping
+            if worker_count > 0 and queue_size > worker_count * 2:
+                logger.warning(
+                    "%s executor queue full (%d queued, %d workers), dropping event %s",
+                    self.__service_id,
+                    queue_size,
+                    worker_count,
+                    event.event_id,
+                )
+                if hasattr(self.__bus, "dlq") and self.__bus.dlq:
+                    self.__bus.dlq.put(event, "executor_queue_full", self.__service_id)
+                return
             self.__executor.submit(self.__handle_event, event)
         else:
             self.__handle_event(event)

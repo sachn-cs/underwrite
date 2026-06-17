@@ -25,7 +25,6 @@ def memory_runtime(enable_metrics: bool = True) -> Runtime:
 
 
 class TestPublishFlow:
-
     def test_publish_through_runtime_delivers_to_service(self) -> None:
         rt = memory_runtime()
         bus = rt.bus
@@ -37,15 +36,14 @@ class TestPublishFlow:
             Event(
                 event_type=EventType.LOAN_ORIGINATED,
                 source="test",
-                payload={
-                    "aadhaar": "1234-5678-9012",
-                    "principal": 50000
-                },
-            ))
+                payload={"aadhaar": "1234-5678-9012", "principal": 50000},
+            )
+        )
         audit = rt.get("audit")
         assert audit is not None
         records = [
-            e for e in audit.ledger  # type: ignore[attr-defined]
+            e
+            for e in audit.ledger  # type: ignore[attr-defined]
             if e["event_type"] == EventType.LOAN_ORIGINATED
         ]
         assert len(records) == 1
@@ -60,10 +58,7 @@ class TestPublishFlow:
         received: list[Event] = []
         bus.subscribe("*", lambda e: received.append(e))
         bus.start()
-        bus.publish(
-            Event(event_type="custom.test",
-                  source="test",
-                  payload={"key": "value"}))
+        bus.publish(Event(event_type="custom.test", source="test", payload={"key": "value"}))
         assert any(e.event_type == "custom.test" for e in received)
         rt.stop()
 
@@ -82,17 +77,12 @@ class TestPublishFlow:
             Event(
                 event_type="mechanism",
                 source="test",
-                payload={
-                    "command": "add_seed",
-                    "user": "bank",
-                    "base_budget": 200000
-                },
-            ))
+                payload={"command": "add_seed", "user": "bank", "base_budget": 200000},
+            )
+        )
         audit = cast(Any, rt.get("audit"))
         assert audit is not None
-        seed_events = [
-            e for e in audit.ledger if e["event_type"] == EventType.SEED_ADDED
-        ]
+        seed_events = [e for e in audit.ledger if e["event_type"] == EventType.SEED_ADDED]
         assert len(seed_events) >= 1
         state = rt.store.get("protocol:state")
         assert state is not None
@@ -114,12 +104,9 @@ class TestPublishFlow:
             Event(
                 event_type="mechanism",
                 source="test",
-                payload={
-                    "command": "add_seed",
-                    "user": "bank",
-                    "base_budget": 300000
-                },
-            ))
+                payload={"command": "add_seed", "user": "bank", "base_budget": 300000},
+            )
+        )
         emitted_types = {e.event_type for e in all_events}
         assert EventType.SEED_ADDED in emitted_types
         rt.stop()
@@ -139,12 +126,9 @@ class TestPublishFlow:
             Event(
                 event_type="mechanism",
                 source="test",
-                payload={
-                    "command": "add_seed",
-                    "user": "bank",
-                    "base_budget": 400000
-                },
-            ))
+                payload={"command": "add_seed", "user": "bank", "base_budget": 400000},
+            )
+        )
         audit = cast(Any, rt.get("audit"))
         assert audit is not None
         seed_records = audit.events_by_type(EventType.SEED_ADDED)
@@ -153,7 +137,6 @@ class TestPublishFlow:
 
 
 class TestRuntimeHealthE2E:
-
     def test_health_reflects_running_services(self) -> None:
         rt = Runtime()
         checks = rt.health.status()["checks"]
@@ -189,7 +172,6 @@ class TestRuntimeHealthE2E:
 
 
 class TestMetricsE2E:
-
     def test_metrics_recorded_when_enabled(self) -> None:
         rt = Runtime()
         assert rt.metrics is not None
@@ -212,19 +194,13 @@ class TestMetricsE2E:
             Event(
                 event_type="mechanism",
                 source="test",
-                payload={
-                    "command": "add_seed",
-                    "user": "bank",
-                    "base_budget": 50000
-                },
-            ))
+                payload={"command": "add_seed", "user": "bank", "base_budget": 50000},
+            )
+        )
         assert rt.metrics is not None
         snap = rt.metrics.snapshot()
         counters = snap.get("counters", {})
-        emitted_key = next(
-            (k
-             for k in counters if "events.emitted" in k and "mechanism" in k),
-            None)
+        emitted_key = next((k for k in counters if "events.emitted" in k and "mechanism" in k), None)
         assert emitted_key is not None
         rt.stop()
 
@@ -234,7 +210,6 @@ class TestMetricsE2E:
 
 
 class TestGracefulShutdownE2E:
-
     def test_stop_with_active_service(self) -> None:
         rt = Runtime()
         bus = rt.bus
@@ -269,7 +244,6 @@ class TestGracefulShutdownE2E:
 
 
 class TestMultipleServiceCoordination:
-
     def test_mechanism_and_audit_coexist(self) -> None:
         rt = memory_runtime()
         bus = rt.bus
@@ -291,12 +265,9 @@ class TestMultipleServiceCoordination:
             Event(
                 event_type="mechanism",
                 source="test",
-                payload={
-                    "command": "add_seed",
-                    "user": "bank",
-                    "base_budget": 100000
-                },
-            ))
+                payload={"command": "add_seed", "user": "bank", "base_budget": 100000},
+            )
+        )
         audit = rt.get("audit")
         assert audit is not None
         assert len(audit.ledger) >= 1  # type: ignore[attr-defined]
@@ -323,12 +294,9 @@ class TestMultipleServiceCoordination:
             Event(
                 event_type="mechanism",
                 source="test",
-                payload={
-                    "command": "add_seed",
-                    "user": "bank",
-                    "base_budget": 100000
-                },
-            ))
+                payload={"command": "add_seed", "user": "bank", "base_budget": 100000},
+            )
+        )
         audit_svc = rt.get("audit")
         assert audit_svc is not None
         state_from_mech = mech_svc.store.get("protocol:state")

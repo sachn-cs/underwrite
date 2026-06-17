@@ -4,27 +4,25 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from underwrite.__events__ import Event, EventType
 from underwrite.services.risk.model import RiskModel
 from underwrite.services.risk.service import RiskService
 
 
 class TestRiskServiceFaults:
-
     def test_model_failure_emits_sentinel_score(self) -> None:
         emitted: list = []
 
         class FaultyModel:
-
             def predict(self, principal: float, term: float) -> float:
                 raise RuntimeError("model crashed")
 
         svc = RiskService(service_id="risk")
         svc.set_model(FaultyModel())
 
-        def capture(event_type: str,
-                    payload: dict[str, Any],
-                    correlation_id: str = "") -> None:
+        def capture(event_type: str, payload: dict[str, Any], correlation_id: str = "") -> None:
             emitted.append((event_type, payload))
 
         svc.emit = capture  # type: ignore[assignment]
@@ -48,9 +46,7 @@ class TestRiskServiceFaults:
 
         svc = RiskService(service_id="risk")
 
-        def capture(event_type: str,
-                    payload: dict[str, Any],
-                    correlation_id: str = "") -> None:
+        def capture(event_type: str, payload: dict[str, Any], correlation_id: str = "") -> None:
             emitted.append((event_type, payload))
 
         svc.emit = capture  # type: ignore[assignment]
@@ -70,14 +66,12 @@ class TestRiskServiceFaults:
 
 
 class TestAuditServiceFaults:
-
     def test_load_corrupted_jsonl_skips_bad_lines(self, tmp_path: Any) -> None:
         from underwrite.services.audit.service import AuditService
+
         svc = AuditService(service_id="audit")
         p = tmp_path / "audit.jsonl"
-        p.write_text('{"event_type":"a","source":"s"}\n'
-                     'not json\n'
-                     '{"event_type":"b","source":"s"}\n')
+        p.write_text('{"event_type":"a","source":"s"}\nnot json\n{"event_type":"b","source":"s"}\n')
         svc.load_jsonl(str(p))
         assert len(svc.ledger) == 2
         assert svc.ledger[0]["event_type"] == "a"
@@ -85,40 +79,39 @@ class TestAuditServiceFaults:
 
     def test_load_nonexistent_file_clears_ledger(self, tmp_path: Any) -> None:
         from underwrite.services.audit.service import AuditService
+
         svc = AuditService(service_id="audit")
-        svc.handle(
-            Event(event_type="test", source="test", payload={"dummy": True}))
+        svc.handle(Event(event_type="test", source="test", payload={"dummy": True}))
         assert len(svc.ledger) == 1
         svc.load_jsonl(str(tmp_path / "nonexistent.jsonl"))
         assert len(svc.ledger) == 0
 
 
 class TestValidationFaults:
-
     def test_require_finite_exception_chains_original_error(self) -> None:
         from underwrite.__exceptions__ import ProtocolError
         from underwrite.validate import require_finite
-        try:
+
+        with pytest.raises(ProtocolError) as exc_info:
             require_finite("not_a_number", "value")
-        except ProtocolError as exc:
-            assert exc.__cause__ is not None
-            assert isinstance(exc.__cause__, (ValueError, TypeError))
+        assert exc_info.value.__cause__ is not None
+        assert isinstance(exc_info.value.__cause__, (ValueError, TypeError))
 
     def test_require_finite_preserves_value_type_in_chain(self) -> None:
         from underwrite.__exceptions__ import ProtocolError
         from underwrite.validate import require_finite
-        try:
+
+        with pytest.raises(ProtocolError) as exc_info:
             require_finite(None, "value")
-        except ProtocolError as exc:
-            assert exc.__cause__ is not None
-            assert "NoneType" in str(exc)
+        assert exc_info.value.__cause__ is not None
+        assert "NoneType" in str(exc_info.value)
 
 
 class TestRiskModelFaults:
-
     def test_model_no_joblib_fallback_to_json(self, tmp_path: Any) -> None:
         import hashlib
         import json
+
         model_path = str(tmp_path / "model.json")
         content = {"coef_": [5e-7, 0.01], "intercept_": 0.02}
         with open(model_path, "w") as fh:

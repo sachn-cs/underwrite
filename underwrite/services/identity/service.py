@@ -16,6 +16,7 @@ class IdentityService(NanoService):
     """Manages nano-service identities: registration and key rotation."""
 
     def __init__(self, **kwargs: Any) -> None:
+        """Initialize the identity service with a reentrant lock."""
         super().__init__(**kwargs)
         self.__lock: threading.RLock = threading.RLock()
 
@@ -31,7 +32,11 @@ class IdentityService(NanoService):
             self.rotate(event)
 
     def register(self, event: Event) -> None:
-        """Register a new service identity."""
+        """Register a new service identity.
+
+        Args:
+            event: The identity registration event.
+        """
         service_id: str = get_non_empty(event.payload, "service_id")
         identity: Identity = Identity.create(service_id)
         self.store.set(
@@ -51,14 +56,16 @@ class IdentityService(NanoService):
         )
 
     def rotate(self, event: Event) -> None:
-        """Rotate the key for an existing service identity."""
+        """Rotate the key for an existing service identity.
+
+        Args:
+            event: The identity rotation event.
+        """
         service_id = get_non_empty(event.payload, "service_id")
         with self.__lock:
             existing = self.store.get(f"identity:{service_id}")
             if not existing:
-                logger.warning(
-                    "identity rotation requested for unknown service %r", service_id
-                )
+                logger.warning("identity rotation requested for unknown service %r", service_id)
                 return
             identity = Identity.create(service_id)
             self.store.set(

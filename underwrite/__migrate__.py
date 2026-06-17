@@ -46,8 +46,7 @@ class MigrationPlan:
             MigrationError: If a migration with the same version already exists.
         """
         if migration.version in self.__migrations:
-            raise MigrationError(
-                f"duplicate migration version {migration.version}")
+            raise MigrationError(f"duplicate migration version {migration.version}")
         self.__migrations[migration.version] = migration
 
     def pending(self, applied: set[int]) -> list[Migration]:
@@ -59,10 +58,7 @@ class MigrationPlan:
         Returns:
             Sorted list of pending migrations.
         """
-        return [
-            self.__migrations[v] for v in sorted(self.__migrations)
-            if v not in applied
-        ]
+        return [self.__migrations[v] for v in sorted(self.__migrations) if v not in applied]
 
     @property
     def latest_version(self) -> int:
@@ -89,7 +85,8 @@ def default_plan() -> MigrationPlan:
                 applied_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
             )""",
             ],
-        ))
+        )
+    )
     plan.add(
         Migration(
             version=2,
@@ -106,7 +103,8 @@ def default_plan() -> MigrationPlan:
                 replayed BOOLEAN NOT NULL DEFAULT FALSE
             )""",
             ],
-        ))
+        )
+    )
     plan.add(
         Migration(
             version=3,
@@ -118,5 +116,6 @@ def default_plan() -> MigrationPlan:
                 captured_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
             )""",
             ],
-        ))
+        )
+    )
     return plan

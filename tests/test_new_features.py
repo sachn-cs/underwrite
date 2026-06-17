@@ -59,8 +59,7 @@ class TestMemoryStoreEviction:
         store.set("a", 1)
         store.set("b", 2)
         store.set("c", 3)
-        store.set("a",
-                  10)  # update, not new key — does not change insertion order
+        store.set("a", 10)  # update, not new key — does not change insertion order
         store.set("d", 4)  # evicts "a" (oldest by insertion order)
         assert store.get("a") is None  # evicted (oldest insertion)
         assert store.get("b") == 2
@@ -175,19 +174,13 @@ class TestCircuitBreakerHalfOpenTransition:
     def test_half_open_after_cooldown(self) -> None:
         from underwrite.__circuit__ import CircuitBreaker, CircuitState
 
-        cb = CircuitBreaker(failure_threshold=2,
-                            recovery_timeout=0.05,
-                            name="test")
+        cb = CircuitBreaker(failure_threshold=2, recovery_timeout=0.05, name="test")
 
         assert cb.state == CircuitState.CLOSED
         with pytest.raises(ValueError):
-            cb.call(lambda:
-                    (_ for _ in
-                     ()).throw(ValueError("fail")))  # type: ignore[misc]
+            cb.call(lambda: (_ for _ in ()).throw(ValueError("fail")))  # type: ignore[misc]
         with pytest.raises(ValueError):
-            cb.call(lambda:
-                    (_ for _ in
-                     ()).throw(ValueError("fail")))  # type: ignore[misc]
+            cb.call(lambda: (_ for _ in ()).throw(ValueError("fail")))  # type: ignore[misc]
 
         import time
 
@@ -201,15 +194,11 @@ class TestCircuitBreakerHalfOpenTransition:
     def test_recovery_after_half_open_success(self) -> None:
         from underwrite.__circuit__ import CircuitBreaker, CircuitState
 
-        cb = CircuitBreaker(failure_threshold=2,
-                            recovery_timeout=0.05,
-                            name="test")
+        cb = CircuitBreaker(failure_threshold=2, recovery_timeout=0.05, name="test")
 
         for _ in range(2):
             with pytest.raises(ValueError):
-                cb.call(lambda:
-                        (_ for _ in
-                         ()).throw(ValueError("fail")))  # type: ignore[misc]
+                cb.call(lambda: (_ for _ in ()).throw(ValueError("fail")))  # type: ignore[misc]
 
         import time
 
@@ -237,10 +226,7 @@ class TestRateLimiterDistributed:
         from underwrite.__bus__ import DistributedRateLimiter
 
         store: Store = MemoryStore()
-        rl = DistributedRateLimiter(max_rate=100.0,
-                                    interval=10.0,
-                                    store=store,
-                                    prefix="testrl")
+        rl = DistributedRateLimiter(max_rate=100.0, interval=10.0, store=store, prefix="testrl")
         assert rl.check("key1") is True
         import time
 

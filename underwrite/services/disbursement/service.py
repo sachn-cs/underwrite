@@ -22,9 +22,7 @@ class DisbursementService(StatefulService):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.__disbursements: dict[str, dict[str, Any]] = {}
-        self.repo: TypedStoreRepository[dict[str, dict[str, Any]]] = self.store_repo(
-            "disbursements", dict
-        )
+        self.repo: TypedStoreRepository[dict[str, dict[str, Any]]] = self.store_repo("disbursements", dict)
         loaded = self.repo.load(default={})
         if loaded:
             self.__disbursements = loaded
@@ -44,9 +42,7 @@ class DisbursementService(StatefulService):
 
         with self.state_lock:
             if borrower in self.__disbursements:
-                logger.warning(
-                    "duplicate disbursement attempted for %s, skipping", borrower
-                )
+                logger.warning("duplicate disbursement attempted for %s, skipping", borrower)
                 return
             record = {
                 "borrower": borrower,

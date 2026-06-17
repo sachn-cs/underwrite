@@ -70,22 +70,18 @@ class EventSchema:
             SchemaValidationError: If validation fails.
         """
         if not isinstance(payload, dict):
-            raise SchemaValidationError(
-                f"expected dict payload, got {type(payload).__name__}")
+            raise SchemaValidationError(f"expected dict payload, got {type(payload).__name__}")
 
         for field in self.required:
             if field not in payload:
-                raise SchemaValidationError(
-                    f"missing required field: {field!r}")
+                raise SchemaValidationError(f"missing required field: {field!r}")
 
         for key, value in payload.items():
             expected = self.fields.get(key)
             if expected is None:
                 continue
             if not isinstance(value, expected):
-                raise SchemaValidationError(
-                    f"field {key!r}: expected {expected.__name__}, got {type(value).__name__}"
-                )
+                raise SchemaValidationError(f"field {key!r}: expected {expected.__name__}, got {type(value).__name__}")
 
 
 class SchemaRegistry:
@@ -107,8 +103,7 @@ class SchemaRegistry:
                 f"schema for {event_type!r} already registered at version {existing.version} >= {schema.version}"
             )
         self.__schemas[event_type] = schema
-        logger.debug("registered schema for %s v%s", event_type,
-                     schema.version)
+        logger.debug("registered schema for %s v%s", event_type, schema.version)
 
     def get(self, event_type: str) -> EventSchema | None:
         """Return the registered schema for *event_type*, or ``None``."""
@@ -123,8 +118,7 @@ class SchemaRegistry:
         """
         schema = self.__schemas.get(event_type)
         if schema is None:
-            logger.debug("no schema registered for %s, skipping validation",
-                         event_type)
+            logger.debug("no schema registered for %s, skipping validation", event_type)
             return
         schema.validate(payload)
 

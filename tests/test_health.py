@@ -6,7 +6,6 @@ from underwrite.__health__ import HealthRegistry
 
 
 class TestHealthRegistry:
-
     def test_healthy_when_no_checks(self) -> None:
         hr = HealthRegistry()
         status = hr.status()
@@ -29,8 +28,7 @@ class TestHealthRegistry:
 
     def test_check_exception_treated_as_failure(self) -> None:
         hr = HealthRegistry()
-        hr.register("crashy", lambda:
-                    (_ for _ in ()).throw(RuntimeError("boom")))
+        hr.register("crashy", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
         status = hr.status()
         assert status["ok"] is False
         assert "RuntimeError" in status["checks"]["crashy"]["detail"]
@@ -58,6 +56,7 @@ class TestHealthRegistry:
 
     def test_status_consistent_during_concurrent_register(self) -> None:
         import threading
+
         hr = HealthRegistry()
         hr.register("stable", lambda: {"ok": True})
 

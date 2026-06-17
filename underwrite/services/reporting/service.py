@@ -24,6 +24,7 @@ class ReportingService(StatefulService):
     """
 
     def __init__(self, **kwargs: Any) -> None:
+        """Initialize the reporting service with empty counters."""
         super().__init__(**kwargs)
         self.__originations: int = 0
         self.__defaults: int = 0
@@ -41,9 +42,7 @@ class ReportingService(StatefulService):
             "loss": 0.0,
         }
         self.__provisioning_total: float = 0.0
-        self.repo: TypedStoreRepository[dict[str, Any]] = self.store_repo(
-            "counters", dict
-        )
+        self.repo: TypedStoreRepository[dict[str, Any]] = self.store_repo("counters", dict)
         loaded = self.repo.load(default={})
         if loaded:
             self.__originations = loaded.get("originations", 0)
@@ -135,14 +134,12 @@ class ReportingService(StatefulService):
             return {
                 "report_type": "npa_detailed",
                 "generated_at": datetime.now(timezone.utc).isoformat(),
-                "bucket_counts": dict(self.__bucket_counts),
-                "bucket_principals": dict(self.__bucket_principals),
+                "bucket_counts": self.__bucket_counts,
+                "bucket_principals": self.__bucket_principals,
                 "npa_principal": npa_principal,
                 "npa_ratio": round(npa_principal / total, 6),
                 "total_provisioning": round(self.__provisioning_total, 2),
-                "provisioning_coverage_ratio": round(
-                    self.__provisioning_total / max(npa_principal, 1.0), 6
-                ),
+                "provisioning_coverage_ratio": round(self.__provisioning_total / max(npa_principal, 1.0), 6),
             }
 
     def __sync(self) -> None:

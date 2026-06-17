@@ -24,11 +24,7 @@ def event() -> Event:
         event_type=EventType.LOAN_ORIGINATED,
         source="test",
         source_key="test",
-        payload={
-            "borrower": "alice",
-            "principal": 10000.0,
-            "term": 12.0
-        },
+        payload={"borrower": "alice", "principal": 10000.0, "term": 12.0},
         correlation_id="test-correlation",
     )
 
@@ -132,6 +128,7 @@ def client() -> Any:
     except ImportError:
         pytest.skip("fastapi not installed")
     from unittest.mock import MagicMock
+
     app = create_app(runtime=MagicMock())
     return TestClient(app)
 
@@ -184,7 +181,6 @@ def injecting_bus() -> LocalBus:
     """
 
     class InjectingBus(LocalBus):
-
         def publish(self, event: Event) -> str:
             msg = "injected publish failure"
             raise RuntimeError(msg)

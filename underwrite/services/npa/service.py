@@ -41,6 +41,7 @@ class NPAService(StatefulService):
     """
 
     def __init__(self, **kwargs: Any) -> None:
+        """Initialize the NPA service with provisioning rates and DLG config."""
         super().__init__(**kwargs)
         self.__accounts: dict[str, dict[str, Any]] = {}
         self.__trigger_days: int = kwargs.get("dlg_trigger_days", 120)
@@ -51,9 +52,7 @@ class NPAService(StatefulService):
             "doubtful": kwargs.get("doubtful_provisioning_rate_secured", 0.25),
             "loss": kwargs.get("loss_provisioning_rate", 1.0),
         }
-        self.repo: TypedStoreRepository[dict[str, dict[str, Any]]] = self.store_repo(
-            "accounts", dict
-        )
+        self.repo: TypedStoreRepository[dict[str, dict[str, Any]]] = self.store_repo("accounts", dict)
         loaded = self.repo.load(default={})
         if loaded:
             self.__accounts = loaded
@@ -90,9 +89,7 @@ class NPAService(StatefulService):
                     return
                 days: int = record.get("days_overdue", self.__trigger_days)
                 event_principal: float = get_finite(event.payload, "principal", 0.0)
-                self.classify_and_provision(
-                    borrower, record, days, event.correlation_id, event_principal
-                )
+                self.classify_and_provision(borrower, record, days, event.correlation_id, event_principal)
 
     def mark_overdue(self, borrower: str, days: int) -> None:
         """Update the days-past-due counter for a borrower.
@@ -141,9 +138,7 @@ class NPAService(StatefulService):
         record["days_overdue"] = days
 
         rate = self.__provisioning_rates.get(bucket, 0.0)
-        outstanding = record.get(
-            "outstanding", record.get("principal", event_principal or 0.0)
-        )
+        outstanding = record.get("outstanding", record.get("principal", event_principal or 0.0))
         provisioning_amount = round(outstanding * rate, 2)
 
         self.emit(
@@ -161,9 +156,7 @@ class NPAService(StatefulService):
         record["provisioning_rate"] = rate
         record["provisioning_amount"] = provisioning_amount
 
-        if bucket in ("substandard", "doubtful", "loss") and not record.get(
-            "income_suspended", False
-        ):
+        if bucket in ("substandard", "doubtful", "loss") and not record.get("income_suspended", False):
             record["income_suspended"] = True
             record["income_suspended_at"] = datetime.now(timezone.utc).isoformat()
             self.emit(
@@ -185,9 +178,7 @@ class NPAService(StatefulService):
             correlation_id=correlation_id,
         )
 
-        should_trigger_dlg: bool = days >= self.__trigger_days and not record.get(
-            "dlg_invoked", False
-        )
+        should_trigger_dlg: bool = days >= self.__trigger_days and not record.get("dlg_invoked", False)
         if should_trigger_dlg:
             record["dlg_invoked"] = True
             self.__sync()

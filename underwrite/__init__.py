@@ -36,10 +36,13 @@ from underwrite.__store__ import FileStore, MemoryStore, Store
 from underwrite.services import NanoService
 
 try:
-    from underwrite.__version__ import __version__, __version_tuple__  # noqa: F811
+    from underwrite.__version__ import __version__ as _version
+    from underwrite.__version__ import __version_tuple__ as _version_tuple
 except ImportError:
-    __version__ = "0.0.0"
-    __version_tuple__ = (0, 0, 0)
+    _version = "0.0.0"
+    _version_tuple = (0, 0, 0)
+__version__ = _version
+__version_tuple__ = _version_tuple
 
 __all__: list[str] = [
     "Runtime",

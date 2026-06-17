@@ -8,13 +8,13 @@ from typing import Any
 
 import pytest
 
+from tests.helpers import MockReadStore, MockStore
 from underwrite.__exceptions__ import StoreError
 from underwrite.__metrics__ import MetricsCollector
-from underwrite.__store__ import CQRSStore, FileStore, MemoryStore, PostgresStore, ReadStore, Store
+from underwrite.__store__ import CQRSStore, FileStore, MemoryStore, PostgresStore, Store
 
 
 class TestFileStoreCorruption:
-
     def test_corrupted_json_raises_store_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = FileStore(tmp)
@@ -49,8 +49,7 @@ class TestFileStoreCorruption:
             with pytest.raises(StoreError):
                 store.get("key1")
         snapshot = metrics.snapshot()
-        assert any(
-            k.startswith("store.corruption") for k in snapshot["counters"])
+        assert any(k.startswith("store.corruption") for k in snapshot["counters"])
 
     def test_io_error_increments_metric(self) -> None:
         metrics = MetricsCollector()
@@ -62,12 +61,10 @@ class TestFileStoreCorruption:
             with pytest.raises(StoreError):
                 store.get("key1")
         snapshot = metrics.snapshot()
-        assert any(
-            k.startswith("store.io_error") for k in snapshot["counters"])
+        assert any(k.startswith("store.io_error") for k in snapshot["counters"])
 
 
 class TestMemoryStore:
-
     def test_get_missing(self) -> None:
         store = MemoryStore()
         assert store.get("nonexistent") is None
@@ -110,53 +107,7 @@ class TestMemoryStore:
         assert "other" not in keys
 
 
-class MockStore(Store):
-
-    def __init__(self) -> None:
-        self.data: dict = {}
-
-    def get(self, key: str) -> Any | None:
-        return self.data.get(key)
-
-    def set(self, key: str, value: Any) -> None:
-        self.data[key] = value
-
-    def delete(self, key: str) -> bool:
-        return self.data.pop(key, None) is not None
-
-    def exists(self, key: str) -> bool:
-        return key in self.data
-
-    def keys(self,
-             pattern: str | None = None,
-             limit: int = 0,
-             offset: int = 0) -> list[str]:
-        return list(self.data.keys())
-
-
-class MockReadStore(ReadStore):
-
-    def __init__(self) -> None:
-        self.data: dict = {}
-
-    def get(self, key: str) -> Any | None:
-        return self.data.get(key)
-
-    def exists(self, key: str) -> bool:
-        return key in self.data
-
-    def delete(self, key: str) -> bool:
-        return self.data.pop(key, None) is not None
-
-    def keys(self,
-             pattern: str | None = None,
-             limit: int = 0,
-             offset: int = 0) -> list[str]:
-        return list(self.data.keys())
-
-
 class TestCQRSStore:
-
     def test_get_from_read_store(self) -> None:
         write = MockStore()
         read = MockReadStore()
@@ -199,7 +150,6 @@ class TestCQRSStore:
     def test_health_detects_write_failure(self) -> None:
 
         class BrokenWriteStore(Store):
-
             def get(self, key: str) -> None:
                 return None
 
@@ -212,10 +162,7 @@ class TestCQRSStore:
             def exists(self, key: str) -> bool:
                 return False
 
-            def keys(self,
-                     pattern: str | None = None,
-                     limit: int = 0,
-                     offset: int = 0) -> list[str]:
+            def keys(self, pattern: str | None = None, limit: int = 0, offset: int = 0) -> list[str]:
                 return []
 
             def health(self) -> dict[str, Any]:
@@ -230,7 +177,6 @@ class TestCQRSStore:
 
 
 class TestFileStorePathTraversal:
-
     def test_rejects_dotdot_key(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = FileStore(tmp)
@@ -269,7 +215,6 @@ class TestFileStorePathTraversal:
 
 
 class TestPostgresStoreTableName:
-
     def test_rejects_invalid_table_name(self) -> None:
         with pytest.raises(StoreError, match="invalid table name"):
             PostgresStore(dsn="", table="store; DROP TABLE migrations")

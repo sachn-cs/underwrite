@@ -37,8 +37,7 @@ class SqsBus(EventBus):
         self.__max_messages: int = max(1, min(max_messages, 10))
         self.__wait_time: int = max(0, min(wait_time, 20))
         self.__client: Any = None
-        self.__handlers: dict[str, list[tuple[str, Callable[[Event],
-                                                            None]]]] = {}
+        self.__handlers: dict[str, list[tuple[str, Callable[[Event], None]]]] = {}
         self.__running: bool = False
         self.__poll_thread: threading.Thread | None = None
         self.__lock: threading.Lock = threading.Lock()
@@ -52,8 +51,9 @@ class SqsBus(EventBus):
 
     def __import_boto3(self) -> None:
         try:
-            import boto3  # type: ignore[import-untyped]
-            self.__boto3 = boto3
+            import importlib
+
+            self.__boto3 = importlib.import_module("boto3")
         except ImportError:
             self.__boto3 = None
 
@@ -61,8 +61,7 @@ class SqsBus(EventBus):
     def _client(self) -> Any:
         if self.__client is None:
             if self.__boto3 is None:
-                raise RuntimeError(
-                    "boto3 is not installed; install underwrite[aws]")
+                raise RuntimeError("boto3 is not installed; install underwrite[aws]")
             kwargs: dict[str, Any] = {}
             if self.__region:
                 kwargs["region_name"] = self.__region
@@ -71,8 +70,7 @@ class SqsBus(EventBus):
 
     def publish(self, event: Event) -> str:
         if self.__boto3 is None:
-            raise RuntimeError(
-                "boto3 is not installed; install underwrite[aws]")
+            raise RuntimeError("boto3 is not installed; install underwrite[aws]")
         body: str = json.dumps(event.to_dict())
         self._client.send_message(
             QueueUrl=self.__queue_url,
@@ -82,8 +80,7 @@ class SqsBus(EventBus):
         )
         return event.event_id
 
-    def subscribe(self, event_type: str, handler: Callable[[Event],
-                                                           None]) -> str:
+    def subscribe(self, event_type: str, handler: Callable[[Event], None]) -> str:
         sid: str = uuid.uuid4().hex
         with self.__lock:
             self.__handlers.setdefault(event_type, []).append((sid, handler))
@@ -92,18 +89,16 @@ class SqsBus(EventBus):
     def unsubscribe(self, subscription_id: str) -> None:
         with self.__lock:
             for handlers in self.__handlers.values():
-                for i, (sid, _) in enumerate(handlers):
-                    if sid == subscription_id:
-                        handlers.pop(i)
-                        return
+                idx = next((i for i, (sid, _) in enumerate(handlers) if sid == subscription_id), None)
+                if idx is not None:
+                    handlers.pop(idx)
+                    return
 
     def start(self) -> None:
         if self.__running:
             return
         self.__running = True
-        self.__poll_thread = threading.Thread(target=self.__poll_loop,
-                                              daemon=True,
-                                              name="sqs-poll")
+        self.__poll_thread = threading.Thread(target=self.__poll_loop, daemon=True, name="sqs-poll")
         self.__poll_thread.start()
 
     def stop(self) -> None:
@@ -143,8 +138,7 @@ class SqsBus(EventBus):
                             ReceiptHandle=msg["ReceiptHandle"],
                         )
                     except Exception:
-                        logger.exception("failed to process SQS message %s",
-                                         msg.get("MessageId", "?"))
+                        logger.exception("failed to process SQS message %s", msg.get("MessageId", "?"))
             except Exception:
                 if self.__running:
                     logger.exception("SQS poll error")
@@ -152,15 +146,11 @@ class SqsBus(EventBus):
 
     def __dispatch(self, event: Event) -> None:
         with self.__lock:
-            wildcards: list[tuple[str, Callable[[Event], None]]] = \
-                self.__handlers.get("*", [])
-            specific: list[tuple[str, Callable[[Event], None]]] = \
-                self.__handlers.get(event.event_type, [])
+            wildcards: list[tuple[str, Callable[[Event], None]]] = self.__handlers.get("*", [])
+            specific: list[tuple[str, Callable[[Event], None]]] = self.__handlers.get(event.event_type, [])
         for sid, handler in wildcards + specific:
             if not self.__circuit_breaker.allow_request(sid):
-                logger.warning(
-                    "circuit open for subscriber %s, sending %s to DLQ", sid,
-                    event.event_type)
+                logger.warning("circuit open for subscriber %s, sending %s to DLQ", sid, event.event_type)
                 self.__dlq.put(event, "circuit_open", sid)
                 continue
             try:

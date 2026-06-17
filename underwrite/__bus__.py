@@ -57,10 +57,7 @@ class DeadLetterQueue:
     O(n) serialisation overhead on every event.
     """
 
-    def __init__(self,
-                 max_records: int = 10000,
-                 store: Store | None = None,
-                 sync_interval: int = 10) -> None:
+    def __init__(self, max_records: int = 10000, store: Store | None = None, sync_interval: int = 10) -> None:
         """Initializes a bounded dead-letter queue.
 
         Args:
@@ -133,21 +130,19 @@ class DeadLetterQueue:
                     else:
                         skipped += 1
                 if skipped:
-                    logger.warning("skipped %d corrupted DLQ records on load",
-                                   skipped)
+                    logger.warning("skipped %d corrupted DLQ records on load", skipped)
                 self.__records = valid
             else:
                 logger.warning(
-                    "corrupted DLQ store data (expected list, got %s), starting with empty DLQ",
-                    type(raw).__name__)
+                    "corrupted DLQ store data (expected list, got %s), starting with empty DLQ", type(raw).__name__
+                )
 
     def __sync_store(self) -> None:
         store = self.__store
         if store is None:
             return
         try:
-            store.set("bus:dlq",
-                      [self.record_to_dict(r) for r in self.__records])
+            store.set("bus:dlq", [self.record_to_dict(r) for r in self.__records])
         except Exception:
             logger.exception("failed to persist DLQ records to store")
 
@@ -171,10 +166,7 @@ class DeadLetterQueue:
         with self.__lock:
             if len(self.__records) >= self.__max_records:
                 self.__records.pop(0)
-            self.__records.append(
-                DeadLetterRecord(event=event,
-                                 error=error,
-                                 subscriber_id=subscriber_id))
+            self.__records.append(DeadLetterRecord(event=event, error=error, subscriber_id=subscriber_id))
             if self.__should_sync():
                 self.__sync_store()
 
@@ -216,7 +208,7 @@ class DeadLetterQueue:
             to_replay = list(self.__records)
             if max_count > 0:
                 to_replay = to_replay[:max_count]
-            self.__records = self.__records[len(to_replay):]
+            self.__records = self.__records[len(to_replay) :]
             self.__sync_counter = 0
             self.__sync_store()
         replayed = 0
@@ -225,10 +217,8 @@ class DeadLetterQueue:
                 bus.publish(record.event)
                 replayed += 1
             except Exception:
-                logger.exception("DLQ replay failed for event %s",
-                                 record.event.event_id)
-                self.put(record.event, f"replay_failed: {record.error}",
-                         record.subscriber_id)
+                logger.exception("DLQ replay failed for event %s", record.event.event_id)
+                self.put(record.event, f"replay_failed: {record.error}", record.subscriber_id)
         return replayed
 
 
@@ -244,9 +234,7 @@ class PerSubscriberCircuitBreaker:
     OPEN = "open"
     HALF_OPEN = "half_open"
 
-    def __init__(self,
-                 failure_threshold: int = 5,
-                 cooldown_seconds: float = 60.0) -> None:
+    def __init__(self, failure_threshold: int = 5, cooldown_seconds: float = 60.0) -> None:
         self.__threshold: int = failure_threshold
         self.__cooldown: float = cooldown_seconds
         self.__lock: threading.Lock = threading.Lock()
@@ -271,6 +259,8 @@ class PerSubscriberCircuitBreaker:
     def record_failure(self, subscriber_id: str) -> None:
         """Records a failure for the subscriber. May trip circuit to OPEN."""
         with self.__lock:
+            if len(self.__failures) >= 100000 and subscriber_id not in self.__failures:
+                return
             count = self.__failures.get(subscriber_id, 0) + 1
             self.__failures[subscriber_id] = count
             if count >= self.__threshold:
@@ -284,13 +274,27 @@ class PerSubscriberCircuitBreaker:
             prev = self.__state.pop(subscriber_id, None)
             self.__opened_at.pop(subscriber_id, None)
             if prev == self.HALF_OPEN:
-                logger.info("circuit breaker closed for subscriber %s",
-                            subscriber_id)
+                logger.info("circuit breaker closed for subscriber %s", subscriber_id)
 
     def state(self, subscriber_id: str) -> str:
         """Returns the current circuit state for the subscriber."""
         with self.__lock:
             return self.__state.get(subscriber_id, self.CLOSED)
+
+    def cleanup(self) -> None:
+        now = time.monotonic()
+        stale_sids: list[str] = []
+        with self.__lock:
+            for sid, state in self.__state.items():
+                if state == "closed" and sid not in self.__failures:
+                    stale_sids.append(sid)
+                elif state == "open" and sid in self.__opened_at:
+                    if now - self.__opened_at[sid] > 3600:
+                        stale_sids.append(sid)
+            for sid in stale_sids:
+                self.__failures.pop(sid, None)
+                self.__state.pop(sid, None)
+                self.__opened_at.pop(sid, None)
 
 
 class RateLimiter:
@@ -367,9 +371,7 @@ class DistributedRateLimiter(RateLimiter):
         self.__store: Store | None = store
         self.__prefix: str = prefix
         if store is None:
-            logger.warning(
-                "DistributedRateLimiter created without store, falling back to in-memory rate limiter"
-            )
+            logger.warning("DistributedRateLimiter created without store, falling back to in-memory rate limiter")
 
     def check(self, key: str) -> bool:
         if self.__store is None:
@@ -433,6 +435,7 @@ class IdempotencyGuard:
             if len(seen) > self.__max_ids:
                 evicted = order.popleft()
                 seen.discard(evicted)
+                logger.warning("idempotency guard evicting oldest entry for %s", handler_id)
             return False
 
 
@@ -444,8 +447,7 @@ class EventBus(ABC):
         """Publishes an event to all matching subscribers.  Returns the event ID."""
 
     @abstractmethod
-    def subscribe(self, event_type: str, handler: Callable[[Event],
-                                                           None]) -> str:
+    def subscribe(self, event_type: str, handler: Callable[[Event], None]) -> str:
         """Registers a handler for *event_type* (use ``*`` for wildcard).
 
         Returns a subscription ID that can be passed to ``unsubscribe``.
@@ -495,20 +497,17 @@ class LocalBus(EventBus):
             store: Optional Store for DLQ persistence.
         """
         self.__lock: threading.RLock = threading.RLock()
-        self.__handlers: dict[str, list[tuple[str, Callable[[Event],
-                                                            None]]]] = {}
+        self.__handlers: dict[str, list[tuple[str, Callable[[Event], None]]]] = {}
         self.__buffer: list[Event] = []
         self.__running: bool = False
         self.__dlq: DeadLetterQueue = DeadLetterQueue(store=store)
         self.__idempotency: IdempotencyGuard = IdempotencyGuard()
-        self.__circuit_breaker: PerSubscriberCircuitBreaker = PerSubscriberCircuitBreaker(
-        )
+        self.__circuit_breaker: PerSubscriberCircuitBreaker = PerSubscriberCircuitBreaker()
         self.__max_buffer_size: int = max_buffer_size
-        self.__rate_limiter: RateLimiter | None = RateLimiter(
-            rate_limit) if rate_limit > 0 else None
+        self.__rate_limiter: RateLimiter | None = RateLimiter(rate_limit) if rate_limit > 0 else None
         self.__executor: concurrent.futures.ThreadPoolExecutor | None = (
-            concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_workers) if max_workers > 0 else None)
+            concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) if max_workers > 0 else None
+        )
         self.__futures: list[concurrent.futures.Future] = []
         self.__MAX_FUTURES: int = max_futures
 
@@ -534,18 +533,15 @@ class LocalBus(EventBus):
             The event ID.
         """
         with self.__lock:
-            if self.__max_buffer_size > 0 and len(
-                    self.__buffer) >= self.__max_buffer_size:
+            if self.__max_buffer_size > 0 and len(self.__buffer) >= self.__max_buffer_size:
                 dropped = self.__buffer.pop(0)
-                logger.warning("buffer full, dropping oldest event %s (%s)",
-                               dropped.event_id, dropped.event_type)
+                logger.warning("buffer full, dropping oldest event %s (%s)", dropped.event_id, dropped.event_type)
             self.__buffer.append(event)
             if self.__running:
                 self.__flush()
         return event.event_id
 
-    def subscribe(self, event_type: str, handler: Callable[[Event],
-                                                           None]) -> str:
+    def subscribe(self, event_type: str, handler: Callable[[Event], None]) -> str:
         """Registers a handler for a given event type.
 
         Args:
@@ -569,8 +565,7 @@ class LocalBus(EventBus):
         with self.__lock:
             for event_type in list(self.__handlers):
                 self.__handlers[event_type] = [
-                    (sid, h) for sid, h in self.__handlers[event_type]
-                    if sid != subscription_id
+                    (sid, h) for sid, h in self.__handlers[event_type] if sid != subscription_id
                 ]
 
     def start(self) -> None:
@@ -595,35 +590,27 @@ class LocalBus(EventBus):
             self.__buffer.clear()
         if self.__executor:
             done, not_done = concurrent.futures.wait(
-                self.__futures,
-                timeout=5,
-                return_when=concurrent.futures.ALL_COMPLETED)
+                self.__futures, timeout=5, return_when=concurrent.futures.ALL_COMPLETED
+            )
             if not_done:
-                logger.warning(
-                    "%d future(s) did not complete within stop timeout",
-                    len(not_done))
-            self.__executor.shutdown(wait=False)
+                logger.warning("%d future(s) did not complete within stop timeout", len(not_done))
+            self.__executor.shutdown(wait=True)
         self.__futures.clear()
 
     def __flush(self) -> None:
         pending, self.__buffer = self.__buffer, []
         for event in pending:
-            handlers = self.__handlers.get(event.event_type,
-                                           []) + self.__handlers.get("*", [])
+            handlers = self.__handlers.get(event.event_type, []) + self.__handlers.get("*", [])
             for sid, handler in handlers:
                 if not self.__circuit_breaker.allow_request(sid):
-                    logger.warning(
-                        "circuit open for subscriber %s, sending %s to DLQ",
-                        sid, event.event_type)
+                    logger.warning("circuit open for subscriber %s, sending %s to DLQ", sid, event.event_type)
                     self.__dlq.put(event, "circuit_open", sid)
                     continue
-                if self.__rate_limiter and not self.__rate_limiter.check(
-                        f"sub:{sid}"):
+                if self.__rate_limiter and not self.__rate_limiter.check(f"sub:{sid}"):
                     self.__dlq.put(event, "rate_limited", sid)
                     continue
                 if self.__executor:
-                    future = self.__executor.submit(self.__dispatch, handler,
-                                                    event, sid)
+                    future = self.__executor.submit(self.__dispatch, handler, event, sid)
                     future.add_done_callback(self.__handle_future)
                     self.__futures.append(future)
                     self.__trim_futures()
@@ -643,25 +630,21 @@ class LocalBus(EventBus):
                 logger.warning("future %s raised: %s", f, exc)
         self.__futures = [f for f in self.__futures if not f.done()]
 
-    def __dispatch_sync(self, handler: Callable[[Event], None], event: Event,
-                        sid: str) -> None:
+    def __dispatch_sync(self, handler: Callable[[Event], None], event: Event, sid: str) -> None:
         try:
             handler(event)
             self.__circuit_breaker.record_success(sid)
         except Exception as exc:
-            logger.exception("subscriber %s failed on %s (%s), sent to DLQ",
-                             sid, event.event_type, exc)
+            logger.exception("subscriber %s failed on %s (%s), sent to DLQ", sid, event.event_type, exc)
             self.__dlq.put(event, f"{type(exc).__name__}: {exc}", sid)
             self.__circuit_breaker.record_failure(sid)
 
-    def __dispatch(self, handler: Callable[[Event], None], event: Event,
-                   sid: str) -> None:
+    def __dispatch(self, handler: Callable[[Event], None], event: Event, sid: str) -> None:
         try:
             handler(event)
             self.__circuit_breaker.record_success(sid)
         except Exception as exc:
-            logger.exception("subscriber %s failed on %s (%s), sent to DLQ",
-                             sid, event.event_type, exc)
+            logger.exception("subscriber %s failed on %s (%s), sent to DLQ", sid, event.event_type, exc)
             self.__dlq.put(event, f"{type(exc).__name__}: {exc}", sid)
             self.__circuit_breaker.record_failure(sid)
 
@@ -674,8 +657,7 @@ class AsyncEventBus(ABC):
         """Publishes an event to all matching subscribers. Returns the event ID."""
 
     @abstractmethod
-    async def subscribe(self, event_type: str, handler: Callable[[Event],
-                                                                 None]) -> str:
+    async def subscribe(self, event_type: str, handler: Callable[[Event], None]) -> str:
         """Registers a handler for *event_type* (use ``*`` for wildcard).
 
         Returns a subscription ID that can be passed to ``unsubscribe``.
@@ -711,11 +693,9 @@ class AsyncLocalBus(AsyncEventBus):
     executor to avoid blocking the async event loop.
     """
 
-    def __init__(self,
-                 rate_limit: float = 0.0,
-                 max_workers: int = 4,
-                 max_futures: int = 10000,
-                 store: Store | None = None) -> None:
+    def __init__(
+        self, rate_limit: float = 0.0, max_workers: int = 4, max_futures: int = 10000, store: Store | None = None
+    ) -> None:
         self.__loop: asyncio.AbstractEventLoop | None = None
         self.__local_bus: LocalBus = LocalBus(
             rate_limit=rate_limit,
@@ -737,8 +717,7 @@ class AsyncLocalBus(AsyncEventBus):
         self.__local_bus.publish(event)
         return event.event_id
 
-    async def subscribe(self, event_type: str, handler: Callable[[Event],
-                                                                 None]) -> str:
+    async def subscribe(self, event_type: str, handler: Callable[[Event], None]) -> str:
         return self.__local_bus.subscribe(event_type, handler)
 
     async def unsubscribe(self, subscription_id: str) -> None:

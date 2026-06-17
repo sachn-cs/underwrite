@@ -21,6 +21,7 @@ class OriginationService(NanoService):
     """Manages loan application lifecycle: creation, validation, submission."""
 
     def __init__(self, **kwargs: Any) -> None:
+        """Initialize the origination service with a reentrant lock."""
         self.__lock: threading.RLock = threading.RLock()
         super().__init__(**kwargs)
         self.handlers: dict[str, Any] = {
@@ -29,6 +30,11 @@ class OriginationService(NanoService):
         }
 
     def handle(self, event: Event) -> None:
+        """Process an origination event.
+
+        Args:
+            event: The incoming origination event.
+        """
         handler = self.handlers.get(event.event_type)
         if handler is not None:
             handler(event)
@@ -42,13 +48,9 @@ class OriginationService(NanoService):
         borrower: str = event.payload.get("borrower", "")
         principal: float = get_finite(event.payload, "principal", 0.0)
         if not borrower or principal <= 0:
-            logger.warning(
-                "dropping ORIGINATION_CREATE with missing borrower or principal"
-            )
+            logger.warning("dropping ORIGINATION_CREATE with missing borrower or principal")
             return
-        application_id: str = (
-            f"app_{borrower}_{int(datetime.now(timezone.utc).timestamp())}"
-        )
+        application_id: str = f"app_{borrower}_{int(datetime.now(timezone.utc).timestamp())}"
         app_record = {
             "borrower": borrower,
             "principal": principal,

@@ -20,7 +20,6 @@ from underwrite.__calendar_india__ import (
 
 
 class TestHolidayDetection:
-
     def test_sunday_is_holiday(self) -> None:
         assert is_holiday(date(2025, 1, 5)) is True
 
@@ -80,7 +79,6 @@ class TestHolidayDetection:
 
 
 class TestBusinessDay:
-
     def test_monday_is_business_day(self) -> None:
         assert is_business_day(date(2025, 1, 6)) is True
 
@@ -101,7 +99,6 @@ class TestBusinessDay:
 
 
 class TestNextBusinessDay:
-
     def test_first_saturday_stays_same(self) -> None:
         assert next_business_day(date(2025, 1, 4)) == date(2025, 1, 4)
 
@@ -132,7 +129,6 @@ class TestNextBusinessDay:
 
 
 class TestPreviousBusinessDay:
-
     def test_monday_goes_back_to_friday(self) -> None:
         result = previous_business_day(date(2025, 1, 6))
         assert result == date(2025, 1, 6)
@@ -151,7 +147,6 @@ class TestPreviousBusinessDay:
 
 
 class TestAdjustDueDate:
-
     def test_forward_from_holiday(self) -> None:
         result = adjust_due_date(date(2025, 1, 26), direction="forward")
         assert is_business_day(result) is True
@@ -168,7 +163,6 @@ class TestAdjustDueDate:
 
 
 class TestCountBusinessDays:
-
     def test_same_day_zero(self) -> None:
         assert count_business_days(date(2025, 1, 6), date(2025, 1, 6)) == 0
 
@@ -185,7 +179,6 @@ class TestCountBusinessDays:
 
 
 class TestAddBusinessDays:
-
     def test_add_zero(self) -> None:
         d = date(2025, 1, 6)
         assert add_business_days(d, 0) == d
@@ -225,7 +218,6 @@ class TestAddBusinessDays:
 
 
 class TestSecondFourthSaturday:
-
     def test_second_saturday_jan_2025(self) -> None:
         assert is_second_saturday(date(2025, 1, 11)) is True
 

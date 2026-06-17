@@ -141,6 +141,7 @@ class ServicingService(NanoService):
         loan_id = event.payload.get("loan_id", "")
         order_id = event.payload.get("order_id", "")
         if not loan_id or not order_id:
+            logger.warning("dropping RAZORPAY_ORDER_CREATED with missing loan_id or order_id")
             return
         with self.__lock:
             record = self.store.get(f"loan:{loan_id}")
@@ -157,6 +158,7 @@ class ServicingService(NanoService):
         loan_id = event.payload.get("loan_id", "")
         subscription_id = event.payload.get("subscription_id", "")
         if not loan_id:
+            logger.warning("dropping RAZORPAY_MANDATE_ACTIVE with missing loan_id")
             return
         with self.__lock:
             record = self.store.get(f"loan:{loan_id}")
@@ -173,6 +175,7 @@ class ServicingService(NanoService):
         """
         loan_id = event.payload.get("loan_id", "")
         if not loan_id:
+            logger.warning("dropping RAZORPAY_MANDATE_INACTIVE with missing loan_id")
             return
         with self.__lock:
             record = self.store.get(f"loan:{loan_id}")

@@ -5,11 +5,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urljoin
-
 
 try:
     import httpx
@@ -100,13 +100,14 @@ class RazorpayPaymentLink:
 # -- Client Interface ---------------------------------------------------------
 
 
-class RazorpayClient:
+class RazorpayClient(ABC):
     """Abstract Razorpay API client.
 
     Implementations provide create_order, capture_payment, create_subscription,
     create_payment_link, refund_payment, and verify_webhook.
     """
 
+    @abstractmethod
     def create_order(
         self,
         amount: int,
@@ -125,8 +126,8 @@ class RazorpayClient:
         Returns:
             The created RazorpayOrder.
         """
-        raise NotImplementedError
 
+    @abstractmethod
     def capture_payment(self, payment_id: str, amount: int) -> RazorpayPayment:
         """Capture an authorized payment.
 
@@ -137,8 +138,8 @@ class RazorpayClient:
         Returns:
             The captured RazorpayPayment.
         """
-        raise NotImplementedError
 
+    @abstractmethod
     def fetch_payment(self, payment_id: str) -> RazorpayPayment:
         """Fetch payment details by ID.
 
@@ -148,8 +149,8 @@ class RazorpayClient:
         Returns:
             The RazorpayPayment.
         """
-        raise NotImplementedError
 
+    @abstractmethod
     def create_subscription(
         self,
         plan_id: str,
@@ -172,8 +173,8 @@ class RazorpayClient:
         Returns:
             The created RazorpaySubscription.
         """
-        raise NotImplementedError
 
+    @abstractmethod
     def create_payment_link(
         self,
         amount: int,
@@ -194,8 +195,8 @@ class RazorpayClient:
         Returns:
             The created RazorpayPaymentLink.
         """
-        raise NotImplementedError
 
+    @abstractmethod
     def refund_payment(
         self,
         payment_id: str,
@@ -212,8 +213,8 @@ class RazorpayClient:
         Returns:
             Raw refund response dict.
         """
-        raise NotImplementedError
 
+    @abstractmethod
     def verify_webhook(self, payload: bytes, signature: str, secret: str) -> bool:
         """Verify a Razorpay webhook signature.
 
@@ -225,7 +226,6 @@ class RazorpayClient:
         Returns:
             True if the signature is valid.
         """
-        raise NotImplementedError
 
 
 # -- HTTP Implementation ------------------------------------------------------
@@ -251,6 +251,10 @@ class HttpRazorpayClient(RazorpayClient):
         self.__webhook_secret = webhook_secret
         self.__base_url = api_base_url.rstrip("/")
         self.__timeout = timeout_seconds
+        self.__client = httpx.Client(
+            auth=(self.__key_id, self.__key_secret),
+            timeout=self.__timeout,
+        )
 
     def request(
         self,
@@ -272,12 +276,10 @@ class HttpRazorpayClient(RazorpayClient):
             RazorpayError: On API or transport errors.
         """
         url = urljoin(self.__base_url + "/", path.lstrip("/"))
-        auth = (self.__key_id, self.__key_secret)
         try:
             if not HAS_HTTPX:
                 raise RuntimeError("httpx is required for HttpRazorpayClient")
-            with httpx.Client(auth=auth, timeout=self.__timeout) as client:
-                resp = client.request(method, url, json=data)
+            resp = self.__client.request(method, url, json=data)
         except httpx.TimeoutException as exc:
             raise RazorpayError(f"request timed out: {exc}") from exc
         except httpx.RequestError as exc:
@@ -302,25 +304,16 @@ class HttpRazorpayClient(RazorpayClient):
         try:
             body = resp.json()
         except (json.JSONDecodeError, httpx.DecodingError) as exc:
-            raise RazorpayError(
-                f"invalid JSON response ({resp.status_code}): {exc}"
-            ) from exc
+            raise RazorpayError(f"invalid JSON response ({resp.status_code}): {exc}") from exc
         if resp.status_code == 401:
-            raise RazorpayAuthError(
-                body.get("error", {}).get("description", "unauthorized")
-            )
+            raise RazorpayAuthError(body.get("error", {}).get("description", "unauthorized"))
         if resp.status_code == 404:
-            raise RazorpayNotFoundError(
-                body.get("error", {}).get("description", "not found")
-            )
+            raise RazorpayNotFoundError(body.get("error", {}).get("description", "not found"))
         if resp.status_code == 400:
-            raise RazorpayValidationError(
-                body.get("error", {}).get("description", "validation error")
-            )
+            raise RazorpayValidationError(body.get("error", {}).get("description", "validation error"))
         if not resp.is_success:
             raise RazorpayError(
-                f"API error ({resp.status_code}): "
-                f"{body.get('error', {}).get('description', 'unknown')}"
+                f"API error ({resp.status_code}): {body.get('error', {}).get('description', 'unknown')}"
             )
         return body
 
@@ -373,9 +366,7 @@ class HttpRazorpayClient(RazorpayClient):
         Returns:
             The captured RazorpayPayment.
         """
-        body = self.request(
-            "POST", f"/payments/{payment_id}/capture", {"amount": amount}
-        )
+        body = self.request("POST", f"/payments/{payment_id}/capture", {"amount": amount})
         return self.parse_payment(body)
 
     def fetch_payment(self, payment_id: str) -> RazorpayPayment:

@@ -12,7 +12,6 @@ from underwrite.services.risk.model import (
 
 
 class TestStrategyRegistry:
-
     def test_register_and_get(self) -> None:
         registry = StrategyRegistry()
         registry.register("heuristic", HeuristicStrategy)
@@ -37,7 +36,6 @@ class TestStrategyRegistry:
 
 
 class TestRiskModel:
-
     def test_heuristic_fallback(self) -> None:
         model = RiskModel()
         score = model.predict(100000.0, 12.0)

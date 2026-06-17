@@ -6,7 +6,8 @@ AML/KYC and applies configurable rules to produce graded decisions.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from underwrite.__events__ import Event, EventType
 from underwrite.__logger__ import logger
@@ -144,18 +145,22 @@ class UnderwriterService(StatefulService):
     AML, KYC) and evaluates rules to produce a graded decision.
     """
 
+    MAX_APPLICATIONS: int = 10000
+
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self.engine = RuleEngine(
-            rules=list(DEFAULT_RULES), policies=list(DEFAULT_POLICIES)
-        )
+        self.engine = RuleEngine(rules=DEFAULT_RULES, policies=DEFAULT_POLICIES)
         self.applications: dict[str, dict[str, Any]] = {}
-        self.repo: TypedStoreRepository[dict[str, Any]] = self.store_repo(
-            "underwriter", dict
-        )
+        self.repo: TypedStoreRepository[dict[str, Any]] = self.store_repo("underwriter", dict)
         loaded = self.repo.load(default={})
         if loaded:
             self.applications = loaded.get("applications", {})
+
+    def _evict_if_full(self) -> None:
+        if len(self.applications) >= self.MAX_APPLICATIONS:
+            excess = len(self.applications) - self.MAX_APPLICATIONS + 1
+            for _ in range(min(excess, max(1, self.MAX_APPLICATIONS // 10))):
+                self.applications.pop(next(iter(self.applications)), None)
 
     def add_rule(self, rule: Rule) -> None:
         """Add a rule to the engine.
@@ -218,6 +223,7 @@ class UnderwriterService(StatefulService):
             return
         with self.state_lock:
             if app_id not in self.applications:
+                self._evict_if_full()
                 self.applications[app_id] = {}
             self.applications[app_id][key] = extractor(event.payload)
             self.sync()
@@ -234,6 +240,7 @@ class UnderwriterService(StatefulService):
             return
         with self.state_lock:
             if app_id not in self.applications:
+                self._evict_if_full()
                 self.applications[app_id] = {}
             current = self.applications[app_id].get(key, 0)
             self.applications[app_id][key] = current + 1
@@ -252,13 +259,12 @@ class UnderwriterService(StatefulService):
             return
         with self.state_lock:
             if app_id not in self.applications:
+                self._evict_if_full()
                 self.applications[app_id] = {}
             self.applications[app_id].update(
                 {
                     "credit_score": event.payload.get("score", 0),
-                    "credit_utilization_pct": event.payload.get(
-                        "credit_utilization_pct", 0
-                    ),
+                    "credit_utilization_pct": event.payload.get("credit_utilization_pct", 0),
                     "delinquent_accounts": event.payload.get("delinquent_accounts", 0),
                 }
             )
@@ -281,6 +287,8 @@ class UnderwriterService(StatefulService):
             return
 
         with self.state_lock:
+            if app_id not in self.applications:
+                self._evict_if_full()
             facts: dict[str, Any] = self.applications.get(app_id, {})
             facts.update(
                 {
@@ -348,9 +356,7 @@ class UnderwriterService(StatefulService):
                 )
 
         if decision.outcome == DecisionOutcome.APPROVED.value:
-            self.emit(
-                EventType.UNDERWRITER_APPROVED, payload, correlation_id=correlation_id
-            )
+            self.emit(EventType.UNDERWRITER_APPROVED, payload, correlation_id=correlation_id)
         elif decision.outcome == DecisionOutcome.APPROVED_WITH_CONDITIONS.value:
             self.emit(
                 EventType.UNDERWRITER_CONDITIONAL_APPROVED,
@@ -358,17 +364,11 @@ class UnderwriterService(StatefulService):
                 correlation_id=correlation_id,
             )
         elif decision.outcome == DecisionOutcome.REVIEW.value:
-            self.emit(
-                EventType.UNDERWRITER_REVIEW, payload, correlation_id=correlation_id
-            )
+            self.emit(EventType.UNDERWRITER_REVIEW, payload, correlation_id=correlation_id)
         elif decision.outcome == DecisionOutcome.ESCALATE.value:
-            self.emit(
-                EventType.UNDERWRITER_ESCALATED, payload, correlation_id=correlation_id
-            )
+            self.emit(EventType.UNDERWRITER_ESCALATED, payload, correlation_id=correlation_id)
         else:
-            self.emit(
-                EventType.UNDERWRITER_REJECTED, payload, correlation_id=correlation_id
-            )
+            self.emit(EventType.UNDERWRITER_REJECTED, payload, correlation_id=correlation_id)
 
     def get_application(self, app_id: str) -> dict[str, Any] | None:
         """Return the accumulated facts for an application.

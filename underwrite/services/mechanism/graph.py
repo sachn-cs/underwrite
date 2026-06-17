@@ -55,13 +55,8 @@ class DelegationGraph:
         budget = self.base_budget.get(user, 0.0) + self.earned.get(user, 0.0)
         if user in self.parent:
             sponsor = self.parent[user]
-            budget = self.delegation.get((sponsor, user), 0.0) + self.earned.get(
-                user, 0.0
-            )
-        outgoing = sum(
-            self.delegation.get((user, child), 0.0)
-            for child in self.children.get(user, [])
-        )
+            budget = self.delegation.get((sponsor, user), 0.0) + self.earned.get(user, 0.0)
+        outgoing = sum(self.delegation.get((user, child), 0.0) for child in self.children.get(user, []))
         return budget - outgoing
 
     def total_credit_limit(self) -> float:
@@ -91,9 +86,7 @@ class DelegationGraph:
             raise ProtocolError(f"delegation chain too deep for {user}")
         if user in self.seeds:
             return 0.0
-        child_req = sum(
-            self.required_delegation(c, depth + 1) for c in self.children.get(user, [])
-        )
+        child_req = sum(self.required_delegation(c, depth + 1) for c in self.children.get(user, []))
         return max(
             0.0,
             self.principal.get(user, 0.0) + child_req - self.earned.get(user, 0.0),
@@ -249,9 +242,7 @@ class DelegationGraph:
             if loss > 0:
                 current_edge_amount: float = self.delegation.get(edge, 0.0)
                 if current_edge_amount < loss:
-                    raise ProtocolError(
-                        "insufficient delegation for default propagation"
-                    )
+                    raise ProtocolError("insufficient delegation for default propagation")
                 self.delegation[edge] = current_edge_amount - loss
             current = sponsor
 
@@ -293,9 +284,7 @@ class DelegationGraph:
         if new_amount > old_amount:
             delta: float = new_amount - old_amount
             if self.credit_limit(sponsor) < delta:
-                raise InfeasibleOperationError(
-                    "insufficient credit limit to increase delegation"
-                )
+                raise InfeasibleOperationError("insufficient credit limit to increase delegation")
         self.delegation[edge] = new_amount
 
     def snapshot(self) -> dict[str, Any]:
@@ -344,11 +333,7 @@ class DelegationGraph:
             "base_budget": dict(self.base_budget),
             "earned": dict(self.earned),
             "principal": dict(self.principal),
-            "loans": [
-                loan
-                for borrower_loans in self.loans.values()
-                for loan in borrower_loans
-            ],
+            "loans": [loan for borrower_loans in self.loans.values() for loan in borrower_loans],
         }
 
     @classmethod

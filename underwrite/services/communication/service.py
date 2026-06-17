@@ -24,6 +24,12 @@ class CommunicationService(NanoService):
     """
 
     def __init__(self, **kwargs: Any) -> None:
+        """Initialize the communication service and register event handlers.
+
+        Args:
+            **kwargs: Forwarded to NanoService.__init__.
+
+        """
         super().__init__(**kwargs)
         self.handlers: dict[str, Any] = {
             EventType.COMMUNICATION_SEND: self.__on_communication_send,
@@ -36,22 +42,27 @@ class CommunicationService(NanoService):
         Args:
             event: The incoming event. Only COMMUNICATION_SEND and
                 STATEMENT_GENERATED events are processed.
+
         """
         handler = self.handlers.get(event.event_type)
         if handler is not None:
             handler(event)
 
     def __on_communication_send(self, event: Event) -> None:
-        """Send a communication via the configured channel."""
+        """Send a communication via the configured channel.
+
+        Args:
+            event: The communication send event with recipient,
+                subject, and channel payload.
+
+        """
         recipient: str = event.payload.get("recipient", "")
         subject: str = event.payload.get("subject", "")
         channel: str = event.payload.get("channel", "email")
         if not recipient:
             logger.warning("dropping COMMUNICATION_SEND with missing recipient")
             return
-        message_id: str = (
-            f"msg_{recipient}_{int(datetime.now(timezone.utc).timestamp())}"
-        )
+        message_id: str = f"msg_{recipient}_{int(datetime.now(timezone.utc).timestamp())}"
         msg = {
             "recipient": recipient,
             "subject": subject,
@@ -71,7 +82,12 @@ class CommunicationService(NanoService):
         )
 
     def __on_statement_generated(self, event: Event) -> None:
-        """Record that a statement notification was sent."""
+        """Record that a statement notification was sent.
+
+        Args:
+            event: The statement generated event containing loan_id.
+
+        """
         loan_id = event.payload.get("loan_id", "")
         if loan_id:
             stmt_key = f"comm_stmt:{loan_id}:{datetime.now(timezone.utc).isoformat()}"

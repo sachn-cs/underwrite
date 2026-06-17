@@ -15,26 +15,70 @@ __all__ = [
     "get_non_empty",
     "get_non_negative",
     "get_positive",
+    "require_aadhaar",
     "require_finite",
+    "require_gstin",
+    "require_ifsc",
     "require_in_range",
+    "require_indian_mobile",
+    "require_indian_pincode",
+    "require_indian_rupees",
     "require_match",
     "require_non_empty",
     "require_non_negative",
+    "require_pan",
     "require_positive",
 ]
 
 import math
 import re
+from decimal import Decimal
 from typing import Any
 
 from underwrite.__exceptions__ import ProtocolError
 
 # Patterns containing nested quantifiers (e.g. ``(a+)+``) are prone to
 # catastrophic backtracking (ReDoS).  This heuristic rejects them.
-_RE_SAFETY_UNSAFE_PATTERN: re.Pattern[str] = re.compile(
-    r"\(\s*(?:[^()]*\[[^]]*\])*[^()]*[+*{]\s*\)\s*[+*{]}")
+_RE_SAFETY_UNSAFE_PATTERN: re.Pattern[str] = re.compile(r"\(\s*(?:[^()]*\[[^]]*\])*[^()]*[+*{]\s*\)\s*[+*{]}")
 
 _RE_SAFETY_MAX_PATTERN_LENGTH: int = 200
+
+# ---------------------------------------------------------------------------
+# Verhoeff checksum tables (used by Aadhaar validation)
+# ---------------------------------------------------------------------------
+
+_VERHOEFF_MULTIPLICATION = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
+    [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+    [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
+    [4, 0, 1, 2, 3, 9, 5, 6, 7, 8],
+    [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+    [6, 5, 9, 8, 7, 1, 0, 4, 3, 2],
+    [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
+    [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+    [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+]
+
+_VERHOEFF_PERMUTATION = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [1, 5, 7, 6, 2, 8, 3, 0, 9, 4],
+    [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
+    [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
+    [9, 4, 5, 3, 1, 2, 6, 8, 7, 0],
+    [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+    [2, 7, 9, 3, 8, 0, 6, 4, 1, 5],
+    [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
+]
+
+_VERHOEFF_INVERSE = [0, 4, 3, 2, 1, 5, 6, 7, 8, 9]
+
+
+def _verhoeff_checksum(digits: str) -> bool:
+    c = 0
+    for i, d in enumerate(reversed(digits)):
+        c = _VERHOEFF_MULTIPLICATION[c][_VERHOEFF_PERMUTATION[(i + 1) % 8][int(d)]]
+    return _VERHOEFF_INVERSE[c] == 0
 
 
 class PayloadValidator:
@@ -82,9 +126,7 @@ class PayloadValidator:
         try:
             v = float(value)
         except (ValueError, TypeError) as e:
-            raise ProtocolError(
-                f"{name} must be a valid number, got {type(value).__name__}"
-            ) from e
+            raise ProtocolError(f"{name} must be a valid number, got {type(value).__name__}") from e
         if not math.isfinite(v):
             raise ProtocolError(f"{name} must be finite (got {v})")
         return v
@@ -171,8 +213,7 @@ class PayloadValidator:
         if len(pattern) > _RE_SAFETY_MAX_PATTERN_LENGTH:
             raise ProtocolError(f"{name} pattern too long")
         if _RE_SAFETY_UNSAFE_PATTERN.search(pattern):
-            raise ProtocolError(
-                f"{name} pattern rejected (nested quantifiers)")
+            raise ProtocolError(f"{name} pattern rejected (nested quantifiers)")
         try:
             if not re.match(pattern, s):
                 raise ProtocolError(f"{name} does not match required pattern")
@@ -180,10 +221,164 @@ class PayloadValidator:
             raise ProtocolError(f"{name} pattern evaluation failed") from e
         return s
 
-    def non_empty(self,
-                  payload: dict[str, Any],
-                  key: str,
-                  name: str = "") -> str:
+    @staticmethod
+    def require_aadhaar(value: Any, name: str = "aadhaar") -> str:
+        """Validates a 12-digit Aadhaar number (with Verhoeff checksum).
+
+        Args:
+            value: The value to validate.
+            name: Human-readable field name for error messages.
+
+        Returns:
+            The validated 12-digit Aadhaar string.
+
+        Raises:
+            ProtocolError: If the value is not a valid Aadhaar number.
+        """
+        s = PayloadValidator.require_non_empty(value, name)
+        if not s.isdigit() or len(s) != 12:
+            raise ProtocolError(f"{name} must be exactly 12 digits")
+        if not _verhoeff_checksum(s):
+            raise ProtocolError(f"{name} failed checksum validation")
+        return s
+
+    @staticmethod
+    def require_pan(value: Any, name: str = "pan") -> str:
+        """Validates an Indian PAN card number.
+
+        Args:
+            value: The value to validate.
+            name: Human-readable field name for error messages.
+
+        Returns:
+            The validated uppercase PAN string.
+
+        Raises:
+            ProtocolError: If the value is not a valid PAN.
+        """
+        s = PayloadValidator.require_non_empty(value, name)
+        s = s.upper().strip()
+        if not re.match(r"^[A-Z]{5}[0-9]{4}[A-Z]$", s):
+            raise ProtocolError(f"{name} must be a valid PAN (e.g. ABCDE1234F)")
+        if s[3] not in "ABCFGHJLPT":
+            raise ProtocolError(f"{name} has invalid status code (4th character)")
+        return s
+
+    @staticmethod
+    def require_ifsc(value: Any, name: str = "ifsc") -> str:
+        """Validates an Indian IFSC code.
+
+        Args:
+            value: The value to validate.
+            name: Human-readable field name for error messages.
+
+        Returns:
+            The validated uppercase IFSC string.
+
+        Raises:
+            ProtocolError: If the value is not a valid IFSC code.
+        """
+        s = PayloadValidator.require_non_empty(value, name)
+        s = s.upper().strip()
+        if not re.match(r"^[A-Z]{4}0[A-Z0-9]{6}$", s):
+            raise ProtocolError(f"{name} must be a valid IFSC code (e.g. HDFC0001234)")
+        return s
+
+    @staticmethod
+    def require_indian_mobile(value: Any, name: str = "mobile") -> str:
+        """Validates an Indian mobile number.
+
+        Accepts bare 10 digits, ``+91`` prefix, or ``0`` prefix.
+
+        Args:
+            value: The value to validate.
+            name: Human-readable field name for error messages.
+
+        Returns:
+            The normalized 10-digit mobile number.
+
+        Raises:
+            ProtocolError: If the value is not a valid Indian mobile number.
+        """
+        s = PayloadValidator.require_non_empty(value, name)
+        s = s.strip()
+        if s.startswith("+91"):
+            s = s[3:]
+        elif s.startswith("0"):
+            s = s[1:]
+        if not s.isdigit() or len(s) != 10:
+            raise ProtocolError(f"{name} must be a valid 10-digit Indian mobile number")
+        if s[0] not in "6789":
+            raise ProtocolError(f"{name} must start with 6, 7, 8, or 9")
+        return s
+
+    @staticmethod
+    def require_indian_pincode(value: Any, name: str = "pincode") -> str:
+        """Validates a 6-digit Indian PIN code.
+
+        Args:
+            value: The value to validate.
+            name: Human-readable field name for error messages.
+
+        Returns:
+            The validated 6-digit PIN code string.
+
+        Raises:
+            ProtocolError: If the value is not a valid Indian PIN code.
+        """
+        s = PayloadValidator.require_non_empty(value, name)
+        s = s.strip()
+        if not re.match(r"^[1-9][0-9]{5}$", s):
+            raise ProtocolError(f"{name} must be a valid 6-digit Indian PIN code")
+        return s
+
+    @staticmethod
+    def require_gstin(value: Any, name: str = "gstin") -> str:
+        """Validates a 15-character Indian GSTIN.
+
+        Args:
+            value: The value to validate.
+            name: Human-readable field name for error messages.
+
+        Returns:
+            The validated uppercase GSTIN string.
+
+        Raises:
+            ProtocolError: If the value is not a valid GSTIN.
+        """
+        s = PayloadValidator.require_non_empty(value, name)
+        s = s.upper().strip()
+        if not re.match(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$", s):
+            raise ProtocolError(f"{name} must be a valid 15-character GSTIN")
+        return s
+
+    @staticmethod
+    def require_indian_rupees(value: Any, name: str = "amount") -> Decimal:
+        """Validates an amount in Indian Rupees.
+
+        Args:
+            value: The value to validate.
+            name: Human-readable field name for error messages.
+
+        Returns:
+            The amount as a ``Decimal`` with at most 2 decimal places.
+
+        Raises:
+            ProtocolError: If the value is not a valid rupee amount.
+        """
+        from decimal import Decimal, InvalidOperation
+
+        try:
+            v = Decimal(str(value))
+        except (ValueError, TypeError, InvalidOperation) as e:
+            raise ProtocolError(f"{name} must be a valid number, got {type(value).__name__}") from e
+        if v < 0:
+            raise ProtocolError(f"{name} must be >= 0 (got {v})")
+        if v.as_tuple().exponent < -2:
+            raise ProtocolError(f"{name} must have at most 2 decimal places")
+        return v
+
+    def non_empty(self, payload: dict[str, Any], key: str, name: str = "") -> str:
         """Returns a non-empty string from a payload dict.
 
         Args:
@@ -202,11 +397,7 @@ class PayloadValidator:
             val = val.strip()
         return self.require_non_empty(val, name or key)
 
-    def finite(self,
-               payload: dict[str, Any],
-               key: str,
-               default: float = 0.0,
-               name: str = "") -> float:
+    def finite(self, payload: dict[str, Any], key: str, default: float = 0.0, name: str = "") -> float:
         """Returns a finite number from a payload dict.
 
         Args:
@@ -223,11 +414,7 @@ class PayloadValidator:
         """
         return self.require_finite(payload.get(key, default), name or key)
 
-    def positive(self,
-                 payload: dict[str, Any],
-                 key: str,
-                 default: float = 1.0,
-                 name: str = "") -> float:
+    def positive(self, payload: dict[str, Any], key: str, default: float = 1.0, name: str = "") -> float:
         """Returns a positive finite number from a payload dict.
 
         Args:
@@ -244,11 +431,7 @@ class PayloadValidator:
         """
         return self.require_positive(payload.get(key, default), name or key)
 
-    def non_negative(self,
-                     payload: dict[str, Any],
-                     key: str,
-                     default: float = 0.0,
-                     name: str = "") -> float:
+    def non_negative(self, payload: dict[str, Any], key: str, default: float = 0.0, name: str = "") -> float:
         """Returns a non-negative finite number from a payload dict.
 
         Args:
@@ -263,16 +446,11 @@ class PayloadValidator:
         Raises:
             ProtocolError: If the value is negative.
         """
-        return self.require_non_negative(payload.get(key, default), name
-                                         or key)
+        return self.require_non_negative(payload.get(key, default), name or key)
 
-    def in_range(self,
-                 payload: dict[str, Any],
-                 key: str,
-                 lo: float,
-                 hi: float,
-                 default: float,
-                 name: str = "") -> float:
+    def in_range(
+        self, payload: dict[str, Any], key: str, lo: float, hi: float, default: float, name: str = ""
+    ) -> float:
         """Returns a value in [*lo*, *hi*] from a payload dict.
 
         Args:
@@ -289,14 +467,9 @@ class PayloadValidator:
         Raises:
             ProtocolError: If the value is outside [*lo*, *hi*].
         """
-        return self.require_in_range(payload.get(key, default), lo, hi, name
-                                     or key)
+        return self.require_in_range(payload.get(key, default), lo, hi, name or key)
 
-    def match(self,
-              payload: dict[str, Any],
-              key: str,
-              pattern: str,
-              name: str = "") -> str:
+    def match(self, payload: dict[str, Any], key: str, pattern: str, name: str = "") -> str:
         """Returns a regex-matched string from a payload dict.
 
         Args:
@@ -347,38 +520,49 @@ def get_non_empty(payload: dict[str, Any], key: str, name: str = "") -> str:
     return PayloadValidator().non_empty(payload, key, name)
 
 
-def get_finite(payload: dict[str, Any],
-               key: str,
-               default: float = 0.0,
-               name: str = "") -> float:
+def get_finite(payload: dict[str, Any], key: str, default: float = 0.0, name: str = "") -> float:
     return PayloadValidator().finite(payload, key, default, name)
 
 
-def get_positive(payload: dict[str, Any],
-                 key: str,
-                 default: float = 1.0,
-                 name: str = "") -> float:
+def get_positive(payload: dict[str, Any], key: str, default: float = 1.0, name: str = "") -> float:
     return PayloadValidator().positive(payload, key, default, name)
 
 
-def get_non_negative(payload: dict[str, Any],
-                     key: str,
-                     default: float = 0.0,
-                     name: str = "") -> float:
+def get_non_negative(payload: dict[str, Any], key: str, default: float = 0.0, name: str = "") -> float:
     return PayloadValidator().non_negative(payload, key, default, name)
 
 
-def get_in_range(payload: dict[str, Any],
-                 key: str,
-                 lo: float,
-                 hi: float,
-                 default: float,
-                 name: str = "") -> float:
+def get_in_range(payload: dict[str, Any], key: str, lo: float, hi: float, default: float, name: str = "") -> float:
     return PayloadValidator().in_range(payload, key, lo, hi, default, name)
 
 
-def get_match(payload: dict[str, Any],
-              key: str,
-              pattern: str,
-              name: str = "") -> str:
+def get_match(payload: dict[str, Any], key: str, pattern: str, name: str = "") -> str:
     return PayloadValidator().match(payload, key, pattern, name)
+
+
+def require_aadhaar(value: Any, name: str = "aadhaar") -> str:
+    return PayloadValidator.require_aadhaar(value, name)
+
+
+def require_pan(value: Any, name: str = "pan") -> str:
+    return PayloadValidator.require_pan(value, name)
+
+
+def require_ifsc(value: Any, name: str = "ifsc") -> str:
+    return PayloadValidator.require_ifsc(value, name)
+
+
+def require_indian_mobile(value: Any, name: str = "mobile") -> str:
+    return PayloadValidator.require_indian_mobile(value, name)
+
+
+def require_indian_pincode(value: Any, name: str = "pincode") -> str:
+    return PayloadValidator.require_indian_pincode(value, name)
+
+
+def require_gstin(value: Any, name: str = "gstin") -> str:
+    return PayloadValidator.require_gstin(value, name)
+
+
+def require_indian_rupees(value: Any, name: str = "amount") -> Decimal:
+    return PayloadValidator.require_indian_rupees(value, name)

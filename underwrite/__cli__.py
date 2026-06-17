@@ -52,9 +52,7 @@ def init(
 ) -> None:
     """Creates a default configuration file."""
     if Path(path).exists():
-        typer.secho(f"Configuration already exists: {path}",
-                    err=True,
-                    fg=typer.colors.RED)
+        typer.secho(f"Configuration already exists: {path}", err=True, fg=typer.colors.RED)
         raise typer.Exit(code=1)
     config = Configuration.default()
     config.services["mechanism"] = ServiceConfig(enabled=True)
@@ -71,13 +69,13 @@ SERVICE_ARG = typer.Argument(
 
 
 @app.command()
-def run(services: list[str] = SERVICE_ARG, ) -> None:
+def run(
+    services: list[str] = SERVICE_ARG,
+) -> None:
     """Starts one or more nano services."""
     for name in services:
         if name not in SERVICE_NAMES:
-            typer.secho(f"Unknown service: {name}",
-                        err=True,
-                        fg=typer.colors.RED)
+            typer.secho(f"Unknown service: {name}", err=True, fg=typer.colors.RED)
             typer.echo(f"Available: {', '.join(SERVICE_NAMES)}")
             raise typer.Exit(code=1)
 
@@ -119,9 +117,7 @@ def identity(
     try:
         ident: Identity = Identity.create(service_name)
     except Exception as exc:
-        typer.secho(f"Failed to create identity: {exc}",
-                    err=True,
-                    fg=typer.colors.RED)
+        typer.secho(f"Failed to create identity: {exc}", err=True, fg=typer.colors.RED)
         raise typer.Exit(code=1) from exc
     typer.echo(f"Identity for: {service_name}")
     typer.echo(f"  Public key:  {ident.public_key}")
@@ -151,12 +147,8 @@ def health() -> None:
 
 @app.command()
 def dlq(
-    replay: bool = typer.Option(False,
-                                "--replay",
-                                help="Re-publish all dead-letter events"),
-    max_count: int = typer.Option(0,
-                                  "--max",
-                                  help="Max events to replay (0 = all)"),
+    replay: bool = typer.Option(False, "--replay", help="Re-publish all dead-letter events"),
+    max_count: int = typer.Option(0, "--max", help="Max events to replay (0 = all)"),
 ) -> None:
     """Shows dead-letter queue info, or replays dead-letter events."""
     config = load_config()
@@ -169,8 +161,8 @@ def dlq(
     typer.echo(f"Dead-letter queue: {dq.count} entries")
     for r in dq.records[:20]:
         typer.echo(
-            f"  [{r.timestamp:.1f}] {r.subscriber_id}: "
-            f"{r.event.event_type} — {r.error[:60]}", )
+            f"  [{r.timestamp:.1f}] {r.subscriber_id}: {r.event.event_type} — {r.error[:60]}",
+        )
     if dq.count > 20:
         typer.echo(f"  ... and {dq.count - 20} more")
 
@@ -191,22 +183,18 @@ def metrics() -> None:
     typer.echo("Timers:")
     for k, t in snap.get("timers", {}).items():
         typer.echo(
-            f"  {k}: count={t['count']} avg={t['avg_ms']:.1f}ms "
-            f"min={t['min_ms']:.1f}ms max={t['max_ms']:.1f}ms", )
+            f"  {k}: count={t['count']} avg={t['avg_ms']:.1f}ms min={t['min_ms']:.1f}ms max={t['max_ms']:.1f}ms",
+        )
 
 
 @app.command()
 def serve(
     host: str = typer.Option("127.0.0.1", help="Bind address"),
     port: int = typer.Option(8080, help="Bind port"),
-    services: str = typer.Option(
-        "mechanism,audit", help="Comma-separated list of services to start"),
-    rate_limit: int = typer.Option(
-        100, help="Max requests per second for health/metrics endpoints"),
-    require_auth: bool = typer.Option(
-        False, help="Require bearer token (UNDERWRITE_API_TOKEN env var)"),
-    shutdown_timeout: int = typer.Option(
-        30, help="Graceful shutdown timeout in seconds"),
+    services: str = typer.Option("mechanism,audit", help="Comma-separated list of services to start"),
+    rate_limit: int = typer.Option(100, help="Max requests per second for health/metrics endpoints"),
+    require_auth: bool = typer.Option(False, help="Require bearer token (UNDERWRITE_API_TOKEN env var)"),
+    shutdown_timeout: int = typer.Option(30, help="Graceful shutdown timeout in seconds"),
 ) -> None:
     """Starts the Runtime as an HTTP daemon with health/metrics endpoints.
 
@@ -217,9 +205,8 @@ def serve(
         import uvicorn
     except ImportError:
         typer.secho(
-            "serve requires uvicorn; install with: pip install underwrite[serve]",
-            err=True,
-            fg=typer.colors.RED)
+            "serve requires uvicorn; install with: pip install underwrite[serve]", err=True, fg=typer.colors.RED
+        )
         raise typer.Exit(code=1) from None
 
     config = load_config()

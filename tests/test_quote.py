@@ -5,6 +5,8 @@ Tests verify behavior through emitted QUOTE_CALCULATED events.
 
 from __future__ import annotations
 
+import pytest
+
 from underwrite.__bus__ import LocalBus
 from underwrite.__events__ import Event, EventType
 from underwrite.services.quote.service import QuoteService
@@ -28,7 +30,6 @@ def emit_quote(svc, **overrides) -> None:
 
 
 class TestProtocolPremium:
-
     def test_calculates_protocol_premium(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
@@ -55,10 +56,9 @@ class TestProtocolPremium:
         svc = quote(bus=bus)
         bus.start()
         from underwrite.__exceptions__ import ProtocolError
-        try:
+
+        with pytest.raises(ProtocolError):
             emit_quote(svc, principal=10000, term=0, protocol_rate=0.10)
-        except ProtocolError:
-            pass
         assert len(received) == 0
 
     def test_zero_rate_zero_premium(self) -> None:
@@ -81,7 +81,6 @@ class TestProtocolPremium:
 
 
 class TestBreakEvenRate:
-
     def test_normal_dp_gives_positive_break_even(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
@@ -130,20 +129,21 @@ class TestBreakEvenRate:
 
 
 class TestFieldPassthrough:
-
     def test_all_input_fields_in_output(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
         bus.subscribe(EventType.QUOTE_CALCULATED, lambda e: received.append(e))
         svc = quote(bus=bus)
         bus.start()
-        emit_quote(svc,
-                   borrower="frank",
-                   principal=20000,
-                   term=24,
-                   default_probability=0.03,
-                   protocol_rate=0.12,
-                   max_delegation_rate=0.06)
+        emit_quote(
+            svc,
+            borrower="frank",
+            principal=20000,
+            term=24,
+            default_probability=0.03,
+            protocol_rate=0.12,
+            max_delegation_rate=0.06,
+        )
         p = received[0].payload
         assert p["borrower"] == "frank"
         assert p["principal"] == 20000.0
@@ -158,10 +158,7 @@ class TestFieldPassthrough:
         bus.subscribe(EventType.QUOTE_CALCULATED, lambda e: received.append(e))
         svc = quote(bus=bus)
         bus.start()
-        svc.handle(
-            Event(event_type="quote",
-                  source="test",
-                  payload={"borrower": "grace"}))
+        svc.handle(Event(event_type="quote", source="test", payload={"borrower": "grace"}))
         p = received[0].payload
         assert p["principal"] == 0.0
         assert p["term"] == 1.0
@@ -171,7 +168,6 @@ class TestFieldPassthrough:
 
 
 class TestEdgeCases:
-
     def test_ignores_non_quote_events(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
@@ -179,8 +175,7 @@ class TestEdgeCases:
         svc = quote(bus=bus)
         bus.start()
         svc.handle(Event(event_type="seed.added", source="test", payload={}))
-        svc.handle(
-            Event(event_type="loan.originated", source="test", payload={}))
+        svc.handle(Event(event_type="loan.originated", source="test", payload={}))
         assert len(received) == 0
 
     def test_string_values_converted(self) -> None:
@@ -190,15 +185,18 @@ class TestEdgeCases:
         svc = quote(bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type="quote",
-                  source="test",
-                  payload={
-                      "borrower": "h",
-                      "principal": "5000",
-                      "term": "6",
-                      "default_probability": "0.04",
-                      "protocol_rate": "0.08",
-                  }))
+            Event(
+                event_type="quote",
+                source="test",
+                payload={
+                    "borrower": "h",
+                    "principal": "5000",
+                    "term": "6",
+                    "default_probability": "0.04",
+                    "protocol_rate": "0.08",
+                },
+            )
+        )
         assert received[0].payload["principal"] == 5000.0
         assert received[0].payload["term"] == 6.0
         assert received[0].payload["default_probability"] == 0.04

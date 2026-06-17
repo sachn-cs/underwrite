@@ -25,26 +25,19 @@ def graph(store_data: dict[str, Any], bus=None) -> GraphService:
 
 
 class TestPathQuery:
-
     def test_path_from_leaf_to_seed(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
         bus.subscribe("graph_path_result", lambda e: received.append(e))
         svc = graph(
             {
-                "parent": {
-                    "alice": "bank",
-                    "bob": "alice"
-                },
+                "parent": {"alice": "bank", "bob": "alice"},
                 "seeds": ["bank"],
             },
             bus=bus,
         )
         bus.start()
-        svc.handle(
-            Event(event_type="graph_path",
-                  source="test",
-                  payload={"user": "bob"}))
+        svc.handle(Event(event_type="graph_path", source="test", payload={"user": "bob"}))
         assert received[0].payload["path"] == ["bank", "alice", "bob"]
 
     def test_path_for_seed_itself(self) -> None:
@@ -53,10 +46,7 @@ class TestPathQuery:
         bus.subscribe("graph_path_result", lambda e: received.append(e))
         svc = graph({"parent": {}, "seeds": ["bank"]}, bus=bus)
         bus.start()
-        svc.handle(
-            Event(event_type="graph_path",
-                  source="test",
-                  payload={"user": "bank"}))
+        svc.handle(Event(event_type="graph_path", source="test", payload={"user": "bank"}))
         assert received[0].payload["path"] == ["bank"]
 
     def test_path_for_unknown_user_returns_singleton(self) -> None:
@@ -65,10 +55,7 @@ class TestPathQuery:
         bus.subscribe("graph_path_result", lambda e: received.append(e))
         svc = graph({"parent": {}, "seeds": ["bank"]}, bus=bus)
         bus.start()
-        svc.handle(
-            Event(event_type="graph_path",
-                  source="test",
-                  payload={"user": "ghost"}))
+        svc.handle(Event(event_type="graph_path", source="test", payload={"user": "ghost"}))
         assert received[0].payload["path"] == ["ghost"]
 
     def test_path_with_broken_chain(self) -> None:
@@ -77,18 +64,13 @@ class TestPathQuery:
         bus.subscribe("graph_path_result", lambda e: received.append(e))
         svc = graph(
             {
-                "parent": {
-                    "alice": "bank"
-                },
+                "parent": {"alice": "bank"},
                 "seeds": ["bank"],
             },
             bus=bus,
         )
         bus.start()
-        svc.handle(
-            Event(event_type="graph_path",
-                  source="test",
-                  payload={"user": "orphan"}))
+        svc.handle(Event(event_type="graph_path", source="test", payload={"user": "orphan"}))
         assert received[0].payload["path"] == ["orphan"]
 
     def test_empty_state_path(self) -> None:
@@ -97,29 +79,20 @@ class TestPathQuery:
         bus.subscribe("graph_path_result", lambda e: received.append(e))
         svc = graph({}, bus=bus)
         bus.start()
-        svc.handle(
-            Event(event_type="graph_path",
-                  source="test",
-                  payload={"user": "x"}))
+        svc.handle(Event(event_type="graph_path", source="test", payload={"user": "x"}))
         assert received[0].payload["path"] == ["x"]
 
 
 class TestCreditLimitQuery:
-
     def test_credit_limit_for_seed(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe("graph_credit_limit_result",
-                      lambda e: received.append(e))
+        bus.subscribe("graph_credit_limit_result", lambda e: received.append(e))
         svc = graph(
             {
                 "seeds": ["bank"],
-                "base_budget": {
-                    "bank": 100000
-                },
-                "earned": {
-                    "bank": 5000
-                },
+                "base_budget": {"bank": 100000},
+                "earned": {"bank": 5000},
                 "parent": {},
                 "delegation": {},
                 "children": {},
@@ -127,92 +100,58 @@ class TestCreditLimitQuery:
             bus=bus,
         )
         bus.start()
-        svc.handle(
-            Event(event_type="graph_credit_limit",
-                  source="test",
-                  payload={"user": "bank"}))
+        svc.handle(Event(event_type="graph_credit_limit", source="test", payload={"user": "bank"}))
         assert received[0].payload["credit_limit"] == 105000.0
 
     def test_credit_limit_for_user(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe("graph_credit_limit_result",
-                      lambda e: received.append(e))
+        bus.subscribe("graph_credit_limit_result", lambda e: received.append(e))
         svc = graph(
             {
                 "seeds": ["bank"],
-                "base_budget": {
-                    "bank": 100000
-                },
-                "earned": {
-                    "alice": 3000
-                },
-                "parent": {
-                    "alice": "bank"
-                },
-                "delegation": {
-                    "bank->alice": 50000
-                },
-                "children": {
-                    "bank": ["alice"]
-                },
+                "base_budget": {"bank": 100000},
+                "earned": {"alice": 3000},
+                "parent": {"alice": "bank"},
+                "delegation": {"bank->alice": 50000},
+                "children": {"bank": ["alice"]},
             },
             bus=bus,
         )
         bus.start()
-        svc.handle(
-            Event(event_type="graph_credit_limit",
-                  source="test",
-                  payload={"user": "alice"}))
+        svc.handle(Event(event_type="graph_credit_limit", source="test", payload={"user": "alice"}))
         assert received[0].payload["credit_limit"] == 53000.0
 
     def test_credit_limit_with_outgoing_delegation(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe("graph_credit_limit_result",
-                      lambda e: received.append(e))
+        bus.subscribe("graph_credit_limit_result", lambda e: received.append(e))
         svc = graph(
             {
                 "seeds": ["bank"],
-                "base_budget": {
-                    "bank": 100000
-                },
-                "earned": {
-                    "bank": 0
-                },
+                "base_budget": {"bank": 100000},
+                "earned": {"bank": 0},
                 "parent": {},
-                "delegation": {
-                    "bank->alice": 30000
-                },
-                "children": {
-                    "bank": ["alice"]
-                },
+                "delegation": {"bank->alice": 30000},
+                "children": {"bank": ["alice"]},
             },
             bus=bus,
         )
         bus.start()
-        svc.handle(
-            Event(event_type="graph_credit_limit",
-                  source="test",
-                  payload={"user": "bank"}))
+        svc.handle(Event(event_type="graph_credit_limit", source="test", payload={"user": "bank"}))
         assert received[0].payload["credit_limit"] == 70000.0
 
     def test_empty_state_returns_zero(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe("graph_credit_limit_result",
-                      lambda e: received.append(e))
+        bus.subscribe("graph_credit_limit_result", lambda e: received.append(e))
         svc = graph({}, bus=bus)
         bus.start()
-        svc.handle(
-            Event(event_type="graph_credit_limit",
-                  source="test",
-                  payload={"user": "x"}))
+        svc.handle(Event(event_type="graph_credit_limit", source="test", payload={"user": "x"}))
         assert received[0].payload["credit_limit"] == 0.0
 
 
 class TestUsersQuery:
-
     def test_returns_sorted_users(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
@@ -233,7 +172,6 @@ class TestUsersQuery:
 
 
 class TestEdgeCases:
-
     def test_ignores_unknown_event_type(self) -> None:
         svc = graph({})
         svc.handle(Event(event_type="unrelated", source="test", payload={}))

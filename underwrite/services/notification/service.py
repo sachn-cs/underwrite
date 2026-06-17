@@ -20,9 +20,10 @@ class NotificationService(NanoService):
     """
 
     def __init__(self, **kwargs: Any) -> None:
+        """Initialize the notification service with a thread pool executor."""
         super().__init__(**kwargs)
-        self.__executor: concurrent.futures.ThreadPoolExecutor | None = (
-            concurrent.futures.ThreadPoolExecutor(max_workers=4)
+        self.__executor: concurrent.futures.ThreadPoolExecutor | None = concurrent.futures.ThreadPoolExecutor(
+            max_workers=4
         )
         self.handlers: dict[str, Any] = {
             EventType.FRAUD_ALERT: self.__on_notify_event,
@@ -36,20 +37,28 @@ class NotificationService(NanoService):
     def stop(self) -> None:
         """Shut down the thread pool executor."""
         if self.__executor is not None:
-            self.__executor.shutdown(wait=False)
+            self.__executor.shutdown(wait=True)
             self.__executor = None
         super().stop()
 
     def handle(self, event: Event) -> None:
+        """Dispatch a notification event to the handler.
+
+        Args:
+            event: The incoming notification event.
+        """
         handler = self.handlers.get(event.event_type)
         if handler is not None:
             handler(event)
 
     def __on_notify_event(self, event: Event) -> None:
+        """Submit a notification dispatch to the thread pool.
+
+        Args:
+            event: The event to notify about.
+        """
         if self.__executor is None:
-            logger.warning(
-                "notification executor not available, dispatching synchronously"
-            )
+            logger.warning("notification executor not available, dispatching synchronously")
             self.__dispatch_notification(event)
             return
         self.__executor.submit(self.__dispatch_notification, event)
@@ -75,12 +84,8 @@ class NotificationService(NanoService):
 
             log_data = f"event={event_type} recipient={recipient}"
 
-            email_enabled = (
-                os.environ.get("NOTIFICATION_EMAIL_ENABLED", "false").lower() == "true"
-            )
-            sms_enabled = (
-                os.environ.get("NOTIFICATION_SMS_ENABLED", "false").lower() == "true"
-            )
+            email_enabled = os.environ.get("NOTIFICATION_EMAIL_ENABLED", "false").lower() == "true"
+            sms_enabled = os.environ.get("NOTIFICATION_SMS_ENABLED", "false").lower() == "true"
 
             if email_enabled:
                 self.__send_email(recipient, event_type, payload)
@@ -94,9 +99,7 @@ class NotificationService(NanoService):
         except Exception:
             logger.exception("failed to dispatch notification for %s", event.event_id)
 
-    def __send_email(
-        self, recipient: str, event_type: str, payload: dict[str, Any]
-    ) -> None:
+    def __send_email(self, recipient: str, event_type: str, payload: dict[str, Any]) -> None:
         """Send an email notification via SES or log.
 
         Args:
@@ -124,9 +127,7 @@ class NotificationService(NanoService):
         else:
             logger.info("email to %s: [%s] %s", recipient, event_type, payload)
 
-    def __send_sms(
-        self, recipient: str, event_type: str, payload: dict[str, Any]
-    ) -> None:
+    def __send_sms(self, recipient: str, event_type: str, payload: dict[str, Any]) -> None:
         """Send an SMS notification via Twilio or log.
 
         Args:
@@ -139,14 +140,11 @@ class NotificationService(NanoService):
         from_number = os.environ.get("TWILIO_FROM_NUMBER", "")
         if account_sid and auth_token and from_number:
             try:
-                try:
-                    from twilio.rest import Client
-                except ImportError:
-                    logger.warning(
-                        "twilio not installed; install underwrite[notify] "
-                        "or pip install twilio"
-                    )
-                    return
+                from twilio.rest import Client
+            except ImportError:
+                logger.warning("twilio not installed; install underwrite[notify] or pip install twilio")
+                return
+            try:
                 client = Client(account_sid, auth_token)
                 client.messages.create(
                     body=f"Underwrite Alert ({event_type}): {payload}",

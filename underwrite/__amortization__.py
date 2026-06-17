@@ -16,7 +16,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 DAYS_IN_YEAR = Decimal("365")
@@ -25,7 +25,7 @@ DAYS_IN_MONTH = Decimal("30.4167")
 
 def _round_money(amount: Decimal, places: int = 2) -> Decimal:
     """Round to the given number of decimal places using HALF_UP."""
-    return amount.quantize(Decimal(10)**-places, rounding=ROUND_HALF_UP)
+    return amount.quantize(Decimal(10) ** -places, rounding=ROUND_HALF_UP)
 
 
 def _as_decimal(value: float | str | Decimal) -> Decimal:
@@ -66,32 +66,28 @@ class AmortizationSchedule:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "principal":
-            float(self.principal),
-            "annual_interest_rate":
-            float(self.annual_interest_rate),
-            "tenure_months":
-            self.tenure_months,
-            "emi":
-            float(self.emi),
-            "entries": [{
-                "instalment_no": e.instalment_no,
-                "due_date": e.due_date.isoformat(),
-                "emi_amount": float(e.emi_amount),
-                "interest_component": float(e.interest_component),
-                "principal_component": float(e.principal_component),
-                "outstanding_principal": float(e.outstanding_principal),
-                "total_interest_paid": float(e.total_interest_paid),
-            } for e in self.entries],
-            "total_interest":
-            float(self.total_interest),
-            "total_repayment":
-            float(self.total_repayment),
+            "principal": float(self.principal),
+            "annual_interest_rate": float(self.annual_interest_rate),
+            "tenure_months": self.tenure_months,
+            "emi": float(self.emi),
+            "entries": [
+                {
+                    "instalment_no": e.instalment_no,
+                    "due_date": e.due_date.isoformat(),
+                    "emi_amount": float(e.emi_amount),
+                    "interest_component": float(e.interest_component),
+                    "principal_component": float(e.principal_component),
+                    "outstanding_principal": float(e.outstanding_principal),
+                    "total_interest_paid": float(e.total_interest_paid),
+                }
+                for e in self.entries
+            ],
+            "total_interest": float(self.total_interest),
+            "total_repayment": float(self.total_repayment),
         }
 
 
-def calculate_emi(principal: Decimal, annual_rate: Decimal,
-                  tenure_months: int) -> Decimal:
+def calculate_emi(principal: Decimal, annual_rate: Decimal, tenure_months: int) -> Decimal:
     """Calculate EMI using the standard formula.
 
     EMI = P × r × (1+r)^n / ((1+r)^n - 1)
@@ -113,17 +109,18 @@ def calculate_emi(principal: Decimal, annual_rate: Decimal,
     monthly_rate = annual_rate / Decimal("1200")
     if monthly_rate == 0:
         return _round_money(principal / Decimal(tenure_months))
-    factor = (Decimal("1") + monthly_rate)**tenure_months
+    factor = (Decimal("1") + monthly_rate) ** tenure_months
     emi = principal * monthly_rate * factor / (factor - Decimal("1"))
     return _round_money(emi)
 
 
 def generate_schedule(
-        principal: Decimal,
-        annual_rate: Decimal,
-        tenure_months: int,
-        start_date: date | None = None,
-        emi_override: Decimal | None = None) -> AmortizationSchedule:
+    principal: Decimal,
+    annual_rate: Decimal,
+    tenure_months: int,
+    start_date: date | None = None,
+    emi_override: Decimal | None = None,
+) -> AmortizationSchedule:
     """Generate a full EMI amortization schedule.
 
     Uses monthly-reducing balance (standard Indian banking convention).
@@ -187,7 +184,8 @@ def generate_schedule(
                 principal_component=_round_money(principal_due),
                 outstanding_principal=_round_money(outstanding),
                 total_interest_paid=_round_money(cumulative_interest),
-            ))
+            )
+        )
         m = due.month + 1
         y = due.year
         if m > 12:
@@ -221,11 +219,13 @@ class OutstandingBreakdown:
     days_overdue: int
 
 
-def project_outstanding(principal: Decimal,
-                        annual_rate: Decimal,
-                        tenure_months: int,
-                        payments_made: list[tuple[date, Decimal]],
-                        as_of: date | None = None) -> OutstandingBreakdown:
+def project_outstanding(
+    principal: Decimal,
+    annual_rate: Decimal,
+    tenure_months: int,
+    payments_made: list[tuple[date, Decimal]],
+    as_of: date | None = None,
+) -> OutstandingBreakdown:
     """Project outstanding principal and accrued interest given payments.
 
     Uses daily-reducing balance for accrued interest calculation.
@@ -311,13 +311,13 @@ class ForeclosureQuote:
 
 
 def calculate_foreclosure(
-        principal: Decimal,
-        annual_rate: Decimal,
-        tenure_months: int,
-        payments_made: list[tuple[date, Decimal]],
-        as_of: date | None = None,
-        penalty_rate: Decimal = Decimal("0"),
-        original_schedule: AmortizationSchedule | None = None
+    principal: Decimal,
+    annual_rate: Decimal,
+    tenure_months: int,
+    payments_made: list[tuple[date, Decimal]],
+    as_of: date | None = None,
+    penalty_rate: Decimal = Decimal("0"),
+    original_schedule: AmortizationSchedule | None = None,
 ) -> ForeclosureQuote:
     """Calculate full prepayment (foreclosure) amount.
 
@@ -337,16 +337,14 @@ def calculate_foreclosure(
     Returns:
         ForeclosureQuote with breakdown.
     """
-    outstanding = project_outstanding(principal, annual_rate, tenure_months,
-                                      payments_made, as_of)
-    penalty = _round_money(outstanding.total_outstanding * penalty_rate /
-                           Decimal("100"))
+    outstanding = project_outstanding(principal, annual_rate, tenure_months, payments_made, as_of)
+    penalty = _round_money(outstanding.total_outstanding * penalty_rate / Decimal("100"))
     total_due = _round_money(outstanding.total_outstanding + penalty)
 
     interest_already = outstanding.accrued_interest
     total_schedule_interest = sum(
-        e.interest_component
-        for e in (original_schedule.entries if original_schedule else []))
+        e.interest_component for e in (original_schedule.entries if original_schedule else [])
+    )
     if total_schedule_interest > 0:
         interest_remaining = total_schedule_interest - interest_already
         if interest_remaining < Decimal("0"):
@@ -356,8 +354,7 @@ def calculate_foreclosure(
     savings = _round_money(interest_remaining)
     savings_pct = Decimal("0")
     if total_schedule_interest > 0:
-        savings_pct = _round_money(savings / total_schedule_interest *
-                                   Decimal("100"))
+        savings_pct = _round_money(savings / total_schedule_interest * Decimal("100"))
 
     return ForeclosureQuote(
         outstanding_principal=outstanding.principal_outstanding,

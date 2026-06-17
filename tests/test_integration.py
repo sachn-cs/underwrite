@@ -53,13 +53,12 @@ class TestRuntimeIntegration:
         svc = rt.get("mechanism")
         assert svc is not None
         svc.handle(
-            Event(event_type="mechanism",
-                  source="test",
-                  payload={
-                      "command": "add_seed",
-                      "user": "bank",
-                      "base_budget": 100000
-                  }))
+            Event(
+                event_type="mechanism",
+                source="test",
+                payload={"command": "add_seed", "user": "bank", "base_budget": 100000},
+            )
+        )
         assert any(e.event_type == EventType.SEED_ADDED for e in received)
 
     def test_store_persists_across_start_stop(self) -> None:
@@ -72,13 +71,12 @@ class TestRuntimeIntegration:
         svc = rt.get("mechanism")
         assert svc is not None
         svc.handle(
-            Event(event_type="mechanism",
-                  source="test",
-                  payload={
-                      "command": "add_seed",
-                      "user": "bank",
-                      "base_budget": 100000
-                  }))
+            Event(
+                event_type="mechanism",
+                source="test",
+                payload={"command": "add_seed", "user": "bank", "base_budget": 100000},
+            )
+        )
         orig_state = rt.store.get("protocol:state")
         rt.stop()
         assert orig_state is not None
@@ -94,12 +92,10 @@ class TestRuntimeIntegration:
         bus.start()
         rt.start(["audit"])
         bus.publish(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "alice",
-                      "principal": 10000
-                  }))
+            Event(
+                event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "alice", "principal": 10000}
+            )
+        )
         audit = cast(Any, rt.get("audit"))
         assert audit is not None
         assert len(audit.ledger) >= 1
@@ -119,13 +115,10 @@ class TestRuntimeIntegration:
         svc = rt.get("mechanism")
         assert svc is not None
         svc.handle(
-            Event(event_type="mechanism",
-                  source="test",
-                  payload={
-                      "command": "add_seed",
-                      "user": "bank",
-                      "base_budget": 0
-                  }))
+            Event(
+                event_type="mechanism", source="test", payload={"command": "add_seed", "user": "bank", "base_budget": 0}
+            )
+        )
         assert len(received) == 1
         assert received[0].payload["reason"] is not None
 
@@ -144,34 +137,34 @@ class TestRuntimeIntegration:
         assert svc is not None
 
         svc.handle(
-            Event(event_type="mechanism",
-                  source="test",
-                  payload={
-                      "command": "add_seed",
-                      "user": "bank",
-                      "base_budget": 1_000_000
-                  }))
+            Event(
+                event_type="mechanism",
+                source="test",
+                payload={"command": "add_seed", "user": "bank", "base_budget": 1_000_000},
+            )
+        )
         svc.handle(
-            Event(event_type="mechanism",
-                  source="test",
-                  payload={
-                      "command": "add_user",
-                      "sponsor": "bank",
-                      "user": "alice",
-                      "delegation_amount": 500_000
-                  }))
+            Event(
+                event_type="mechanism",
+                source="test",
+                payload={"command": "add_user", "sponsor": "bank", "user": "alice", "delegation_amount": 500_000},
+            )
+        )
         svc.handle(
-            Event(event_type="mechanism",
-                  source="test",
-                  payload={
-                      "command": "originate",
-                      "borrower": "alice",
-                      "principal": 100000,
-                      "term": 12,
-                      "default_probability": 0.02,
-                      "protocol_rate": 0.10,
-                      "max_delegation_rate": 0.05
-                  }))
+            Event(
+                event_type="mechanism",
+                source="test",
+                payload={
+                    "command": "originate",
+                    "borrower": "alice",
+                    "principal": 100000,
+                    "term": 12,
+                    "default_probability": 0.02,
+                    "protocol_rate": 0.10,
+                    "max_delegation_rate": 0.05,
+                },
+            )
+        )
 
         emitted = {e.event_type for e in all_events}
         assert EventType.SEED_ADDED in emitted
@@ -185,7 +178,6 @@ class TestRuntimeIntegration:
 
 
 class TestStoreIntegration:
-
     def test_memory_store_round_trip(self) -> None:
         store = MemoryStore()
         store.set("key", {"nested": [1, 2, 3]})
@@ -203,7 +195,6 @@ class TestStoreIntegration:
 
 
 class TestCrossServiceCommunication:
-
     def test_two_services_share_store(self) -> None:
         rt = memory_runtime()
         bus = rt.bus
@@ -216,13 +207,12 @@ class TestCrossServiceCommunication:
         svc = rt.get("mechanism")
         assert svc is not None
         svc.handle(
-            Event(event_type="mechanism",
-                  source="test",
-                  payload={
-                      "command": "add_seed",
-                      "user": "bank",
-                      "base_budget": 100000
-                  }))
+            Event(
+                event_type="mechanism",
+                source="test",
+                payload={"command": "add_seed", "user": "bank", "base_budget": 100000},
+            )
+        )
         state = rt.store.get("protocol:state")
         assert state is not None
         assert "bank" in state["seeds"]

@@ -18,16 +18,13 @@ def notify(bus=None) -> NotificationService:
 
 
 class TestNotificationService:
-
     def __assert_forwards(self, event_type: str, payload: dict) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe(EventType.NOTIFICATION_SENT,
-                      lambda e: received.append(e))
+        bus.subscribe(EventType.NOTIFICATION_SENT, lambda e: received.append(e))
         svc = notify(bus=bus)
         bus.start()
-        svc.handle(Event(event_type=event_type, source="test",
-                         payload=payload))
+        svc.handle(Event(event_type=event_type, source="test", payload=payload))
         assert len(received) == 1
         assert received[0].payload["original_event"] == event_type
         assert received[0].payload["payload"] == payload
@@ -36,46 +33,33 @@ class TestNotificationService:
         self.__assert_forwards(EventType.FRAUD_ALERT, {"borrower": "alice"})
 
     def test_forwards_wash_flag(self) -> None:
-        self.__assert_forwards(EventType.WASH_FLAG, {
-            "borrower": "bob",
-            "cycles": 5
-        })
+        self.__assert_forwards(EventType.WASH_FLAG, {"borrower": "bob", "cycles": 5})
 
     def test_forwards_velocity_flag(self) -> None:
         self.__assert_forwards(EventType.VELOCITY_FLAG, {"borrower": "carol"})
 
     def test_forwards_early_warning(self) -> None:
-        self.__assert_forwards(EventType.RISK_EARLY_WARNING, {
-            "borrower": "dave",
-            "dp": 0.35
-        })
+        self.__assert_forwards(EventType.RISK_EARLY_WARNING, {"borrower": "dave", "dp": 0.35})
 
     def test_forwards_npa_bucket_changed(self) -> None:
-        self.__assert_forwards(EventType.NPA_BUCKET_CHANGED, {
-            "borrower": "eve",
-            "bucket": "substandard"
-        })
+        self.__assert_forwards(EventType.NPA_BUCKET_CHANGED, {"borrower": "eve", "bucket": "substandard"})
 
     def test_forwards_dlg_triggered(self) -> None:
-        self.__assert_forwards(EventType.DLG_TRIGGERED, {
-            "loan_id": "frank",
-            "amount": 10000
-        })
+        self.__assert_forwards(EventType.DLG_TRIGGERED, {"loan_id": "frank", "amount": 10000})
 
     def test_ignores_non_alert_events(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe(EventType.NOTIFICATION_SENT,
-                      lambda e: received.append(e))
+        bus.subscribe(EventType.NOTIFICATION_SENT, lambda e: received.append(e))
         svc = notify(bus=bus)
         bus.start()
         for et in [
-                EventType.SEED_ADDED,
-                EventType.USER_ADDED,
-                EventType.QUOTE_CALCULATED,
-                EventType.LOAN_ORIGINATED,
-                EventType.REPAID,
-                EventType.GOVERNANCE_EXECUTED,
+            EventType.SEED_ADDED,
+            EventType.USER_ADDED,
+            EventType.QUOTE_CALCULATED,
+            EventType.LOAN_ORIGINATED,
+            EventType.REPAID,
+            EventType.GOVERNANCE_EXECUTED,
         ]:
             svc.handle(Event(event_type=et, source="test", payload={}))
         assert len(received) == 0
@@ -92,8 +76,7 @@ class TestNotificationService:
         for at in alert_types:
             bus = LocalBus()
             received: list[Event] = []
-            bus.subscribe(EventType.NOTIFICATION_SENT,
-                          lambda e: received.append(e))
+            bus.subscribe(EventType.NOTIFICATION_SENT, lambda e, r=received: r.append(e))
             svc = notify(bus=bus)
             bus.start()
             svc.handle(Event(event_type=at, source="test", payload={"k": "v"}))
@@ -105,48 +88,38 @@ class TestNotificationService:
 
     def test_dispatch_notification_logs_borrower_recipient(self) -> None:
         svc = notify()
-        event = Event(event_type=EventType.FRAUD_ALERT,
-                      source="test",
-                      payload={"borrower": "alice"})
+        event = Event(event_type=EventType.FRAUD_ALERT, source="test", payload={"borrower": "alice"})
         with patch.object(
-                svc.
-                _NotificationService__executor,  # type: ignore[attr-defined]
-                "submit") as mock_submit:
+            svc._NotificationService__executor,  # type: ignore[attr-defined]
+            "submit",
+        ) as mock_submit:
             svc.handle(event)
             assert mock_submit.call_count == 1
 
     def test_dispatch_falls_back_to_user_recipient(self) -> None:
         svc = notify()
-        event = Event(event_type=EventType.FRAUD_ALERT,
-                      source="test",
-                      payload={"user": "bob"})
+        event = Event(event_type=EventType.FRAUD_ALERT, source="test", payload={"user": "bob"})
         with patch.object(
-                svc.
-                _NotificationService__executor,  # type: ignore[attr-defined]
-                "submit") as mock_submit:
+            svc._NotificationService__executor,  # type: ignore[attr-defined]
+            "submit",
+        ) as mock_submit:
             svc.handle(event)
             assert mock_submit.call_count == 1
 
     def test_dispatch_logs_info_in_log_only_mode(self) -> None:
         svc = notify()
-        event = Event(event_type=EventType.WASH_FLAG,
-                      source="test",
-                      payload={
-                          "borrower": "carol",
-                          "cycles": 5
-                      })
+        event = Event(event_type=EventType.WASH_FLAG, source="test", payload={"borrower": "carol", "cycles": 5})
         with patch.object(
-                svc.
-                _NotificationService__executor,  # type: ignore[attr-defined]
-                "submit") as mock_submit:
+            svc._NotificationService__executor,  # type: ignore[attr-defined]
+            "submit",
+        ) as mock_submit:
             svc.handle(event)
             assert mock_submit.call_count == 1
 
     def test_notification_sent_before_dispatch_completes(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe(EventType.NOTIFICATION_SENT,
-                      lambda e: received.append(e))
+        bus.subscribe(EventType.NOTIFICATION_SENT, lambda e: received.append(e))
         svc = notify(bus=bus)
         bus.start()
         dispatched: list[bool] = []
@@ -158,15 +131,10 @@ class TestNotificationService:
             return result
 
         svc._NotificationService__executor.submit = delayed_submit  # type: ignore[attr-defined]
-        svc.handle(
-            Event(event_type=EventType.DLG_TRIGGERED,
-                  source="test",
-                  payload={
-                      "loan_id": "L1",
-                      "amount": 5000
-                  }))
+        svc.handle(Event(event_type=EventType.DLG_TRIGGERED, source="test", payload={"loan_id": "L1", "amount": 5000}))
         assert len(received) == 1
         import time
+
         time.sleep(0.05)
         assert len(dispatched) == 1
 
@@ -180,16 +148,11 @@ class TestNotificationService:
     def test_handle_passes_payload_to_notification_sent(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe(EventType.NOTIFICATION_SENT,
-                      lambda e: received.append(e))
+        bus.subscribe(EventType.NOTIFICATION_SENT, lambda e: received.append(e))
         svc = notify(bus=bus)
         bus.start()
         pl = {"borrower": "dave", "dp": 0.45}
-        svc.handle(
-            Event(event_type=EventType.RISK_EARLY_WARNING,
-                  source="test",
-                  payload=pl))
+        svc.handle(Event(event_type=EventType.RISK_EARLY_WARNING, source="test", payload=pl))
         assert len(received) == 1
-        assert received[0].payload[
-            "original_event"] == EventType.RISK_EARLY_WARNING
+        assert received[0].payload["original_event"] == EventType.RISK_EARLY_WARNING
         assert received[0].payload["payload"] == pl

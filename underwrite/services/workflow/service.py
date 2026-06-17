@@ -93,9 +93,7 @@ class WorkflowService(StatefulService):
         if entity_id:
             self.__advance_workflow(entity_id, event.correlation_id)
 
-    def __start_workflow(
-        self, workflow_type: str, entity_id: str, correlation_id: str = ""
-    ) -> None:
+    def __start_workflow(self, workflow_type: str, entity_id: str, correlation_id: str = "") -> None:
         """Start a new workflow in the store and emit WORKFLOW_STARTED.
 
         Args:

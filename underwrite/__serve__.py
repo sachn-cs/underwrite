@@ -29,9 +29,7 @@ from underwrite.__logger__ import logger
 __VALID_EVENT_TYPE_RE = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$")
 
 
-def __error_response(status_code: int,
-                     message: str,
-                     request_id: str = "") -> JSONResponse:
+def __error_response(status_code: int, message: str, request_id: str = "") -> JSONResponse:
     """Build a structured error envelope."""
     body: dict[str, Any] = {
         "error": message,
@@ -48,9 +46,7 @@ def try_instrument_fastapi(app: FastAPI) -> None:
 
         FastAPIInstrumentor().instrument(app=app)
     except ImportError:
-        logger.warning(
-            "opentelemetry-instrumentation-fastapi not installed; skipping OTel instrumentation"
-        )
+        logger.warning("opentelemetry-instrumentation-fastapi not installed; skipping OTel instrumentation")
 
 
 def try_register_prometheus(app: FastAPI, runtime: Any) -> None:
@@ -59,9 +55,7 @@ def try_register_prometheus(app: FastAPI, runtime: Any) -> None:
 
         app.add_middleware(PrometheusMiddleware, runtime=runtime)
     except ImportError:
-        logger.warning(
-            "prometheus_export module not found; Prometheus metrics disabled (install underwrite[serve])"
-        )
+        logger.warning("prometheus_export module not found; Prometheus metrics disabled (install underwrite[serve])")
 
 
 def create_app(
@@ -96,18 +90,13 @@ def create_app(
     import asyncio as asyncio_mod
     import time as time_mod
 
-    token: str = (api_token or os.environ.get("UNDERWRITE_API_TOKEN", "")
-                  or "")
+    token: str = api_token or os.environ.get("UNDERWRITE_API_TOKEN", "") or ""
     if require_auth and not token:
-        raise ValueError(
-            "UNDERWRITE_API_TOKEN must be set when --require-auth is used")
+        raise ValueError("UNDERWRITE_API_TOKEN must be set when --require-auth is used")
     if not require_auth and not token:
-        logger.warning(
-            "API authentication is DISABLED. Set UNDERWRITE_API_TOKEN or pass --require-auth in production."
-        )
+        logger.warning("API authentication is DISABLED. Set UNDERWRITE_API_TOKEN or pass --require-auth in production.")
 
-    app = FastAPI(title="underwrite",
-                  version=importlib.metadata.version("underwrite"))
+    app = FastAPI(title="underwrite", version=importlib.metadata.version("underwrite"))
 
     try_instrument_fastapi(app)
     try_register_prometheus(app, runtime)
@@ -115,8 +104,7 @@ def create_app(
     max_body_size: int = 1_048_576  # 1 MB
 
     @app.middleware("http")
-    async def body_size_middleware(request: Request,
-                                   call_next: Any) -> JSONResponse:
+    async def body_size_middleware(request: Request, call_next: Any) -> JSONResponse:
         cl = request.headers.get("content-length")
         if cl and cl.isdigit() and int(cl) > max_body_size:
             return __error_response(413, "request body too large")
@@ -155,8 +143,7 @@ def create_app(
             now = time_mod.monotonic()
             elapsed = now - bucket_last
             bucket_last = now
-            bucket_tokens = min(float(rate_limit),
-                                bucket_tokens + elapsed * rate_limit)
+            bucket_tokens = min(float(rate_limit), bucket_tokens + elapsed * rate_limit)
             if bucket_tokens < 1.0:
                 return __error_response(429, "rate limit exceeded")
             bucket_tokens -= 1.0
@@ -176,8 +163,7 @@ def create_app(
                 timeout=shutdown_timeout,
             )
         except asyncio.TimeoutError:
-            logger.warning("runtime stop timed out after %ds",
-                           shutdown_timeout)
+            logger.warning("runtime stop timed out after %ds", shutdown_timeout)
 
     # -- unversioned load-balancer probes ------------------------------------
 
@@ -206,8 +192,7 @@ def create_app(
         summary="System health",
         description="Returns the health status of all registered subsystems "
         "(bus, store, services, etc.).  Useful for load balancer probes.",
-        response_description=
-        "A dict mapping subsystem name to its health status.",
+        response_description="A dict mapping subsystem name to its health status.",
     )
     async def v1_health_endpoint() -> dict:
         return runtime.health.status()
@@ -230,9 +215,7 @@ def create_app(
                 media_type="text/plain; version=0.0.4",
             )
         except ImportError:
-            return __error_response(
-                501,
-                "prometheus export not available; install underwrite[serve]")
+            return __error_response(501, "prometheus export not available; install underwrite[serve]")
 
     @app.post(
         "/v1/publish",
@@ -261,8 +244,7 @@ def create_app(
                     payload=body.get("payload", {}),
                     correlation_id=body.get("correlation_id", ""),
                 )
-            return JSONResponse(status_code=202,
-                                content={"status": "accepted"})
+            return JSONResponse(status_code=202, content={"status": "accepted"})
         except ProtocolError:
             return __error_response(400, "invalid request")
         except Exception:
@@ -292,8 +274,6 @@ def create_app(
                 media_type="text/plain; version=0.0.4",
             )
         except ImportError:
-            return __error_response(
-                501,
-                "prometheus export not available; install underwrite[serve]")
+            return __error_response(501, "prometheus export not available; install underwrite[serve]")
 
     return app

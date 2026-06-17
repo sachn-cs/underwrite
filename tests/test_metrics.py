@@ -6,7 +6,6 @@ from underwrite.__metrics__ import MetricsCollector
 
 
 class TestMetricsCollector:
-
     def test_counter_default_zero(self) -> None:
         mc = MetricsCollector()
         snap = mc.snapshot()

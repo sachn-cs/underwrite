@@ -14,23 +14,18 @@ def reporting() -> ReportingService:
 
 
 class TestReportingService:
-
     def test_records_events(self) -> None:
         svc = reporting()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "alice",
-                      "principal": 10000
-                  }))
+            Event(
+                event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "alice", "principal": 10000}
+            )
+        )
         svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={
-                      "borrower": "alice",
-                      "principal": 10000
-                  }))
+            Event(
+                event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "alice", "principal": 10000}
+            )
+        )
         report = svc.generate_report()
         assert report["total_originations"] == 1
         assert report["total_defaults"] == 1
@@ -39,20 +34,20 @@ class TestReportingService:
         svc = reporting()
         for i in range(10):
             svc.handle(
-                Event(event_type=EventType.LOAN_ORIGINATED,
-                      source="test",
-                      payload={
-                          "borrower": f"b{i}",
-                          "principal": 10000
-                      }))
+                Event(
+                    event_type=EventType.LOAN_ORIGINATED,
+                    source="test",
+                    payload={"borrower": f"b{i}", "principal": 10000},
+                )
+            )
         for i in range(3):
             svc.handle(
-                Event(event_type=EventType.DEFAULT_OCCURRED,
-                      source="test",
-                      payload={
-                          "borrower": f"b{i}",
-                          "principal": 10000
-                      }))
+                Event(
+                    event_type=EventType.DEFAULT_OCCURRED,
+                    source="test",
+                    payload={"borrower": f"b{i}", "principal": 10000},
+                )
+            )
         report = svc.generate_report()
         assert report["total_originations"] == 10
         assert report["total_defaults"] == 3
@@ -61,19 +56,11 @@ class TestReportingService:
     def test_total_principal_originated(self) -> None:
         svc = reporting()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "a",
-                      "principal": 50000
-                  }))
+            Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "a", "principal": 50000})
+        )
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "b",
-                      "principal": 150000
-                  }))
+            Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "b", "principal": 150000})
+        )
         report = svc.generate_report()
         assert report["total_principal_originated"] == 200000.0
 
@@ -99,12 +86,8 @@ class TestReportingService:
     def test_default_rate_with_no_originations(self) -> None:
         svc = reporting()
         svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={
-                      "borrower": "a",
-                      "principal": 10000
-                  }))
+            Event(event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "a", "principal": 10000})
+        )
         report = svc.generate_report()
         assert report["total_originations"] == 0
         assert report["default_rate"] == 1.0
@@ -119,7 +102,6 @@ class TestReportingService:
 
 
 class TestReportingNpaReport:
-
     def test_generate_npa_report_defaults(self) -> None:
         svc = reporting()
         report = svc.generate_npa_report()
@@ -135,10 +117,9 @@ class TestReportingNpaReport:
             Event(
                 event_type=EventType.NPA_BUCKET_CHANGED,
                 source="npa",
-                payload={
-                    "borrower": "b1",
-                    "bucket": "substandard"
-                }))
+                payload={"borrower": "b1", "bucket": "substandard"},
+            )
+        )
         report = svc.generate_npa_report()
         assert report["bucket_counts"]["substandard"] == 1
         assert report["bucket_counts"]["standard"] == 0
@@ -155,7 +136,9 @@ class TestReportingNpaReport:
                     "outstanding": 100000.0,
                     "provisioning_rate": 0.15,
                     "provisioning_amount": 15000.0,
-                }))
+                },
+            )
+        )
         svc.handle(
             Event(
                 event_type=EventType.PROVISIONING_COMPUTED,
@@ -166,7 +149,9 @@ class TestReportingNpaReport:
                     "outstanding": 50000.0,
                     "provisioning_rate": 1.0,
                     "provisioning_amount": 50000.0,
-                }))
+                },
+            )
+        )
         report = svc.generate_npa_report()
         assert report["total_provisioning"] == 65000.0
         assert report["bucket_principals"]["loss"] == 50000.0
@@ -178,10 +163,9 @@ class TestReportingNpaReport:
             Event(
                 event_type=EventType.NPA_BUCKET_CHANGED,
                 source="npa",
-                payload={
-                    "borrower": "b4",
-                    "bucket": "substandard"
-                }))
+                payload={"borrower": "b4", "bucket": "substandard"},
+            )
+        )
         svc.handle(
             Event(
                 event_type=EventType.PROVISIONING_COMPUTED,
@@ -192,19 +176,17 @@ class TestReportingNpaReport:
                     "outstanding": 100000.0,
                     "provisioning_rate": 0.15,
                     "provisioning_amount": 15000.0,
-                }))
+                },
+            )
+        )
         report = svc.generate_npa_report()
         assert report["provisioning_coverage_ratio"] == 0.15
 
     def test_npa_ratio(self) -> None:
         svc = reporting()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "a",
-                      "principal": 500000
-                  }))
+            Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "a", "principal": 500000})
+        )
         svc.handle(
             Event(
                 event_type=EventType.PROVISIONING_COMPUTED,
@@ -215,6 +197,8 @@ class TestReportingNpaReport:
                     "outstanding": 50000.0,
                     "provisioning_rate": 0.25,
                     "provisioning_amount": 12500.0,
-                }))
+                },
+            )
+        )
         report = svc.generate_npa_report()
         assert report["npa_ratio"] == 0.1

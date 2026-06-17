@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
+
 from underwrite.__tracer__ import ConsoleSpanExporter, Span, Tracer
 
 
 class TestTracer:
-
     def test_start_span_creates_span(self) -> None:
         t = Tracer(service_id="test")
         span = t.start_span("op1")
@@ -35,11 +36,9 @@ class TestTracer:
 
     def test_trace_context_manager_records_exception(self) -> None:
         t = Tracer(service_id="test")
-        try:
+        with pytest.raises(ValueError):
             with t.trace("fail_op"):
                 raise ValueError("bad")
-        except ValueError:
-            pass
         assert len(t.spans) == 1
         assert t.spans[0].error != ""
 
@@ -47,12 +46,10 @@ class TestTracer:
         exported: list = []
 
         class CaptureExporter:
-
             def export(self, spans: list) -> None:
                 exported.extend(spans)
 
-        t = Tracer(service_id="test",
-                   exporter=CaptureExporter())  # type: ignore[arg-type]
+        t = Tracer(service_id="test", exporter=CaptureExporter())  # type: ignore[arg-type]
         span = t.start_span("op1")
         t.end_span(span)
         assert len(exported) == 1
@@ -82,14 +79,14 @@ class TestTracer:
         exported: list = []
 
         class CaptureExporter:
-
             def export(self, spans: list) -> None:
                 exported.append(len(spans))
 
         t = Tracer(
             service_id="test",
             exporter=CaptureExporter(),  # type: ignore[arg-type]
-            max_spans=2)
+            max_spans=2,
+        )
         for i in range(4):
             span = t.start_span(f"op{i}")
             t.end_span(span)
@@ -103,14 +100,8 @@ class TestTracer:
 
 
 class TestConsoleSpanExporter:
-
     def test_export_does_not_raise(self) -> None:
         exporter = ConsoleSpanExporter()
-        span = Span(trace_id="t",
-                    span_id="s",
-                    parent_span_id="p",
-                    service_id="svc",
-                    operation="op",
-                    start_ms=0.0)
+        span = Span(trace_id="t", span_id="s", parent_span_id="p", service_id="svc", operation="op", start_ms=0.0)
         span.end_ms = 1.0
         exporter.export([span])

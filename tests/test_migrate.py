@@ -9,7 +9,6 @@ from underwrite.__migrate__ import Migration, MigrationPlan, default_plan
 
 
 class TestMigrationPlan:
-
     def test_empty_plan(self) -> None:
         plan = MigrationPlan()
         assert plan.latest_version == 0
@@ -32,8 +31,7 @@ class TestMigrationPlan:
     def test_duplicate_version_raises(self) -> None:
         plan = MigrationPlan()
         plan.add(Migration(version=1, description="first"))
-        with pytest.raises(MigrationError,
-                           match="duplicate migration version 1"):
+        with pytest.raises(MigrationError, match="duplicate migration version 1"):
             plan.add(Migration(version=1, description="dupe"))
 
     def test_latest_version(self) -> None:

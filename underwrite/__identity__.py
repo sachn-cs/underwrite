@@ -44,6 +44,9 @@ class Identity:
     encrypted: bool = False
     created_at: float = 0.0
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "_Identity__sign_lock", threading.Lock())
+
     @classmethod
     def create(
         cls,
@@ -71,8 +74,7 @@ class Identity:
         now = time.time()
         if private_key_pem:
             private = serialization.load_pem_private_key(
-                private_key_pem.encode("utf-8") if isinstance(
-                    private_key_pem, str) else private_key_pem,
+                private_key_pem.encode("utf-8") if isinstance(private_key_pem, str) else private_key_pem,
                 password=None,
             )
             if not isinstance(private, ed25519.Ed25519PrivateKey):
@@ -84,14 +86,13 @@ class Identity:
                     public.public_bytes(
                         encoding=serialization.Encoding.Raw,
                         format=serialization.PublicFormat.Raw,
-                    )).decode(),
+                    )
+                ).decode(),
                 encrypted=encryption_passphrase is not None,
                 created_at=now,
             )
-            pass_bytes = encryption_passphrase.encode(
-            ) if encryption_passphrase else None
-            alg = (serialization.BestAvailableEncryption(pass_bytes)
-                   if pass_bytes else serialization.NoEncryption())
+            pass_bytes = encryption_passphrase.encode() if encryption_passphrase else None
+            alg = serialization.BestAvailableEncryption(pass_bytes) if pass_bytes else serialization.NoEncryption()
             enc = serialization.Encoding.DER if pass_bytes else serialization.Encoding.Raw
             fmt = serialization.PrivateFormat.PKCS8 if pass_bytes else serialization.PrivateFormat.Raw
             object.__setattr__(
@@ -102,7 +103,8 @@ class Identity:
                         encoding=enc,
                         format=fmt,
                         encryption_algorithm=alg,
-                    )).decode(),
+                    )
+                ).decode(),
             )
             return identity
         private = ed25519.Ed25519PrivateKey.generate()
@@ -113,14 +115,13 @@ class Identity:
                 public.public_bytes(
                     encoding=serialization.Encoding.Raw,
                     format=serialization.PublicFormat.Raw,
-                )).decode(),
+                )
+            ).decode(),
             encrypted=encryption_passphrase is not None,
             created_at=now,
         )
-        pass_bytes = encryption_passphrase.encode(
-        ) if encryption_passphrase else None
-        alg = (serialization.BestAvailableEncryption(pass_bytes)
-               if pass_bytes else serialization.NoEncryption())
+        pass_bytes = encryption_passphrase.encode() if encryption_passphrase else None
+        alg = serialization.BestAvailableEncryption(pass_bytes) if pass_bytes else serialization.NoEncryption()
         enc = serialization.Encoding.DER if pass_bytes else serialization.Encoding.Raw
         fmt = serialization.PrivateFormat.PKCS8 if pass_bytes else serialization.PrivateFormat.Raw
         object.__setattr__(
@@ -131,7 +132,8 @@ class Identity:
                     encoding=enc,
                     format=fmt,
                     encryption_algorithm=alg,
-                )).decode(),
+                )
+            ).decode(),
         )
         return identity
 
@@ -142,10 +144,13 @@ class Identity:
             payload: The string to sign.
             passphrase: Required if the private key was stored encrypted.
         """
-        raw = base64.b64decode(self.__private_key)
+        with self.__sign_lock:
+            pk = self.__private_key
+        if pk is None:
+            raise IdentityError("private key not loaded")
+        raw = base64.b64decode(pk)
         if self.encrypted:
-            loaded = serialization.load_der_private_key(
-                raw, password=passphrase.encode() if passphrase else b"")
+            loaded = serialization.load_der_private_key(raw, password=passphrase.encode() if passphrase else b"")
             if not isinstance(loaded, ed25519.Ed25519PrivateKey):
                 raise IdentityError("encrypted key is not Ed25519")
             private = loaded
@@ -182,9 +187,7 @@ class KeyRotationManager:
     for a grace period so in-flight signatures can still be verified.
     """
 
-    def __init__(self,
-                 ttl_seconds: float = 86400.0,
-                 grace_period: float = 3600.0) -> None:
+    def __init__(self, ttl_seconds: float = 86400.0, grace_period: float = 3600.0) -> None:
         """Initializes a key-rotation manager.
 
         Args:
@@ -233,8 +236,7 @@ class KeyRotationManager:
         self.__current[service_id] = new_identity
         return new_identity
 
-    def verify_with_rotation(self, payload: str, signature: str,
-                             service_id: str, public_key: str) -> bool:
+    def verify_with_rotation(self, payload: str, signature: str, service_id: str, public_key: str) -> bool:
         """Verifies a signature against current or previous (grace) keys.
 
         Args:

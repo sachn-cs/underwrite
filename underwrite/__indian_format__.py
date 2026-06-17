@@ -10,7 +10,7 @@ Examples:
 
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 
 def _to_decimal(value: float | str | Decimal) -> Decimal:
@@ -56,8 +56,7 @@ def format_indian_rupees(value: float | str | Decimal) -> str:
     return "₹" + ",".join(groups) + "." + decimal_part
 
 
-def format_indian_words(value: float | str | Decimal,
-                        include_paise: bool = True) -> str:
+def format_indian_words(value: float | str | Decimal, include_paise: bool = True) -> str:
     """Convert a monetary amount to Indian English words.
 
     Args:
@@ -79,14 +78,28 @@ def format_indian_words(value: float | str | Decimal,
         return "Zero Rupees"
 
     ones = [
-        "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight",
-        "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen",
-        "Sixteen", "Seventeen", "Eighteen", "Nineteen"
+        "",
+        "One",
+        "Two",
+        "Three",
+        "Four",
+        "Five",
+        "Six",
+        "Seven",
+        "Eight",
+        "Nine",
+        "Ten",
+        "Eleven",
+        "Twelve",
+        "Thirteen",
+        "Fourteen",
+        "Fifteen",
+        "Sixteen",
+        "Seventeen",
+        "Eighteen",
+        "Nineteen",
     ]
-    tens = [
-        "", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy",
-        "Eighty", "Ninety"
-    ]
+    tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
 
     def _words_under_100(n: int) -> str:
         if n < 20:
@@ -96,8 +109,7 @@ def format_indian_words(value: float | str | Decimal,
     def _words_under_1000(n: int) -> str:
         if n < 100:
             return _words_under_100(n)
-        return ones[n // 100] + " Hundred" + (" " + _words_under_100(n % 100)
-                                              if n % 100 else "")
+        return ones[n // 100] + " Hundred" + (" " + _words_under_100(n % 100) if n % 100 else "")
 
     segments: list[str] = []
     num = integer_part
@@ -130,8 +142,7 @@ def format_indian_words(value: float | str | Decimal,
     return result.strip() if result else "Zero Rupees"
 
 
-def format_currency_symbol(amount: float | Decimal,
-                           include_symbol: bool = True) -> str:
+def format_currency_symbol(amount: float | Decimal, include_symbol: bool = True) -> str:
     """Format amount with ₹ symbol and Indian digit grouping.
 
     Args:

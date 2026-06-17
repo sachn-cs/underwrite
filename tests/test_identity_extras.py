@@ -8,7 +8,6 @@ from underwrite.__identity__ import KeyRotationManager
 
 
 class TestKeyRotationManager:
-
     def test_get_or_create_creates_new(self) -> None:
         mgr = KeyRotationManager()
         identity = mgr.get_or_create("svc1")
@@ -30,8 +29,7 @@ class TestKeyRotationManager:
         mgr = KeyRotationManager()
         identity = mgr.get_or_create("svc1")
         sig = identity.sign("hello")
-        ok = mgr.verify_with_rotation("hello", sig, "svc1",
-                                      identity.public_key)
+        ok = mgr.verify_with_rotation("hello", sig, "svc1", identity.public_key)
         assert ok is True
 
     def test_verify_with_rotation_previous_grace(self) -> None:
@@ -40,8 +38,7 @@ class TestKeyRotationManager:
         sig = identity.sign("hello")
         time.sleep(0.005)
         mgr.rotate("svc1")
-        ok = mgr.verify_with_rotation("hello", sig, "svc1",
-                                      identity.public_key)
+        ok = mgr.verify_with_rotation("hello", sig, "svc1", identity.public_key)
         assert ok is True
 
     def test_verify_with_rotation_expired_grace(self) -> None:
@@ -51,8 +48,7 @@ class TestKeyRotationManager:
         time.sleep(0.005)
         mgr.rotate("svc1")
         time.sleep(0.005)
-        ok = mgr.verify_with_rotation("hello", sig, "svc1",
-                                      identity.public_key)
+        ok = mgr.verify_with_rotation("hello", sig, "svc1", identity.public_key)
         assert ok is False
 
     def test_verify_wrong_key_returns_false(self) -> None:

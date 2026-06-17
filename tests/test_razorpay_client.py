@@ -14,14 +14,12 @@ from underwrite.services.razorpay.client import (
 
 
 class TestMockRazorpayClient:
-
     @pytest.fixture
     def client(self) -> MockRazorpayClient:
         return MockRazorpayClient()
 
     def test_create_order(self, client: MockRazorpayClient) -> None:
-        order = client.create_order(amount=100000, currency="INR",
-                                    receipt="test_001")
+        order = client.create_order(amount=100000, currency="INR", receipt="test_001")
         assert order.id.startswith("order_")
         assert order.amount == 100000
         assert order.currency == "INR"
@@ -29,9 +27,7 @@ class TestMockRazorpayClient:
         assert order.status == "created"
 
     def test_create_order_with_notes(self, client: MockRazorpayClient) -> None:
-        order = client.create_order(amount=50000,
-                                    receipt="test_002",
-                                    notes={"loan_id": "L1"})
+        order = client.create_order(amount=50000, receipt="test_002", notes={"loan_id": "L1"})
         assert order.notes.get("loan_id") == "L1"
 
     def test_capture_payment(self, client: MockRazorpayClient) -> None:
@@ -51,8 +47,7 @@ class TestMockRazorpayClient:
         assert captured.status == "captured"
         assert captured.captured is True
 
-    def test_capture_nonexistent_payment(
-            self, client: MockRazorpayClient) -> None:
+    def test_capture_nonexistent_payment(self, client: MockRazorpayClient) -> None:
         with pytest.raises(RazorpayNotFoundError):
             client.capture_payment("pay_nonexistent", 1000)
 
@@ -73,8 +68,7 @@ class TestMockRazorpayClient:
         assert payment.id == "pay_2"
         assert payment.amount == 50000
 
-    def test_fetch_nonexistent_payment(
-            self, client: MockRazorpayClient) -> None:
+    def test_fetch_nonexistent_payment(self, client: MockRazorpayClient) -> None:
         with pytest.raises(RazorpayNotFoundError):
             client.fetch_payment("pay_nonexistent")
 
@@ -86,8 +80,7 @@ class TestMockRazorpayClient:
         assert sub.status == "created"
         assert sub.remaining_count == 12
 
-    def test_create_subscription_with_notes(
-            self, client: MockRazorpayClient) -> None:
+    def test_create_subscription_with_notes(self, client: MockRazorpayClient) -> None:
         sub = client.create_subscription(
             plan_id="plan_2",
             total_count=6,
@@ -103,7 +96,8 @@ class TestMockRazorpayClient:
                 "name": "Alice",
                 "email": "alice@example.com",
                 "contact": "+919900000000",
-            })
+            },
+        )
         assert link.id.startswith("link_")
         assert link.short_url.startswith("https://rzp.io/")
         assert link.amount == 100000
@@ -126,28 +120,25 @@ class TestMockRazorpayClient:
         assert refund["payment_id"] == "pay_3"
         assert len(client.refunds) == 1
 
-    def test_refund_nonexistent_payment(
-            self, client: MockRazorpayClient) -> None:
+    def test_refund_nonexistent_payment(self, client: MockRazorpayClient) -> None:
         with pytest.raises(RazorpayNotFoundError):
             client.refund_payment("pay_nonexistent")
 
     def test_verify_webhook_valid(self, client: MockRazorpayClient) -> None:
         import hashlib
         import hmac
+
         payload = b'{"event":"payment.captured"}'
         secret = "webhook_secret_123"
-        expected = hmac.new(secret.encode("utf-8"), payload,
-                            hashlib.sha256).hexdigest()
+        expected = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
         assert client.verify_webhook(payload, expected, secret) is True
 
     def test_verify_webhook_invalid(self, client: MockRazorpayClient) -> None:
         payload = b'{"event":"payment.captured"}'
-        assert client.verify_webhook(payload, "bad_signature",
-                                     "secret") is False
+        assert client.verify_webhook(payload, "bad_signature", "secret") is False
 
     def test_fail_on_create_order(self, client: MockRazorpayClient) -> None:
-        client.fail_on["create_order"] = RazorpayValidationError(
-            "test error")
+        client.fail_on["create_order"] = RazorpayValidationError("test error")
         with pytest.raises(RazorpayValidationError):
             client.create_order(amount=1000)
 
@@ -156,14 +147,12 @@ class TestMockRazorpayClient:
         with pytest.raises(RazorpayAuthError):
             client.capture_payment("pay_1", 1000)
 
-    def test_multiple_orders_unique_ids(
-            self, client: MockRazorpayClient) -> None:
+    def test_multiple_orders_unique_ids(self, client: MockRazorpayClient) -> None:
         o1 = client.create_order(amount=1000)
         o2 = client.create_order(amount=2000)
         assert o1.id != o2.id
 
-    def test_payment_link_creation_with_notes(
-            self, client: MockRazorpayClient) -> None:
+    def test_payment_link_creation_with_notes(self, client: MockRazorpayClient) -> None:
         link = client.create_payment_link(
             amount=50000,
             notes={"loan_id": "L3"},

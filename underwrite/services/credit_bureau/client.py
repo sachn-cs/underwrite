@@ -5,6 +5,7 @@ Supports CIBIL, Experian, Equifax credit reports and CKYC verification.
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -86,9 +87,7 @@ class CreditReport:
     active_accounts: int = 0
     delinquent_accounts: int = 0
     credit_age_years: float = 0.0
-    report_date: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).date().isoformat()
-    )
+    report_date: str = field(default_factory=lambda: datetime.now(timezone.utc).date().isoformat())
 
 
 @dataclass
@@ -103,20 +102,19 @@ class CkycResponse:
     aadhaar_verified: bool
     address: str
     status: str
-    verified_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    verified_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 # -- Client Interface ----------------------------------------------------------
 
 
-class CreditBureauClient:
+class CreditBureauClient(ABC):
     """Abstract credit bureau client.
 
     Implementations provide fetch_credit_report and verify_ckyc.
     """
 
+    @abstractmethod
     def fetch_credit_report(
         self,
         pan: str,
@@ -131,8 +129,8 @@ class CreditBureauClient:
         Returns:
             A CreditReport with parsed data.
         """
-        raise NotImplementedError
 
+    @abstractmethod
     def verify_ckyc(
         self,
         ckyc_number: str,
@@ -147,7 +145,6 @@ class CreditBureauClient:
         Returns:
             A CkycResponse with verification status.
         """
-        raise NotImplementedError
 
 
 # -- HTTP Implementation -------------------------------------------------------
@@ -193,6 +190,7 @@ class HttpCreditBureauClient(CreditBureauClient):
         self.__ckyc_api_key = ckyc_api_key
         self.__ckyc_api_base = ckyc_api_base.rstrip("/")
         self.__timeout = timeout_seconds
+        self.__http = httpx.Client(timeout=self.__timeout)
 
     def request(
         self,
@@ -227,8 +225,7 @@ class HttpCreditBureauClient(CreditBureauClient):
         try:
             if not HAS_HTTPX:
                 raise RuntimeError("httpx is required for HttpCreditBureauClient")
-            with httpx.Client(headers=headers, timeout=self.__timeout) as client:
-                resp = client.request(method, url, json=data)
+            resp = self.__http.request(method, url, json=data, headers=headers)
         except httpx.TimeoutException as exc:
             raise CreditBureauError(f"request timed out: {exc}") from exc
         except httpx.RequestError as exc:
@@ -255,25 +252,16 @@ class HttpCreditBureauClient(CreditBureauClient):
         try:
             body = resp.json()
         except (json_mod.JSONDecodeError, httpx.DecodingError) as exc:
-            raise CreditBureauError(
-                f"invalid JSON response ({resp.status_code}): {exc}"
-            ) from exc
+            raise CreditBureauError(f"invalid JSON response ({resp.status_code}): {exc}") from exc
         if resp.status_code == 401:
-            raise CreditBureauAuthError(
-                body.get("error", {}).get("message", "unauthorized")
-            )
+            raise CreditBureauAuthError(body.get("error", {}).get("message", "unauthorized"))
         if resp.status_code == 404:
-            raise CreditBureauNotFoundError(
-                body.get("error", {}).get("message", "not found")
-            )
+            raise CreditBureauNotFoundError(body.get("error", {}).get("message", "not found"))
         if resp.status_code == 400:
-            raise CreditBureauValidationError(
-                body.get("error", {}).get("message", "validation error")
-            )
+            raise CreditBureauValidationError(body.get("error", {}).get("message", "validation error"))
         if not resp.is_success:
             raise CreditBureauError(
-                f"API error ({resp.status_code}): "
-                f"{body.get('error', {}).get('message', 'unknown')}"
+                f"API error ({resp.status_code}): {body.get('error', {}).get('message', 'unknown')}"
             )
         return body
 

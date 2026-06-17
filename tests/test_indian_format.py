@@ -14,7 +14,6 @@ from underwrite.__indian_format__ import (
 
 
 class TestFormatIndianRupees:
-
     def test_zero(self) -> None:
         assert format_indian_rupees(0) == "₹0.00"
 
@@ -66,7 +65,6 @@ class TestFormatIndianRupees:
 
 
 class TestFormatIndianWords:
-
     def test_zero(self) -> None:
         assert format_indian_words(0) == "Zero Rupees"
 
@@ -144,7 +142,6 @@ class TestFormatIndianWords:
 
 
 class TestFormatCurrencySymbol:
-
     def test_with_symbol(self) -> None:
         assert "₹" in format_currency_symbol(1000)
 
@@ -156,5 +153,4 @@ class TestFormatCurrencySymbol:
         assert format_currency_symbol(Decimal("50000")) == "₹50,000.00"
 
     def test_format_matches_rupees(self) -> None:
-        assert format_currency_symbol(123456.78) == format_indian_rupees(
-            123456.78)
+        assert format_currency_symbol(123456.78) == format_indian_rupees(123456.78)

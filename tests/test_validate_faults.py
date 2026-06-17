@@ -312,12 +312,10 @@ class TestGetInRange:
             get_in_range({"score": -0.1}, "score", 0.0, 1.0, default=0.5)
 
     def test_accepts_boundary_lower(self) -> None:
-        assert get_in_range({"score": 0.0}, "score", 0.0, 1.0,
-                            default=0.5) == 0.0
+        assert get_in_range({"score": 0.0}, "score", 0.0, 1.0, default=0.5) == 0.0
 
     def test_accepts_boundary_upper(self) -> None:
-        assert get_in_range({"score": 1.0}, "score", 0.0, 1.0,
-                            default=0.5) == 1.0
+        assert get_in_range({"score": 1.0}, "score", 0.0, 1.0, default=0.5) == 1.0
 
     def test_raises_for_non_finite(self) -> None:
         with pytest.raises(ProtocolError, match="must be finite"):

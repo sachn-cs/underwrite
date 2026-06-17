@@ -17,29 +17,21 @@ from underwrite.services.mechanism.service import MechanismService
 
 
 def make_svc() -> MechanismService:
-    return MechanismService(service_id="test-mech",
-                            bus=LocalBus(),
-                            store=MemoryStore())
+    return MechanismService(service_id="test-mech", bus=LocalBus(), store=MemoryStore())
 
 
-def command(svc: MechanismService,
-            cmd: str,
-            payload: dict[str, Any],
-            corr: str = "") -> None:
+def command(svc: MechanismService, cmd: str, payload: dict[str, Any], corr: str = "") -> None:
     svc.handle(
         Event(
             event_type="mechanism",
             source="test",
-            payload={
-                "command": cmd,
-                **payload
-            },
+            payload={"command": cmd, **payload},
             correlation_id=corr,
-        ))
+        )
+    )
 
 
 class TestAddSeed:
-
     def test_adds_seed(self) -> None:
         svc = make_svc()
         svc.start()
@@ -88,50 +80,30 @@ class TestAddSeed:
         svc = make_svc()
         svc.start()
         for i in range(10):
-            command(svc, "add_seed", {
-                "user": f"bank{i}",
-                "base_budget": 100_000
-            })
+            command(svc, "add_seed", {"user": f"bank{i}", "base_budget": 100_000})
         assert len(svc.seeds) == 10
 
 
 class TestAddUser:
-
     def test_adds_user_under_seed(self) -> None:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 50_000})
         assert "alice" in svc.earned
 
     def test_rejects_unknown_sponsor(self) -> None:
         svc = make_svc()
         svc.start()
-        command(svc, "add_user", {
-            "sponsor": "ghost",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
+        command(svc, "add_user", {"sponsor": "ghost", "user": "alice", "delegation_amount": 50_000})
         assert "alice" not in svc.earned
 
     def test_rejects_duplicate_user(self) -> None:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 50_000})
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 50_000})
         users = list(svc.earned.keys())
         assert users.count("alice") == 1
 
@@ -139,60 +111,35 @@ class TestAddUser:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 0
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 0})
         assert "alice" not in svc.earned
 
     def test_rejects_negative_delegation(self) -> None:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": -10
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": -10})
         assert "alice" not in svc.earned
 
     def test_rejects_excessive_delegation(self) -> None:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 200_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 200_000})
         assert "alice" not in svc.earned
 
     def test_nested_delegation(self) -> None:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 1_000_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "a",
-            "delegation_amount": 500_000
-        })
-        command(svc, "add_user", {
-            "sponsor": "a",
-            "user": "b",
-            "delegation_amount": 200_000
-        })
-        command(svc, "add_user", {
-            "sponsor": "b",
-            "user": "c",
-            "delegation_amount": 100_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "a", "delegation_amount": 500_000})
+        command(svc, "add_user", {"sponsor": "a", "user": "b", "delegation_amount": 200_000})
+        command(svc, "add_user", {"sponsor": "b", "user": "c", "delegation_amount": 100_000})
         assert "c" in svc.earned
         assert len(svc.earned) == 4
 
 
 class TestRepay:
-
     def test_increases_earned(self) -> None:
         svc = make_svc()
         svc.start()
@@ -223,16 +170,11 @@ class TestRepay:
 
 
 class TestOriginate:
-
     def test_originates_loan(self) -> None:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 50_000})
         command(
             svc,
             "originate",
@@ -251,11 +193,7 @@ class TestOriginate:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 50_000})
         command(
             svc,
             "originate",
@@ -274,11 +212,7 @@ class TestOriginate:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 50_000})
         command(
             svc,
             "originate",
@@ -297,11 +231,7 @@ class TestOriginate:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 50_000})
         command(
             svc,
             "originate",
@@ -320,11 +250,7 @@ class TestOriginate:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 50_000})
         command(
             svc,
             "originate",
@@ -343,11 +269,7 @@ class TestOriginate:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 1_000_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 500_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 500_000})
         for _ in range(5):
             command(
                 svc,
@@ -365,16 +287,11 @@ class TestOriginate:
 
 
 class TestDefault:
-
     def test_absorbs_from_earned(self) -> None:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 50_000})
         command(
             svc,
             "originate",
@@ -396,11 +313,7 @@ class TestDefault:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 50_000})
         command(
             svc,
             "originate",
@@ -420,11 +333,7 @@ class TestDefault:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 50_000})
         command(svc, "default", {"borrower": "alice"})
         assert svc.principal.get("alice", 0) == 0
 
@@ -432,21 +341,9 @@ class TestDefault:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 1_000_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "a",
-            "delegation_amount": 500_000
-        })
-        command(svc, "add_user", {
-            "sponsor": "a",
-            "user": "b",
-            "delegation_amount": 200_000
-        })
-        command(svc, "add_user", {
-            "sponsor": "b",
-            "user": "c",
-            "delegation_amount": 100_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "a", "delegation_amount": 500_000})
+        command(svc, "add_user", {"sponsor": "a", "user": "b", "delegation_amount": 200_000})
+        command(svc, "add_user", {"sponsor": "b", "user": "c", "delegation_amount": 100_000})
         command(
             svc,
             "originate",
@@ -464,21 +361,12 @@ class TestDefault:
 
 
 class TestRevoke:
-
     def test_reduces_delegation(self) -> None:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
-        command(svc, "revoke", {
-            "sponsor": "bank",
-            "child": "alice",
-            "new_delegation": 10_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 50_000})
+        command(svc, "revoke", {"sponsor": "bank", "child": "alice", "new_delegation": 10_000})
         state = svc.store.get("protocol:state")
         assert state is not None
         assert state["delegation"]["bank->alice"] == 10_000
@@ -487,16 +375,8 @@ class TestRevoke:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
-        command(svc, "revoke", {
-            "sponsor": "bank",
-            "child": "alice",
-            "new_delegation": -10
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 50_000})
+        command(svc, "revoke", {"sponsor": "bank", "child": "alice", "new_delegation": -10})
         state = svc.store.get("protocol:state")
         assert state is not None
         assert state["delegation"]["bank->alice"] == 50_000
@@ -505,18 +385,12 @@ class TestRevoke:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "revoke", {
-            "sponsor": "bank",
-            "child": "alice",
-            "new_delegation": 10
-        })
+        command(svc, "revoke", {"sponsor": "bank", "child": "alice", "new_delegation": 10})
         state = svc.store.get("protocol:state")
-        assert state is None or "bank->alice" not in state.get(
-            "delegation", {})
+        assert state is None or "bank->alice" not in state.get("delegation", {})
 
 
 class TestCreditLimit:
-
     def test_seed_credit_limit(self) -> None:
         svc = make_svc()
         svc.start()
@@ -528,11 +402,7 @@ class TestCreditLimit:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 50_000})
         cl: float = svc.credit_limit("alice")
         assert cl == 50_000.0
 
@@ -540,18 +410,13 @@ class TestCreditLimit:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 50_000})
         command(svc, "repay", {"user": "alice", "delta_earned": 5_000})
         cl: float = svc.credit_limit("alice")
         assert cl == 55_000.0
 
 
 class TestQuote:
-
     def test_quote_calculated(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
@@ -575,7 +440,6 @@ class TestQuote:
 
 
 class TestStateSync:
-
     def test_state_persisted_after_each_mutation(self) -> None:
         svc = make_svc()
         svc.start()
@@ -587,11 +451,7 @@ class TestStateSync:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 50_000})
         state = svc.store.get("protocol:state")
         assert state is not None
         assert "bank" in state["seeds"]
@@ -599,7 +459,6 @@ class TestStateSync:
 
 
 class TestEdgeCases:
-
     def test_empty_state(self) -> None:
         svc = make_svc()
         assert len(svc.earned) == 0
@@ -609,27 +468,15 @@ class TestEdgeCases:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "bank",
-            "delegation_amount": 10
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "bank", "delegation_amount": 10})
         assert svc.earned.get("bank", 0) == 0.0
 
     def test_repay_then_originate_then_default_cycle(self) -> None:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 1_000_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "a",
-            "delegation_amount": 500_000
-        })
-        command(svc, "add_user", {
-            "sponsor": "a",
-            "user": "b",
-            "delegation_amount": 200_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "a", "delegation_amount": 500_000})
+        command(svc, "add_user", {"sponsor": "a", "user": "b", "delegation_amount": 200_000})
         command(
             svc,
             "originate",
@@ -650,16 +497,8 @@ class TestEdgeCases:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "a",
-            "delegation_amount": 50_000
-        })
-        command(svc, "revoke", {
-            "sponsor": "bank",
-            "child": "a",
-            "new_delegation": 0
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "a", "delegation_amount": 50_000})
+        command(svc, "revoke", {"sponsor": "bank", "child": "a", "new_delegation": 0})
         state = svc.store.get("protocol:state")
         assert state is not None
         assert state["delegation"]["bank->a"] == 0
@@ -668,11 +507,7 @@ class TestEdgeCases:
         svc = make_svc()
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc, "add_user", {
-            "sponsor": "bank",
-            "user": "a",
-            "delegation_amount": 50_000
-        })
+        command(svc, "add_user", {"sponsor": "bank", "user": "a", "delegation_amount": 50_000})
         command(
             svc,
             "originate",
@@ -721,17 +556,12 @@ class TestEdgeCases:
 
 
 class TestMechanismStoreLoad:
-
     def test_loads_state_from_store_on_init(self) -> None:
         store = MemoryStore()
         svc1 = MechanismService(service_id="mech", bus=LocalBus(), store=store)
         svc1.start()
         command(svc1, "add_seed", {"user": "bank", "base_budget": 100_000})
-        command(svc1, "add_user", {
-            "sponsor": "bank",
-            "user": "alice",
-            "delegation_amount": 50_000
-        })
+        command(svc1, "add_user", {"sponsor": "bank", "user": "alice", "delegation_amount": 50_000})
         # Fresh service from same store should restore state
         svc2 = MechanismService(service_id="mech", bus=LocalBus(), store=store)
         svc2.start()
@@ -748,12 +578,7 @@ class TestMechanismStoreLoad:
 
     def test_partial_state_restores_gracefully(self) -> None:
         store = MemoryStore()
-        store.set("protocol:state", {
-            "seeds": ["bank"],
-            "earned": {
-                "bank": 0.0
-            }
-        })
+        store.set("protocol:state", {"seeds": ["bank"], "earned": {"bank": 0.0}})
         svc = MechanismService(service_id="mech", bus=LocalBus(), store=store)
         svc.start()
         assert "bank" in svc.earned
@@ -762,17 +587,13 @@ class TestMechanismStoreLoad:
 
 
 class TestMechanismStateOrdering:
-
     def test_add_seed_emits_after_persist(self) -> None:
         captured: dict[str, Any] = {}
 
-        def spy(event_type: str,
-                payload: dict[str, Any],
-                correlation_id: str = "") -> None:
+        def spy(event_type: str, payload: dict[str, Any], correlation_id: str = "") -> None:
             if event_type == EventType.SEED_ADDED:
                 captured["emit_seen"] = True
-                captured["user_in_earned_at_emit"] = payload[
-                    "user"] in svc.earned
+                captured["user_in_earned_at_emit"] = payload["user"] in svc.earned
 
         svc = make_svc()
         svc.emit = spy  # type: ignore[assignment]
@@ -785,9 +606,7 @@ class TestMechanismStateOrdering:
     def test_originate_emits_after_persist(self) -> None:
         captured: dict[str, Any] = {}
 
-        def spy(event_type: str,
-                payload: dict[str, Any],
-                correlation_id: str = "") -> None:
+        def spy(event_type: str, payload: dict[str, Any], correlation_id: str = "") -> None:
             if event_type == EventType.LOAN_ORIGINATED:
                 captured["emit_seen"] = True
                 captured["loans_at_emit"] = len(svc.loans.get("bank", []))

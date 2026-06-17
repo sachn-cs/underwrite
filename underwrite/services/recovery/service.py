@@ -45,24 +45,23 @@ class RecoveryService(StatefulService):
     """
 
     def __init__(self, **kwargs: Any) -> None:
+        """Initialize the recovery service.
+
+        Args:
+            recovery_rate: Fraction of principal offered in recovery.
+            negotiation_days: Days allowed for negotiation.
+            escalation_threshold: Number of rejected offers before escalation.
+        """
         self.__recovery_rate: float = kwargs.pop("recovery_rate", DEFAULT_RECOVERY_RATE)
         self.__negotiation_days: int = kwargs.pop("negotiation_days", NEGOTIATION_DAYS)
-        self.__escalation_threshold: int = kwargs.pop(
-            "escalation_threshold", ESCALATION_THRESHOLD
-        )
+        self.__escalation_threshold: int = kwargs.pop("escalation_threshold", ESCALATION_THRESHOLD)
         super().__init__(**kwargs)
         self.__recoveries: dict[str, dict[str, Any]] = {}
-        self.repo: TypedStoreRepository[dict[str, dict[str, Any]]] = self.store_repo(
-            "recoveries", dict
-        )
+        self.repo: TypedStoreRepository[dict[str, dict[str, Any]]] = self.store_repo("recoveries", dict)
         loaded = self.repo.load(default={})
         if loaded:
             self.__recoveries = loaded
-            active = sum(
-                1
-                for r in self.__recoveries.values()
-                if r.get("stage") != RecoveryStage.SETTLEMENT.value
-            )
+            active = sum(1 for r in self.__recoveries.values() if r.get("stage") != RecoveryStage.SETTLEMENT.value)
             if active > 0:
                 logger.info(
                     "loaded %d active recovery(s) from store",
@@ -132,9 +131,7 @@ class RecoveryService(StatefulService):
             {
                 "borrower": borrower,
                 "offer_amount": offer_amount,
-                "due_by": (
-                    datetime.now(timezone.utc) + timedelta(days=self.__negotiation_days)
-                ).isoformat(),
+                "due_by": (datetime.now(timezone.utc) + timedelta(days=self.__negotiation_days)).isoformat(),
                 "stage": RecoveryStage.NEGOTIATION.value,
             },
             correlation_id=event.correlation_id,
@@ -200,8 +197,7 @@ class RecoveryService(StatefulService):
                             "borrower": borrower,
                             "offer_amount": offer_amount,
                             "due_by": (
-                                datetime.now(timezone.utc)
-                                + timedelta(days=self.__negotiation_days)
+                                datetime.now(timezone.utc) + timedelta(days=self.__negotiation_days)
                             ).isoformat(),
                             "stage": RecoveryStage.NEGOTIATION.value,
                         },
@@ -285,11 +281,7 @@ class RecoveryService(StatefulService):
         """
         base = super().health_check()
         with self.state_lock:
-            active = sum(
-                1
-                for r in self.__recoveries.values()
-                if r.get("stage") != RecoveryStage.SETTLEMENT.value
-            )
+            active = sum(1 for r in self.__recoveries.values() if r.get("stage") != RecoveryStage.SETTLEMENT.value)
             base["active_recoveries"] = active
             base["total_recoveries"] = len(self.__recoveries)
         return base

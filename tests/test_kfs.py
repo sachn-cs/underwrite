@@ -12,16 +12,13 @@ def svc(bus=None) -> KfsService:
 
 
 class TestKfsService:
-
     def test_generate_kfs_missing_loan_id_ignored(self) -> None:
         bus = LocalBus()
         received: list = []
         bus.subscribe(EventType.KFS_GENERATED, lambda e: received.append(e))
         svc_inst = svc(bus)
         bus.start()
-        svc_inst.handle(
-            Event(event_type=EventType.KFS_GENERATE, source="test",
-                  payload={}))
+        svc_inst.handle(Event(event_type=EventType.KFS_GENERATE, source="test", payload={}))
         assert len(received) == 0
 
     def test_generate_kfs_basic(self) -> None:
@@ -31,15 +28,18 @@ class TestKfsService:
         svc_inst = svc(bus)
         bus.start()
         svc_inst.handle(
-            Event(event_type=EventType.KFS_GENERATE,
-                  source="test",
-                  payload={
-                      "loan_id": "L1",
-                      "borrower": "alice",
-                      "principal": 100000,
-                      "annual_rate": 12,
-                      "tenure_months": 12,
-                  }))
+            Event(
+                event_type=EventType.KFS_GENERATE,
+                source="test",
+                payload={
+                    "loan_id": "L1",
+                    "borrower": "alice",
+                    "principal": 100000,
+                    "annual_rate": 12,
+                    "tenure_months": 12,
+                },
+            )
+        )
         assert len(received) == 1
         kfs = received[0].payload
         assert kfs["loan_id"] == "L1"
@@ -59,27 +59,19 @@ class TestKfsService:
         svc_inst = svc(bus)
         bus.start()
         svc_inst.handle(
-            Event(event_type=EventType.KFS_GENERATE,
-                  source="test",
-                  payload={
-                      "loan_id":
-                      "L2",
-                      "borrower":
-                      "bob",
-                      "principal":
-                      100000,
-                      "annual_rate":
-                      12,
-                      "tenure_months":
-                      12,
-                      "fees": [{
-                          "type": "processing",
-                          "amount": 500
-                      }, {
-                          "type": "documentation",
-                          "amount": 200
-                      }],
-                  }))
+            Event(
+                event_type=EventType.KFS_GENERATE,
+                source="test",
+                payload={
+                    "loan_id": "L2",
+                    "borrower": "bob",
+                    "principal": 100000,
+                    "annual_rate": 12,
+                    "tenure_months": 12,
+                    "fees": [{"type": "processing", "amount": 500}, {"type": "documentation", "amount": 200}],
+                },
+            )
+        )
         assert len(received) == 1
         kfs = received[0].payload
         assert len(kfs["fees_and_charges"]) == 2
@@ -93,16 +85,19 @@ class TestKfsService:
         svc_inst = svc(bus)
         bus.start()
         svc_inst.handle(
-            Event(event_type=EventType.KFS_GENERATE,
-                  source="test",
-                  payload={
-                      "loan_id": "L3",
-                      "borrower": "carol",
-                      "principal": 50000,
-                      "annual_rate": 10,
-                      "tenure_months": 6,
-                      "start_date": "2025-01-15",
-                  }))
+            Event(
+                event_type=EventType.KFS_GENERATE,
+                source="test",
+                payload={
+                    "loan_id": "L3",
+                    "borrower": "carol",
+                    "principal": 50000,
+                    "annual_rate": 10,
+                    "tenure_months": 6,
+                    "start_date": "2025-01-15",
+                },
+            )
+        )
         assert len(received) == 1
         kfs = received[0].payload
         assert "start_date" in kfs
@@ -115,15 +110,18 @@ class TestKfsService:
         svc_inst = svc(bus)
         bus.start()
         svc_inst.handle(
-            Event(event_type=EventType.KFS_GENERATE,
-                  source="test",
-                  payload={
-                      "loan_id": "L4",
-                      "borrower": "dave",
-                      "principal": 10000,
-                      "annual_rate": 0,
-                      "tenure_months": 6,
-                  }))
+            Event(
+                event_type=EventType.KFS_GENERATE,
+                source="test",
+                payload={
+                    "loan_id": "L4",
+                    "borrower": "dave",
+                    "principal": 10000,
+                    "annual_rate": 0,
+                    "tenure_months": 6,
+                },
+            )
+        )
         # Should not generate KFS (invalid rate)
         assert len(received) == 0
 
@@ -134,15 +132,18 @@ class TestKfsService:
         svc_inst = svc(bus)
         bus.start()
         svc_inst.handle(
-            Event(event_type=EventType.KFS_GENERATE,
-                  source="test",
-                  payload={
-                      "loan_id": "L5",
-                      "borrower": "eve",
-                      "principal": 0,
-                      "annual_rate": 12,
-                      "tenure_months": 12,
-                  }))
+            Event(
+                event_type=EventType.KFS_GENERATE,
+                source="test",
+                payload={
+                    "loan_id": "L5",
+                    "borrower": "eve",
+                    "principal": 0,
+                    "annual_rate": 12,
+                    "tenure_months": 12,
+                },
+            )
+        )
         assert len(received) == 0
 
     def test_ignores_unrelated_events(self) -> None:
@@ -151,6 +152,5 @@ class TestKfsService:
         bus.subscribe(EventType.KFS_GENERATED, lambda e: received.append(e))
         svc_inst = svc(bus)
         bus.start()
-        svc_inst.handle(
-            Event(event_type="seed.added", source="test", payload={}))
+        svc_inst.handle(Event(event_type="seed.added", source="test", payload={}))
         assert len(received) == 0

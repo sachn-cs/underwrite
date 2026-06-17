@@ -16,7 +16,8 @@ from underwrite.__bus__ import LocalBus
 from underwrite.__config__ import SERVICE_NAMES, Configuration
 from underwrite.__events__ import Event
 from underwrite.__exceptions__ import (
-    ServiceNotFoundError, )
+    ServiceNotFoundError,
+)
 from underwrite.__identity__ import Identity
 from underwrite.__runtime__ import Runtime
 from underwrite.__store__ import FileStore, MemoryStore
@@ -28,7 +29,6 @@ from underwrite.services.base import NanoService
 
 
 class TestConfiguration:
-
     def test_default_creates_all_services_disabled(self) -> None:
         config: Configuration = Configuration.default()
         assert len(config.services) == len(SERVICE_NAMES)
@@ -77,7 +77,6 @@ class TestConfiguration:
 
 
 class TestIdentity:
-
     def test_create_generates_keypair(self) -> None:
         identity: Identity = Identity.create("test-svc")
         assert identity.service_id == "test-svc"
@@ -114,7 +113,6 @@ class TestIdentity:
 
 
 class TestEvent:
-
     def test_default_fields(self) -> None:
         event: Event = Event(event_type="test.event", source="testsvc")
         assert event.event_id != ""
@@ -137,7 +135,6 @@ class TestEvent:
 
 
 class TestLocalBus:
-
     def test_publish_and_deliver(self) -> None:
         bus: LocalBus = LocalBus()
         received: list[Event] = []
@@ -219,7 +216,6 @@ class TestLocalBus:
 
 
 class TestMemoryStore:
-
     def test_set_and_get(self) -> None:
         store: MemoryStore = MemoryStore()
         store.set("key1", [1, 2, 3])
@@ -262,9 +258,7 @@ class TestMemoryStore:
                 with lock:
                     errors.append(exc)
 
-        threads: list[threading.Thread] = [
-            threading.Thread(target=writer, args=(i, )) for i in range(10)
-        ]
+        threads: list[threading.Thread] = [threading.Thread(target=writer, args=(i,)) for i in range(10)]
         for t in threads:
             t.start()
         for t in threads:
@@ -273,7 +267,6 @@ class TestMemoryStore:
 
 
 class TestFileStore:
-
     def test_persistence(self, tmp_path: Path) -> None:
         store: FileStore = FileStore(str(tmp_path))
         store.set("user:alice", {"credit": 100.0})
@@ -304,19 +297,16 @@ class TestFileStore:
 
 
 class ServiceHelper(NanoService):
-
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.handled: list[Event] = []
 
     def handle(self, event: Event) -> None:
         self.handled.append(event)
-        self.emit("response", {"received": event.event_type},
-                  correlation_id=event.correlation_id)
+        self.emit("response", {"received": event.event_type}, correlation_id=event.correlation_id)
 
 
 class TestNanoService:
-
     def test_service_id(self) -> None:
         svc: ServiceHelper = ServiceHelper(service_id="mysvc")
         assert svc.service_id == "mysvc"
@@ -381,9 +371,7 @@ class TestNanoService:
         svc.subscribe("request")
         bus.start()
         svc.start()
-        bus.publish(
-            Event(event_type="request", source="test",
-                  correlation_id="corr-1"))
+        bus.publish(Event(event_type="request", source="test", correlation_id="corr-1"))
         time.sleep(0.01)
         assert len(received) >= 1
         assert received[0].payload["received"] == "request"
@@ -395,7 +383,6 @@ class TestNanoService:
 
 
 class TestRuntime:
-
     def test_start_stop(self) -> None:
         rt: Runtime = Runtime()
         rt.register("mechanism")
@@ -447,8 +434,7 @@ class TestRuntime:
     def test_dlq_health_reflects_dead_letters(self) -> None:
         rt: Runtime = Runtime()
         bus = rt.bus
-        bus.subscribe("fail.me", lambda e:
-                      (_ for _ in ()).throw(RuntimeError("bang")))
+        bus.subscribe("fail.me", lambda e: (_ for _ in ()).throw(RuntimeError("bang")))
         bus.start()
         bus.publish(Event(event_type="fail.me", source="t"))
         status = rt.health.status()

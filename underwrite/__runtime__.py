@@ -56,9 +56,7 @@ class Runtime:
     __metrics_thread: threading.Thread | None
     __metrics_stop: threading.Event | None
 
-    def __init__(self,
-                 config: Configuration | None = None,
-                 readonly: bool = False) -> None:
+    def __init__(self, config: Configuration | None = None, readonly: bool = False) -> None:
         """Initializes the Runtime.
 
         Args:
@@ -90,11 +88,9 @@ class Runtime:
         self.__tracer: Tracer | None = self.__build_tracer()
         self.__bus = self.__build_bus()
         self.__secrets = self.__build_secrets()
-        self.__saga = SagaOrchestrator(
-            store=self.__store) if self.__config.saga.enabled else None
+        self.__saga = SagaOrchestrator(store=self.__store) if self.__config.saga.enabled else None
         self.__health = HealthRegistry()
-        self.__metrics = MetricsCollector(
-        ) if self.__config.metrics.enabled else None
+        self.__metrics = MetricsCollector() if self.__config.metrics.enabled else None
         self.__authz = self.__build_authz()
         self.__supervisor = self.__build_supervisor()
         self.__metrics_thread = None
@@ -118,31 +114,29 @@ class Runtime:
         handler.setLevel(level)
 
         if cfg.log_format == "json":
-            sensitive_fields: frozenset[str] = frozenset({
-                "password",
-                "secret",
-                "token",
-                "auth",
-                "authorization",
-                "private_key",
-                "ssn",
-                "tax_id",
-                "pin",
-                "cvv",
-                "pan",
-                "account_number",
-                "routing_number",
-            })
+            sensitive_fields: frozenset[str] = frozenset(
+                {
+                    "password",
+                    "secret",
+                    "token",
+                    "auth",
+                    "authorization",
+                    "private_key",
+                    "ssn",
+                    "tax_id",
+                    "pin",
+                    "cvv",
+                    "pan",
+                    "account_number",
+                    "routing_number",
+                }
+            )
 
             class JsonFormatter(logging_mod.Formatter):
-
                 def __redact(self, data: object) -> object:
                     if isinstance(data, dict):
                         return {
-                            k:
-                            "***REDACTED***" if any(s in k.lower()
-                                                    for s in sensitive_fields)
-                            else self.__redact(v)
+                            k: "***REDACTED***" if any(s in k.lower() for s in sensitive_fields) else self.__redact(v)
                             for k, v in data.items()
                         }
                     if isinstance(data, (list, tuple)):
@@ -170,20 +164,17 @@ class Runtime:
             handler.setFormatter(JsonFormatter())
         else:
             handler.setFormatter(
-                logging_mod.Formatter(
-                    "%(asctime)s [%(levelname)s] %(correlation_id)s %(name)s: %(message)s"
-                ))
+                logging_mod.Formatter("%(asctime)s [%(levelname)s] %(correlation_id)s %(name)s: %(message)s")
+            )
 
         root = logging_mod.getLogger("underwrite")
 
         class CorrelationFilter(logging_mod.Filter):
-
             def filter(self, record: logging_mod.LogRecord) -> bool:
                 if not hasattr(record, "correlation_id"):
                     from underwrite.services.base import get_log_correlation_id
 
-                    record.correlation_id = get_log_correlation_id(
-                    )  # type: ignore[attr-defined]
+                    record.correlation_id = get_log_correlation_id()
                 return True
 
         root.addFilter(CorrelationFilter())
@@ -253,9 +244,7 @@ class Runtime:
             from underwrite.__store__ import PostgresStore
 
             return PostgresStore(dsn=cfg.dsn, pool_size=cfg.pool_size)
-        logger.warning(
-            "unrecognized store backend %r, falling back to FileStore",
-            cfg.backend)
+        logger.warning("unrecognized store backend %r, falling back to FileStore", cfg.backend)
         return FileStore(self.__config.data_dir)
 
     def __build_read_store(self) -> Store | None:
@@ -269,12 +258,9 @@ class Runtime:
         elif cfg.read_backend == "postgres":
             from underwrite.__store__ import PostgresStore
 
-            return PostgresStore(dsn=cfg.read_dsn or cfg.dsn,
-                                 pool_size=cfg.pool_size)
+            return PostgresStore(dsn=cfg.read_dsn or cfg.dsn, pool_size=cfg.pool_size)
         if cfg.read_backend != "memory":
-            logger.warning(
-                "unrecognized read store backend %r, falling back to MemoryStore",
-                cfg.read_backend)
+            logger.warning("unrecognized read store backend %r, falling back to MemoryStore", cfg.read_backend)
         return MemoryStore()
 
     def __build_authz(self) -> AccessControl | None:
@@ -291,15 +277,12 @@ class Runtime:
                     with open(p) as fh:
                         rules = json_mod.load(fh)
                 except (json_mod.JSONDecodeError, OSError) as exc:
-                    logger.error("failed to load authz policy file %s: %s",
-                                 policy_file, exc)
+                    logger.error("failed to load authz policy file %s: %s", policy_file, exc)
                     return None
                 for rule in rules.get("allow", []):
-                    acl.allow(rule.get("subject", "*"),
-                              rule.get("resource", "*"))
+                    acl.allow(rule.get("subject", "*"), rule.get("resource", "*"))
                 for rule in rules.get("deny", []):
-                    acl.deny(rule.get("subject", "*"),
-                             rule.get("resource", "*"))
+                    acl.deny(rule.get("subject", "*"), rule.get("resource", "*"))
         else:
             acl.allow("*", "*")
         return acl
@@ -321,11 +304,7 @@ class Runtime:
                     break
                 try:
                     snap = metrics.snapshot()
-                    if not any([
-                            snap.get("counters"),
-                            snap.get("timers"),
-                            snap.get("gauges")
-                    ]):
+                    if not any([snap.get("counters"), snap.get("timers"), snap.get("gauges")]):
                         continue
                     metrics_logger = logging.getLogger("underwrite.metrics")
                     metrics_logger.debug(
@@ -337,9 +316,7 @@ class Runtime:
                 except Exception:
                     logger.exception("metrics export failed")
 
-        self.__metrics_thread = threading.Thread(target=export_loop,
-                                                 daemon=True,
-                                                 name="metrics-export")
+        self.__metrics_thread = threading.Thread(target=export_loop, daemon=True, name="metrics-export")
         self.__metrics_thread.start()
 
     def __register_subsystem_health(self) -> None:
@@ -352,12 +329,9 @@ class Runtime:
             if hasattr(self.__bus, "dlq") and self.__bus.dlq:
                 dlq = self.__bus.dlq.count
             return {
-                "ok": (not self.__bus.is_stopped()) if hasattr(
-                    self.__bus, "is_stopped") else True,
-                "subscribers":
-                subs,
-                "dlq_count":
-                dlq,
+                "ok": (not self.__bus.is_stopped()) if hasattr(self.__bus, "is_stopped") else True,
+                "subscribers": subs,
+                "dlq_count": dlq,
             }
 
         self.__health.register("bus", _bus_health)
@@ -368,12 +342,8 @@ class Runtime:
         self.__health.register(
             "services",
             lambda: {
-                "ok":
-                True,
-                "running": [
-                    sid for sid, svc in self.__services.items()
-                    if svc.is_running
-                ],
+                "ok": True,
+                "running": [sid for sid, svc in self.__services.items() if svc.is_running],
             },
         )
         if self.__metrics:
@@ -384,11 +354,7 @@ class Runtime:
             self.__health.register("metrics", _metrics_health)
         tracer = self.__tracer
         if tracer is not None:
-            self.__health.register(
-                "tracer", lambda: {
-                    "ok": True,
-                    "spans": len(tracer.spans)
-                })
+            self.__health.register("tracer", lambda: {"ok": True, "spans": len(tracer.spans)})
         if self.__saga:
             self.__health.register("saga", lambda: {"ok": True})
         if hasattr(self.__bus, "dlq") and self.__bus.dlq:
@@ -459,51 +425,35 @@ class Runtime:
         """Returns the secrets manager, or ``None`` if secrets are disabled."""
         return self.__secrets
 
-    def register(self,
-                 service_name: str,
-                 identity: Identity | None = None) -> NanoService:
+    def register(self, service_name: str, identity: Identity | None = None) -> NanoService:
         """Instantiates a nano service by name and registers it."""
         module_path = SERVICE_MAP.get(service_name)
         if not module_path:
             raise ServiceNotFoundError(f"unknown service: {service_name}")
         class_name = SERVICE_CLASSES.get(service_name)
         if not class_name:
-            raise ServiceNotFoundError(
-                f"no class mapping for service: {service_name}")
+            raise ServiceNotFoundError(f"no class mapping for service: {service_name}")
         module = importlib.import_module(module_path)
         cls = getattr(module, class_name, None)
-        if cls is None or not (isinstance(cls, type)
-                               and issubclass(cls, NanoService)):
-            raise ServiceNotFoundError(
-                f"class {class_name} not found in {module_path}")
+        if cls is None or not (isinstance(cls, type) and issubclass(cls, NanoService)):
+            raise ServiceNotFoundError(f"class {class_name} not found in {module_path}")
         extra: dict[str, Any] = {}
         if service_name == "fee":
             extra["fee_schedules"] = dict(self.__config.fee.schedules)
-            extra[
-                "penal_interest_daily_rate"] = self.__config.fee.penal_interest_daily_rate
-            extra[
-                "late_payment_percent"] = self.__config.fee.late_payment_percent
-            extra[
-                "max_penal_interest_per_loan"] = self.__config.fee.max_penal_interest_per_loan
+            extra["penal_interest_daily_rate"] = self.__config.fee.penal_interest_daily_rate
+            extra["late_payment_percent"] = self.__config.fee.late_payment_percent
+            extra["max_penal_interest_per_loan"] = self.__config.fee.max_penal_interest_per_loan
         elif service_name == "kfs":
             extra["cooling_off_days"] = 3
         elif service_name == "governance":
-            extra["param_ranges"] = {
-                k: list(v)
-                for k, v in self.__config.governance.param_ranges.items()
-            }
-            extra["param_defaults"] = dict(
-                self.__config.governance.param_defaults)
+            extra["param_ranges"] = {k: list(v) for k, v in self.__config.governance.param_ranges.items()}
+            extra["param_defaults"] = dict(self.__config.governance.param_defaults)
         elif service_name == "npa":
             nconf = self.__config.npa
-            extra[
-                "standard_provisioning_rate"] = nconf.standard_provisioning_rate
-            extra[
-                "substandard_provisioning_rate"] = nconf.substandard_provisioning_rate
-            extra[
-                "doubtful_provisioning_rate_secured"] = nconf.doubtful_provisioning_rate_secured
-            extra[
-                "loss_provisioning_rate"] = nconf.loss_provisioning_rate
+            extra["standard_provisioning_rate"] = nconf.standard_provisioning_rate
+            extra["substandard_provisioning_rate"] = nconf.substandard_provisioning_rate
+            extra["doubtful_provisioning_rate_secured"] = nconf.doubtful_provisioning_rate_secured
+            extra["loss_provisioning_rate"] = nconf.loss_provisioning_rate
             extra["npa_days"] = nconf.npa_days
             extra["dlg_trigger_days"] = nconf.dlg_trigger_days
         elif service_name == "audit":
@@ -547,8 +497,7 @@ class Runtime:
         """Subscribes a service to all event types it cares about."""
         svc = self.__services.get(service_name)
         if not svc:
-            logger.warning("wire called for unregistered service %s",
-                           service_name)
+            logger.warning("wire called for unregistered service %s", service_name)
             return
         for event_type, subscribers in WIRING.items():
             if service_name in subscribers:
@@ -574,9 +523,7 @@ class Runtime:
         self.__run_migrations()
         self.__start_metrics_export()
         with self.__lock:
-            registered: list[str] = [
-                n for n in service_names if n not in self.__services
-            ]
+            registered: list[str] = [n for n in service_names if n not in self.__services]
         for name in registered:
             self.register(name)
         for name in service_names:
@@ -612,13 +559,13 @@ class Runtime:
                     old = self.__services.pop(service_id)
                     old.stop()
                 except Exception:
-                    logger.exception(
-                        "error stopping service %s during restart", service_id)
+                    logger.exception("error stopping service %s during restart", service_id)
                     continue
             try:
                 svc = self.register(service_id)
                 self.wire(service_id)
                 svc.start()
+                self.__supervisor.record_restart(service_id)
                 self.__supervisor.reset(service_id)
                 restarted.append(service_id)
                 logger.info("service %s restarted successfully", service_id)
@@ -667,17 +614,13 @@ class Runtime:
         except Exception as exc:
             errors.append(f"health: {exc}")
         if errors:
-            logger.error("Runtime.stop completed with %d error(s): %s",
-                         len(errors), "; ".join(errors))
+            logger.error("Runtime.stop completed with %d error(s): %s", len(errors), "; ".join(errors))
 
     def get(self, service_name: str) -> NanoService | None:
         """Returns a registered service by name, or ``None``."""
         return self.__services.get(service_name)
 
-    def publish(self,
-                event_type: str,
-                payload: dict[str, Any],
-                correlation_id: str = "") -> str:
+    def publish(self, event_type: str, payload: dict[str, Any], correlation_id: str = "") -> str:
         """Publishes an event directly to the bus (used for external input)."""
         event = Event(
             event_type=event_type,
@@ -688,10 +631,7 @@ class Runtime:
         )
         return self.__bus.publish(event)
 
-    async def async_publish(self,
-                            event_type: str,
-                            payload: dict[str, Any],
-                            correlation_id: str = "") -> str:
+    async def async_publish(self, event_type: str, payload: dict[str, Any], correlation_id: str = "") -> str:
         """Async variant of ``publish`` for use in async contexts (e.g. FastAPI).
 
         Dispatches the synchronous publish to a thread pool to avoid
@@ -699,8 +639,7 @@ class Runtime:
         """
         import asyncio
 
-        return await asyncio.to_thread(self.publish, event_type, payload,
-                                       correlation_id)
+        return await asyncio.to_thread(self.publish, event_type, payload, correlation_id)
 
     def replay_saga(self, saga_id: str) -> bool:
         """Replays an incomplete saga for crash recovery.

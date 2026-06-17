@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from underwrite.__authz__ import AccessControl
 from underwrite.__events__ import Event
 from underwrite.__exceptions__ import AuthzError
@@ -11,7 +13,6 @@ from underwrite.__identity__ import Identity
 
 
 class TestAccessControl:
-
     def test_default_deny(self) -> None:
         acl = AccessControl()
         assert acl.check_publish("risk", "loan.originated") is False
@@ -44,11 +45,8 @@ class TestAccessControl:
 
     def test_assert_publish_raises(self) -> None:
         acl = AccessControl()
-        try:
+        with pytest.raises(AuthzError):
             acl.assert_publish("risk", "risk.scored")
-            raise AssertionError("expected AuthzError")
-        except AuthzError:
-            pass
 
     def test_signature_verify_roundtrip(self) -> None:
         acl = AccessControl()

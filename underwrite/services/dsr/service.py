@@ -50,7 +50,12 @@ class DataSubjectRightsService(StatefulService):
             self.log_grievance(event)
 
     def create_request(self, event: Event) -> None:
-        """Create a new data subject request."""
+        """Create a new data subject request.
+
+        Args:
+            event: The DSR_REQUEST event containing user_id, request_type,
+                and optional details.
+        """
         user_id: str = event.payload.get("user_id", "")
         request_type: str = event.payload.get("request_type", "")
         if not user_id or request_type not in ("access", "correction", "erasure"):
@@ -85,7 +90,12 @@ class DataSubjectRightsService(StatefulService):
             )
 
     def log_grievance(self, event: Event) -> None:
-        """Log a new grievance."""
+        """Log a new grievance.
+
+        Args:
+            event: The GRIEVANCE_LOGGED event containing user_id, subject,
+                and optional description.
+        """
         user_id: str = event.payload.get("user_id", "")
         subject: str = event.payload.get("subject", "")
         if not user_id or not subject:
@@ -215,6 +225,4 @@ class DataSubjectRightsService(StatefulService):
             List of grievance records.
         """
         with self.state_lock:
-            return [
-                g for g in self.__grievances.values() if g.get("user_id") == user_id
-            ]
+            return [g for g in self.__grievances.values() if g.get("user_id") == user_id]

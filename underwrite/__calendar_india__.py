@@ -12,9 +12,10 @@ from __future__ import annotations
 import calendar
 from datetime import date, timedelta
 
+from underwrite.__logger__ import logger
 
-def _fixed_holidays(start_year: int = 2025,
-                    end_year: int = 2027) -> set[tuple[int, int, int]]:
+
+def _fixed_holidays(start_year: int = 2025, end_year: int = 2027) -> set[tuple[int, int, int]]:
     """Return set of (year, month, day) tuples for fixed-date holidays."""
     holidays: set[tuple[int, int, int]] = set()
     fixed = [
@@ -31,38 +32,68 @@ def _fixed_holidays(start_year: int = 2025,
     return holidays
 
 
-def _moveable_holidays(start_year: int = 2025,
-                       end_year: int = 2027) -> set[tuple[int, int, int]]:
+def _moveable_holidays(start_year: int = 2025, end_year: int = 2027) -> set[tuple[int, int, int]]:
     """Return set of (year, month, day) for moveable holidays.
 
     These are approximate dates and should be updated annually based
     on official RBI circulars.
     """
     known: dict[int, list[tuple[int, int, str]]] = {
-        2025: [(3, 14, "Holi"), (3, 31, "Eid-ul-Fitr"), (4, 6, "Ram Navami"),
-               (4, 10, "Mahavir Jayanti"), (4, 14, "Ambedkar Jayanti"),
-               (4, 18, "Good Friday"), (6, 8, "Eid-ul-Adha"),
-               (8, 16, "Janmashtami"), (9, 5, "Eid-e-Milad"),
-               (10, 1, "Dussehra"), (10, 20, "Diwali"),
-               (10, 22, "Diwali (Balipratipada)"), (11, 5, "Guru Nanak"),
-               (11, 24, "Kartik Purnima")],
-        2026: [(1, 14, "Makar Sankranti"), (1, 26, "Republic Day"),
-               (2, 17, "Maha Shivaratri"), (3, 20, "Holi"),
-               (3, 27, "Good Friday"), (3, 31, "Eid-ul-Fitr"),
-               (4, 14, "Ambedkar Jayanti"), (4, 21, "Ram Navami"),
-               (5, 1, "Maharashtra Day"), (5, 29, "Eid-ul-Adha"),
-               (7, 17, "Muharram"), (8, 15, "Independence Day"),
-               (8, 28, "Janmashtami"), (10, 2, "Gandhi Jayanti"),
-               (10, 19, "Dussehra"), (11, 7, "Diwali"), (11, 25, "Guru Nanak"),
-               (12, 25, "Christmas")],
-        2027: [(1, 1, "New Year"), (1, 14, "Makar Sankranti"), (3, 6, "Holi"),
-               (3, 21, "Eid-ul-Fitr"), (3, 26, "Good Friday"),
-               (4, 10, "Ram Navami"), (4, 14, "Ambedkar Jayanti"),
-               (5, 1, "Maharashtra Day"), (5, 18, "Eid-ul-Adha"),
-               (7, 6, "Muharram"), (8, 15, "Independence Day"),
-               (8, 16, "Janmashtami"), (10, 2, "Gandhi Jayanti"),
-               (10, 8, "Dussehra"), (10, 28, "Diwali"), (11, 15, "Guru Nanak"),
-               (12, 25, "Christmas")],
+        2025: [
+            (3, 14, "Holi"),
+            (3, 31, "Eid-ul-Fitr"),
+            (4, 6, "Ram Navami"),
+            (4, 10, "Mahavir Jayanti"),
+            (4, 14, "Ambedkar Jayanti"),
+            (4, 18, "Good Friday"),
+            (6, 8, "Eid-ul-Adha"),
+            (8, 16, "Janmashtami"),
+            (9, 5, "Eid-e-Milad"),
+            (10, 1, "Dussehra"),
+            (10, 20, "Diwali"),
+            (10, 22, "Diwali (Balipratipada)"),
+            (11, 5, "Guru Nanak"),
+            (11, 24, "Kartik Purnima"),
+        ],
+        2026: [
+            (1, 14, "Makar Sankranti"),
+            (1, 26, "Republic Day"),
+            (2, 17, "Maha Shivaratri"),
+            (3, 20, "Holi"),
+            (3, 27, "Good Friday"),
+            (3, 31, "Eid-ul-Fitr"),
+            (4, 14, "Ambedkar Jayanti"),
+            (4, 21, "Ram Navami"),
+            (5, 1, "Maharashtra Day"),
+            (5, 29, "Eid-ul-Adha"),
+            (7, 17, "Muharram"),
+            (8, 15, "Independence Day"),
+            (8, 28, "Janmashtami"),
+            (10, 2, "Gandhi Jayanti"),
+            (10, 19, "Dussehra"),
+            (11, 7, "Diwali"),
+            (11, 25, "Guru Nanak"),
+            (12, 25, "Christmas"),
+        ],
+        2027: [
+            (1, 1, "New Year"),
+            (1, 14, "Makar Sankranti"),
+            (3, 6, "Holi"),
+            (3, 21, "Eid-ul-Fitr"),
+            (3, 26, "Good Friday"),
+            (4, 10, "Ram Navami"),
+            (4, 14, "Ambedkar Jayanti"),
+            (5, 1, "Maharashtra Day"),
+            (5, 18, "Eid-ul-Adha"),
+            (7, 6, "Muharram"),
+            (8, 15, "Independence Day"),
+            (8, 16, "Janmashtami"),
+            (10, 2, "Gandhi Jayanti"),
+            (10, 8, "Dussehra"),
+            (10, 28, "Diwali"),
+            (11, 15, "Guru Nanak"),
+            (12, 25, "Christmas"),
+        ],
     }
     holidays: set[tuple[int, int, int]] = set()
     for year in range(start_year, end_year + 1):
@@ -86,29 +117,17 @@ def _ensure_holidays(year: int) -> None:
         try:
             holidays.add(date(y, m, d))
         except ValueError:
-            pass
+            logger.warning("invalid holiday date: %d-%d-%d", y, m, d)
     sundays_and_sats: set[date] = set()
     for month in range(1, 13):
         for day in range(1, calendar.monthrange(year, month)[1] + 1):
             dt = date(year, month, day)
             if dt.weekday() == 6:
                 sundays_and_sats.add(dt)
-            if dt.weekday() == 5 and (is_second_saturday(dt)
-                                      or is_fourth_saturday(dt)):
+            if dt.weekday() == 5 and (is_second_saturday(dt) or is_fourth_saturday(dt)):
                 sundays_and_sats.add(dt)
     _holiday_cache[year] = holidays | sundays_and_sats
     _holiday_generated.add(year)
-
-
-def _weekly_holidays(year: int) -> set[date]:
-    """Return all Sundays for the given year."""
-    sundays: set[date] = set()
-    for month in range(1, 13):
-        for day in range(1, calendar.monthrange(year, month)[1] + 1):
-            d = date(year, month, day)
-            if d.weekday() == 6:
-                sundays.add(d)
-    return sundays
 
 
 def is_holiday(dt: date) -> bool:

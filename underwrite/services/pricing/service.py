@@ -9,10 +9,10 @@ transparent fee disclosure for Indian retail lending.
 from __future__ import annotations
 
 import math
-
 from typing import Any
 
 from underwrite.__events__ import Event, EventType
+from underwrite.__exceptions__ import ProtocolError
 from underwrite.services import NanoService
 from underwrite.validate import get_finite, get_non_empty
 
@@ -52,11 +52,14 @@ class PricingService(NanoService):
     """Computes loan pricing with RBI-mandated rate caps and fee disclosure."""
 
     def __init__(self, **kwargs: Any) -> None:
+        """Initialize the pricing service.
+
+        Args:
+            rate_cap: Maximum permissible interest rate.
+            penal_interest_cap: Maximum penal interest rate.
+        """
         self.__rate_cap: float = kwargs.pop("rate_cap", DEFAULT_LOAN_CAP)
-        self.__penal_interest_cap: float = kwargs.pop(
-            "penal_interest_cap", PENAL_INTEREST_CAP
-        )
-        self.__has_risk_model: bool = kwargs.pop("has_risk_model", False)
+        self.__penal_interest_cap: float = kwargs.pop("penal_interest_cap", PENAL_INTEREST_CAP)
         super().__init__(**kwargs)
         self.handlers: dict[str, Any] = {
             EventType.PRICING_REQUEST: self.compute_pricing,
@@ -65,6 +68,11 @@ class PricingService(NanoService):
         }
 
     def handle(self, event: Event) -> None:
+        """Dispatch an event to the appropriate handler.
+
+        Args:
+            event: The incoming domain event.
+        """
         handler = self.handlers.get(event.event_type)
         if handler is not None:
             handler(event)
@@ -101,7 +109,7 @@ class PricingService(NanoService):
         emi = self.compute_emi(principal, monthly_rate, tenure_months)
         total_repayment = emi * tenure_months
         total_interest = total_repayment - principal
-        apr = self.compute_apr(principal, emi, tenure_months, total_upfront_fees)
+        apr = self.compute_apr(principal, tenure_months, interest_rate, processing_fees=total_upfront_fees)
 
         result: dict[str, Any] = {
             "borrower": borrower,
@@ -130,9 +138,7 @@ class PricingService(NanoService):
             dti = (emi / annual_income * 12) if annual_income > 0 else 0
             result["debt_to_income_ratio"] = round(dti, 4)
 
-        self.emit(
-            EventType.PRICING_COMPUTED, result, correlation_id=event.correlation_id
-        )
+        self.emit(EventType.PRICING_COMPUTED, result, correlation_id=event.correlation_id)
 
     def compute_penal_interest(self, event: Event) -> None:
         """Compute penal interest on overdue amounts.
@@ -251,40 +257,75 @@ class PricingService(NanoService):
         return principal * monthly_rate * factor / (factor - 1)
 
     @staticmethod
+    def validate_interest_rate(rate: float, loan_type: str = "personal") -> float:
+        """Validate interest rate against RBI regulatory caps.
+
+        Args:
+            rate: Annual interest rate as decimal.
+            loan_type: One of 'personal', 'home', 'micro', 'education', 'vehicle'.
+
+        Returns:
+            The validated rate.
+
+        Raises:
+            ProtocolError: If rate exceeds regulatory cap.
+        """
+        caps = {
+            "personal": 0.24,  # 24% - RBI personal loan cap
+            "home": 0.15,  # 15% - Housing loan
+            "micro": 0.26,  # 26% - Microfinance
+            "education": 0.15,  # 15% - Education loan
+            "vehicle": 0.18,  # 18% - Vehicle loan
+        }
+        cap = caps.get(loan_type, 0.24)
+        if rate > cap:
+            raise ProtocolError(f"Interest rate {rate * 100:.2f}% exceeds {loan_type} loan cap of {cap * 100:.2f}%")
+        return rate
+
     def compute_apr(
-        principal: float, emi: float, tenure_months: int, total_fees: float
+        self,
+        principal: float,
+        term_months: int,
+        interest_rate: float,
+        processing_fees: float = 0.0,
+        insurance_premium: float = 0.0,
+        other_charges: float = 0.0,
     ) -> float:
-        """Compute the annual percentage rate using Newton-Raphson.
+        """Compute APR including all fees per RBI Fair Practices Code.
+
+        Uses the Newton-Raphson method to solve for APR where:
+        PV = sum(Pmt / (1+APR/12)^t) for t=1..term_months
+        net_disbursed = principal - processing_fees - insurance_premium - other_charges
 
         Args:
             principal: Loan principal amount.
-            emi: Monthly installment amount.
-            tenure_months: Loan tenure in months.
-            total_fees: Total upfront fees deducted from principal.
+            term_months: Loan tenure in months.
+            interest_rate: Annual interest rate as decimal (e.g. 0.12 for 12%).
+            processing_fees: Processing fees deducted upfront.
+            insurance_premium: Insurance premium deducted upfront.
+            other_charges: Other charges deducted upfront.
 
         Returns:
-            APR as a percentage.
+            APR as a decimal (e.g. 0.15 for 15% APR).
         """
-        net_principal = principal - total_fees
-        if net_principal <= 0 or emi <= 0 or tenure_months <= 0:
+        net_disbursed = principal - processing_fees - insurance_premium - other_charges
+        if net_disbursed <= 0:
             return 0.0
-        rate = 0.01
+        monthly_rate = interest_rate / 12.0
+        emi = principal * monthly_rate * (1 + monthly_rate) ** term_months / ((1 + monthly_rate) ** term_months - 1)
+
+        # Newton-Raphson for APR
+        apr_guess = interest_rate
         for _ in range(100):
-            if rate <= 0:
-                rate = 0.0001
-            factor = math.exp(tenure_months * math.log1p(rate))
-            pv = emi * (factor - 1.0) / (rate * factor)
-            diff = pv - net_principal
-            if abs(diff) < 0.0001:
+            monthly_apr = apr_guess / 12.0
+            pv = 0.0
+            dpv = 0.0
+            for t in range(1, term_months + 1):
+                factor = (1 + monthly_apr) ** t
+                pv += emi / factor
+                dpv -= t * emi / (factor * (1 + monthly_apr))
+            diff = pv - net_disbursed
+            if abs(diff) < 1e-10:
                 break
-            if rate == 0:
-                break
-            derivative = (
-                emi
-                * (factor * (1.0 - tenure_months * rate) - 1.0)
-                / (rate * rate * factor)
-            )
-            if derivative == 0:
-                break
-            rate -= diff / derivative
-        return rate * 12.0 * 100.0
+            apr_guess -= diff / dpv
+        return max(0.0, apr_guess)

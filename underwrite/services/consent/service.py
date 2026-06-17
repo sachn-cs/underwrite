@@ -26,13 +26,19 @@ class ConsentService(StatefulService):
     """
 
     def __init__(self, **kwargs: Any) -> None:
+        """Initialize the consent service with required purposes and validity.
+
+        Args:
+            **kwargs: May include ``required_purposes`` (list of str)
+                and ``consent_validity_days`` (int). Falls back to
+                empty list and 365 days respectively.
+
+        """
         self.__required_purposes: list[str] = kwargs.pop("required_purposes", [])
         self.__consent_validity_days: int = kwargs.pop("consent_validity_days", 365)
         super().__init__(**kwargs)
         self.__records: dict[str, dict[str, Any]] = {}
-        self.repo: TypedStoreRepository[dict[str, dict[str, Any]]] = self.store_repo(
-            "consent", dict
-        )
+        self.repo: TypedStoreRepository[dict[str, dict[str, Any]]] = self.store_repo("consent", dict)
         loaded = self.repo.load(default={})
         if loaded:
             self.__records = loaded
@@ -42,6 +48,7 @@ class ConsentService(StatefulService):
 
         Args:
             event: The incoming domain event.
+
         """
         if event.event_type == EventType.CONSENT_RECORDED:
             self.record_consent(event)
@@ -49,7 +56,13 @@ class ConsentService(StatefulService):
             self.withdraw_consent(event)
 
     def record_consent(self, event: Event) -> None:
-        """Record a new consent for a user/purpose pair."""
+        """Record a new consent for a user/purpose pair.
+
+        Args:
+            event: The CONSENT_RECORDED event with user_id, purpose,
+                and optional ip_address and user_agent.
+
+        """
         user_id: str = event.payload.get("user_id", "")
         purpose: str = event.payload.get("purpose", "")
         if not user_id or not purpose:
@@ -71,7 +84,13 @@ class ConsentService(StatefulService):
             self.repo.save(self.__records)
 
     def withdraw_consent(self, event: Event) -> None:
-        """Withdraw consent for a user, optionally for a specific purpose."""
+        """Withdraw consent for a user, optionally for a specific purpose.
+
+        Args:
+            event: The CONSENT_WITHDRAWN event with user_id and
+                optional purpose.
+
+        """
         user_id: str = event.payload.get("user_id", "")
         purpose: str = event.payload.get("purpose", "")
         if not user_id:
@@ -86,10 +105,7 @@ class ConsentService(StatefulService):
                     record["withdrawn_at"] = datetime.now(timezone.utc).isoformat()
             else:
                 for key, record in self.__records.items():
-                    if (
-                        key.startswith(f"{user_id}:")
-                        and record.get("status") == "active"
-                    ):
+                    if key.startswith(f"{user_id}:") and record.get("status") == "active":
                         record["status"] = "withdrawn"
                         record["withdrawn_at"] = datetime.now(timezone.utc).isoformat()
             self.repo.save(self.__records)
@@ -103,6 +119,7 @@ class ConsentService(StatefulService):
 
         Returns:
             Consent record or None.
+
         """
         with self.state_lock:
             return self.__records.get(f"{user_id}:{purpose}")
@@ -116,6 +133,7 @@ class ConsentService(StatefulService):
 
         Returns:
             True if active and not expired.
+
         """
         with self.state_lock:
             record = self.__records.get(f"{user_id}:{purpose}")
@@ -130,7 +148,12 @@ class ConsentService(StatefulService):
                     if expires < datetime.now(timezone.utc):
                         return False
                 except (ValueError, TypeError):
-                    pass
+                    logger.warning(
+                        "invalid expires_at format for user %s purpose %s: %s",
+                        user_id,
+                        purpose,
+                        expires_str,
+                    )
             return True
 
     def get_user_consents(self, user_id: str) -> list[dict[str, Any]]:
@@ -141,6 +164,7 @@ class ConsentService(StatefulService):
 
         Returns:
             List of consent record dicts.
+
         """
         with self.state_lock:
             if not self.__records:
@@ -155,10 +179,9 @@ class ConsentService(StatefulService):
 
         Returns:
             List of purpose strings that are missing.
+
         """
         active = set(
-            r["purpose"]
-            for r in self.get_user_consents(user_id)
-            if self.has_active_consent(user_id, r["purpose"])
+            r["purpose"] for r in self.get_user_consents(user_id) if self.has_active_consent(user_id, r["purpose"])
         )
         return [p for p in self.__required_purposes if p not in active]

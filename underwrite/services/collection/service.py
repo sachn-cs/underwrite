@@ -8,9 +8,9 @@ EMI-based schedules.
 
 from __future__ import annotations
 
+import math
 from datetime import date, datetime, timezone
 from decimal import Decimal
-import math
 from typing import Any
 
 from underwrite.__amortization__ import generate_schedule
@@ -29,11 +29,15 @@ class CollectionService(StatefulService):
     """
 
     def __init__(self, **kwargs: Any) -> None:
+        """Initialize the collection service with loan tracking.
+
+        Args:
+            **kwargs: Forwarded to StatefulService.__init__.
+
+        """
         super().__init__(**kwargs)
         self.__loans: dict[str, dict[str, Any]] = {}
-        self.repo: TypedStoreRepository[dict[str, dict[str, Any]]] = self.store_repo(
-            "loans", dict
-        )
+        self.repo: TypedStoreRepository[dict[str, dict[str, Any]]] = self.store_repo("loans", dict)
         loaded = self.repo.load(default={})
         if loaded:
             self.__loans = loaded
@@ -43,6 +47,7 @@ class CollectionService(StatefulService):
 
         Args:
             event: The incoming domain event.
+
         """
         if event.event_type == EventType.LOAN_ORIGINATED:
             self.on_loan_originated(event)
@@ -62,9 +67,7 @@ class CollectionService(StatefulService):
 
         with self.state_lock:
             if annual_rate > 0 and term > 0:
-                sched = self.__build_schedule(
-                    principal, annual_rate, term, start_date_str
-                )
+                sched = self.__build_schedule(principal, annual_rate, term, start_date_str)
                 monthly = float(sched.emi)
             else:
                 monthly = principal / term if term > 0 else 0.0
@@ -127,6 +130,7 @@ class CollectionService(StatefulService):
 
         Returns:
             Collection record dict or None if not found.
+
         """
         with self.state_lock:
             return self.__loans.get(borrower)
@@ -148,6 +152,7 @@ class CollectionService(StatefulService):
 
         Returns:
             An AmortizationSchedule instance.
+
         """
         sd: date | None = None
         if start_date_str:

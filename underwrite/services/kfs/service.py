@@ -30,9 +30,7 @@ from underwrite.validate import get_finite, get_non_empty
 DEFAULT_COOLING_OFF_DAYS = 3
 
 
-def compute_apr(
-    principal: float, emi: Decimal, tenure_months: int, total_fees: Decimal
-) -> Decimal:
+def compute_apr(principal: float, emi: Decimal, tenure_months: int, total_fees: Decimal) -> Decimal:
     """Compute the Annual Percentage Rate (APR) including fees.
 
     Uses the Newton-Raphson method to solve for the effective monthly
@@ -63,9 +61,7 @@ def compute_apr(
         if abs(diff) < Decimal("0.0001"):
             break
         derivative = (
-            emi_dec
-            * ((Decimal("1") + rate) ** n * (Decimal("1") - n * rate) - Decimal("1"))
-            / (rate * rate * factor)
+            emi_dec * ((Decimal("1") + rate) ** n * (Decimal("1") - n * rate) - Decimal("1")) / (rate * rate * factor)
         )
         if derivative == 0:
             break
@@ -85,10 +81,9 @@ class KfsService(NanoService):
     """
 
     def __init__(self, **kwargs: Any) -> None:
+        """Initialize the KFS service with configurable cooling-off period."""
         super().__init__(**kwargs)
-        self.__cooling_off_days: int = kwargs.get(
-            "cooling_off_days", DEFAULT_COOLING_OFF_DAYS
-        )
+        self.__cooling_off_days: int = kwargs.get("cooling_off_days", DEFAULT_COOLING_OFF_DAYS)
 
     def handle(self, event: Event) -> None:
         """Generate a KFS document on request.
@@ -100,7 +95,11 @@ class KfsService(NanoService):
             self.__on_kfs_generate(event)
 
     def __on_kfs_generate(self, event: Event) -> None:
-        """Handle a KFS generation request."""
+        """Handle a KFS generation request.
+
+        Args:
+            event: The KFS generation event.
+        """
         p = event.payload
         loan_id: str = p.get("loan_id", "")
         if not loan_id:
@@ -132,9 +131,7 @@ class KfsService(NanoService):
             logger.error("KFS schedule generation failed for loan %s: %s", loan_id, exc)
             return
 
-        kfs = self.__build_kfs(
-            loan_id, borrower, principal, annual_rate, tenure_months, sched, fees, sd
-        )
+        kfs = self.__build_kfs(loan_id, borrower, principal, annual_rate, tenure_months, sched, fees, sd)
         self.emit(
             EventType.KFS_GENERATED,
             kfs,

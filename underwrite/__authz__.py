@@ -164,20 +164,16 @@ class AccessControl:
             return False
         try:
             public_bytes = base64.b64decode(public_key_b64)
-            public_key = ed25519.Ed25519PublicKey.from_public_bytes(
-                public_bytes)
+            public_key = ed25519.Ed25519PublicKey.from_public_bytes(public_bytes)
             payload_str = json.dumps(event.payload, sort_keys=True)
-            to_verify = f"{event.event_id}:{event.timestamp}:{event.event_type}:{payload_str}".encode(
-            )
+            to_verify = f"{event.event_id}:{event.timestamp}:{event.event_type}:{payload_str}".encode()
             signature = base64.b64decode(event.signature)
             public_key.verify(signature, to_verify)
             return True
         except InvalidSignature:
             return False
         except (TypeError, ValueError) as exc:
-            logger.exception(
-                "unexpected error verifying signature on event %s: %s",
-                event.event_id, exc)
+            logger.exception("unexpected error verifying signature on event %s: %s", event.event_id, exc)
             return False
 
     def assert_publish(self, subject: str, event_type: str) -> None:
@@ -204,8 +200,7 @@ class AccessControl:
             AuthzError: If the subject is not allowed to subscribe.
         """
         if not self.check_subscribe(subject, event_type):
-            raise AuthzError(
-                f"{subject} not allowed to subscribe to {event_type}")
+            raise AuthzError(f"{subject} not allowed to subscribe to {event_type}")
 
     def assert_verified(self, event: Event) -> None:
         """Asserts an event carries a valid signature from its source.
@@ -217,10 +212,6 @@ class AccessControl:
             AuthzError: If the signature is missing or invalid.
         """
         if not event.signature:
-            raise AuthzError(
-                f"missing signature on event {event.event_id} from {event.source}"
-            )
+            raise AuthzError(f"missing signature on event {event.event_id} from {event.source}")
         if not self.verify_signature(event):
-            raise AuthzError(
-                f"invalid signature on event {event.event_id} from {event.source}"
-            )
+            raise AuthzError(f"invalid signature on event {event.event_id} from {event.source}")

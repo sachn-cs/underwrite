@@ -8,6 +8,8 @@ Tests verify behavior through public interfaces only:
 
 from __future__ import annotations
 
+import pytest
+
 from underwrite.__bus__ import LocalBus
 from underwrite.__events__ import Event, EventType
 from underwrite.services.collateral.service import CollateralService
@@ -18,18 +20,15 @@ def collateral(bus=None) -> CollateralService:
 
 
 class TestCollateralService:
-
     def test_tracks_collateral_on_origination(self) -> None:
         svc = collateral()
         svc.handle(
             Event(
                 event_type=EventType.LOAN_ORIGINATED,
                 source="test",
-                payload={
-                    "borrower": "alice",
-                    "principal": 10000
-                },
-            ))
+                payload={"borrower": "alice", "principal": 10000},
+            )
+        )
         col = svc.get("alice")
         assert col is not None
         assert col["principal"] == 10000
@@ -39,19 +38,16 @@ class TestCollateralService:
     def test_emits_marked_event_with_correct_values(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe(EventType.COLLATERAL_MARKED,
-                      lambda e: received.append(e))
+        bus.subscribe(EventType.COLLATERAL_MARKED, lambda e: received.append(e))
         svc = collateral(bus=bus)
         bus.start()
         svc.handle(
             Event(
                 event_type=EventType.LOAN_ORIGINATED,
                 source="test",
-                payload={
-                    "borrower": "bob",
-                    "principal": 50000
-                },
-            ))
+                payload={"borrower": "bob", "principal": 50000},
+            )
+        )
         assert len(received) == 1
         assert received[0].payload["borrower"] == "bob"
         assert received[0].payload["required"] == 37500.0
@@ -60,28 +56,23 @@ class TestCollateralService:
     def test_liquidates_on_default_and_emits(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe(EventType.COLLATERAL_LIQUIDATED,
-                      lambda e: received.append(e))
+        bus.subscribe(EventType.COLLATERAL_LIQUIDATED, lambda e: received.append(e))
         svc = collateral(bus=bus)
         bus.start()
         svc.handle(
             Event(
                 event_type=EventType.LOAN_ORIGINATED,
                 source="test",
-                payload={
-                    "borrower": "carol",
-                    "principal": 20000
-                },
-            ))
+                payload={"borrower": "carol", "principal": 20000},
+            )
+        )
         svc.handle(
             Event(
                 event_type=EventType.DEFAULT_OCCURRED,
                 source="test",
-                payload={
-                    "borrower": "carol",
-                    "principal": 20000
-                },
-            ))
+                payload={"borrower": "carol", "principal": 20000},
+            )
+        )
         assert len(received) == 1
         assert received[0].payload["borrower"] == "carol"
         assert received[0].payload["principal"] == 20000.0
@@ -90,8 +81,7 @@ class TestCollateralService:
     def test_default_without_collateral_does_nothing(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe(EventType.COLLATERAL_LIQUIDATED,
-                      lambda e: received.append(e))
+        bus.subscribe(EventType.COLLATERAL_LIQUIDATED, lambda e: received.append(e))
         svc = collateral(bus=bus)
         bus.start()
         svc.handle(
@@ -99,7 +89,8 @@ class TestCollateralService:
                 event_type=EventType.DEFAULT_OCCURRED,
                 source="test",
                 payload={"borrower": "nobody"},
-            ))
+            )
+        )
         assert len(received) == 0
 
     def test_get_unknown_borrower_returns_none(self) -> None:
@@ -109,19 +100,11 @@ class TestCollateralService:
     def test_multiple_borrowers_independent(self) -> None:
         svc = collateral()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "a",
-                      "principal": 100
-                  }))
+            Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "a", "principal": 100})
+        )
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "b",
-                      "principal": 200
-                  }))
+            Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "b", "principal": 200})
+        )
         col_a = svc.get("a")
         assert col_a is not None
         assert col_a["principal"] == 100
@@ -134,8 +117,7 @@ class TestCollateralService:
     def test_ignores_unrelated_event_types(self) -> None:
         bus = LocalBus()
         received: list[Event] = []
-        bus.subscribe(EventType.COLLATERAL_MARKED,
-                      lambda e: received.append(e))
+        bus.subscribe(EventType.COLLATERAL_MARKED, lambda e: received.append(e))
         svc = collateral(bus=bus)
         bus.start()
         svc.handle(Event(event_type="seed.added", source="test", payload={}))
@@ -147,21 +129,13 @@ class TestCollateralService:
         svc = collateral()
         from underwrite.__exceptions__ import ProtocolError
 
-        try:
-            svc.handle(
-                Event(event_type=EventType.LOAN_ORIGINATED,
-                      source="test",
-                      payload={}))
-        except ProtocolError:
-            pass
+        with pytest.raises(ProtocolError):
+            svc.handle(Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={}))
         assert svc.get("") is None
 
     def test_origination_without_principal_defaults_zero(self) -> None:
         svc = collateral()
-        svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={"borrower": "x"}))
+        svc.handle(Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "x"}))
         col_x = svc.get("x")
         assert col_x is not None
         assert col_x["required"] == 0.0
@@ -169,17 +143,10 @@ class TestCollateralService:
     def test_liquidation_removes_borrower(self) -> None:
         svc = collateral()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "y",
-                      "principal": 5000
-                  }))
+            Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "y", "principal": 5000})
+        )
         assert svc.get("y") is not None
-        svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={"borrower": "y"}))
+        svc.handle(Event(event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "y"}))
         assert svc.get("y") is None
 
     def test_emit_both_marked_and_liquidated_on_lifecycle(self) -> None:
@@ -189,19 +156,11 @@ class TestCollateralService:
         svc = collateral(bus=bus)
         bus.start()
         svc.handle(
-            Event(event_type=EventType.LOAN_ORIGINATED,
-                  source="test",
-                  payload={
-                      "borrower": "z",
-                      "principal": 10000
-                  }))
+            Event(event_type=EventType.LOAN_ORIGINATED, source="test", payload={"borrower": "z", "principal": 10000})
+        )
         svc.handle(
-            Event(event_type=EventType.DEFAULT_OCCURRED,
-                  source="test",
-                  payload={
-                      "borrower": "z",
-                      "principal": 10000
-                  }))
+            Event(event_type=EventType.DEFAULT_OCCURRED, source="test", payload={"borrower": "z", "principal": 10000})
+        )
         types = [e.event_type for e in all_events]
         assert EventType.COLLATERAL_MARKED in types
         assert EventType.COLLATERAL_LIQUIDATED in types

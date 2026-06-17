@@ -93,6 +93,7 @@ def load_blocklist(path: str) -> set[str]:
 
     Returns:
         Set of lowercased blocked entry strings.
+
     """
     p = Path(path)
     if not p.exists():
@@ -116,6 +117,7 @@ def verify_aadhaar_checksum(aadhaar: str) -> bool:
 
     Returns:
         True if the checksum is valid, False otherwise.
+
     """
     if not aadhaar or len(aadhaar) != 12 or not aadhaar.isdigit():
         return False
@@ -134,6 +136,7 @@ def pan_category(pan: str) -> str:
 
     Returns:
         Category label or 'Unknown'.
+
     """
     if not pan or len(pan) < 4:
         return "Unknown"
@@ -145,6 +148,13 @@ class ComplianceService(StatefulService):
     """RBI-compliant KYC/AML verification with risk scoring."""
 
     def __init__(self, **kwargs: Any) -> None:
+        """Initialize the compliance service with KYC records and AML blocklist.
+
+        Args:
+            **kwargs: May include ``aml_blocklist_path``. Falls back to
+                ``AML_BLOCKLIST_PATH`` env var or ``aml_blocklist.json``.
+
+        """
         self.__aml_blocklist_path: str = kwargs.pop(
             "aml_blocklist_path",
             os.environ.get("AML_BLOCKLIST_PATH", BLOCKLIST_PATH),
@@ -152,9 +162,7 @@ class ComplianceService(StatefulService):
         super().__init__(**kwargs)
         self.__blocklist: set[str] = load_blocklist(self.__aml_blocklist_path)
         self.__kyc_records: dict[str, dict[str, Any]] = {}
-        self.repo: TypedStoreRepository[dict[str, Any]] = self.store_repo(
-            "compliance", dict
-        )
+        self.repo: TypedStoreRepository[dict[str, Any]] = self.store_repo("compliance", dict)
         loaded = self.repo.load(default={})
         if loaded:
             self.__kyc_records = loaded.get("kyc_records", {})
@@ -165,6 +173,7 @@ class ComplianceService(StatefulService):
         Args:
             event: The incoming domain event. Processes USER_ADDED,
                 CKYC_VERIFIED, and kyc.video_verified.
+
         """
         if event.event_type == EventType.USER_ADDED:
             self.on_user_added(event)
@@ -174,7 +183,13 @@ class ComplianceService(StatefulService):
             self.on_video_kyc_done(event)
 
     def on_user_added(self, event: Event) -> None:
-        """Process a new user: verify PAN, Aadhaar, run AML screening."""
+        """Process a new user: verify PAN, Aadhaar, run AML screening.
+
+        Args:
+            event: The USER_ADDED event with user, pan, aadhaar,
+                name, and optional consent_id payload.
+
+        """
         user: str = event.payload.get("user", "")
         pan: str = event.payload.get("pan", "").upper()
         aadhaar: str = event.payload.get("aadhaar", "")
@@ -272,7 +287,14 @@ class ComplianceService(StatefulService):
         )
 
     def apply_aml_result(self, user: str, risk_score: int, event: Event) -> None:
-        """Apply AML screening result and emit appropriate events."""
+        """Apply AML screening result and emit appropriate events.
+
+        Args:
+            user: The user identifier.
+            risk_score: Integer risk score from AML screening.
+            event: The originating event for correlation.
+
+        """
         if risk_score >= AML_MEDIUM_THRESHOLD:
             self.emit(
                 EventType.AML_FROZEN,
@@ -328,7 +350,12 @@ class ComplianceService(StatefulService):
                     self.repo.save({"kyc_records": self.__kyc_records})
 
     def on_ckyc_verified(self, event: Event) -> None:
-        """Update CKYC verification status."""
+        """Update CKYC verification status.
+
+        Args:
+            event: The CKYC_VERIFIED event with user and status.
+
+        """
         user: str = event.payload.get("user", "")
         status: str = event.payload.get("status", "")
         with self.state_lock:
@@ -337,7 +364,12 @@ class ComplianceService(StatefulService):
                 self.repo.save({"kyc_records": self.__kyc_records})
 
     def on_video_kyc_done(self, event: Event) -> None:
-        """Update video KYC status."""
+        """Update video KYC status.
+
+        Args:
+            event: The kyc.video_verified event with user and status.
+
+        """
         user: str = event.payload.get("user", "")
         status: str = event.payload.get("status", "")
         with self.state_lock:
@@ -355,6 +387,7 @@ class ComplianceService(StatefulService):
 
         Returns:
             True if consent is valid.
+
         """
         return bool(consent_id)
 
@@ -367,15 +400,13 @@ class ComplianceService(StatefulService):
 
         Returns:
             Integer risk score (higher = higher risk).
+
         """
         name_lower: str = name.lower().strip()
         user_lower: str = user.lower().strip()
         risk_score: int = 0
 
-        if self.__blocklist and any(
-            blocked in name_lower or blocked in user_lower
-            for blocked in self.__blocklist
-        ):
+        if self.__blocklist and any(blocked in name_lower or blocked in user_lower for blocked in self.__blocklist):
             risk_score += 8
 
         text = f"{name_lower} {user_lower}"
@@ -393,12 +424,19 @@ class ComplianceService(StatefulService):
 
         Returns:
             KYC record dict or None if not found.
+
         """
         with self.state_lock:
             return self.__kyc_records.get(user)
 
     def health_check(self) -> dict[str, Any]:
-        """Compliance-specific health: reports blocklist and KYC counts."""
+        """Compliance-specific health: reports blocklist and KYC counts.
+
+        Returns:
+            Health dict extended with aml_blocklist_entries and
+            kyc_records counts.
+
+        """
         base = super().health_check()
         base["aml_blocklist_entries"] = len(self.__blocklist)
         base["kyc_records"] = len(self.__kyc_records)

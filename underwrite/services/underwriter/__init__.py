@@ -1,3 +1,5 @@
+"""Underwriting engine — rule and policy-based credit decisions."""
+
 from underwrite.services.underwriter.engine import (
     DecisionOutcome,
     Policy,

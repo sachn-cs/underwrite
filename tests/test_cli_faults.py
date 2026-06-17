@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import pytest
+
 from underwrite.__cli__ import load_config
 from underwrite.__config__ import Configuration
 
 
 class TestCLILoadConfig:
-
     def test_load_config_returns_default_when_no_file(self) -> None:
         config = load_config()
         assert isinstance(config, Configuration)
@@ -19,11 +20,10 @@ class TestCLILoadConfig:
 
 
 class TestCLIIdentityEdgeCases:
-
     def test_identity_import_guard_does_not_crash(self) -> None:
         try:
             from underwrite.__identity__ import Identity
-            ident = Identity.create("test-service")
-            assert ident.service_id == "test-service"
         except ImportError:
-            pass  # cryptography not installed — acceptable
+            pytest.skip("cryptography not installed")
+        ident = Identity.create("test-service")
+        assert ident.service_id == "test-service"

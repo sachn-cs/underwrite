@@ -6,7 +6,6 @@ from underwrite.__pii import contains_pii_value, is_pii_field, redact_payload
 
 
 class TestPiiFieldDetection:
-
     def test_detects_aadhaar_field(self) -> None:
         assert is_pii_field("aadhaar") is True
 
@@ -28,7 +27,6 @@ class TestPiiFieldDetection:
 
 
 class TestPiiValueDetection:
-
     def test_detects_aadhaar_value(self) -> None:
         assert contains_pii_value("1234 5678 9012") is True
 
@@ -43,7 +41,6 @@ class TestPiiValueDetection:
 
 
 class TestRedactPayload:
-
     def test_redacts_pii_field(self) -> None:
         result = redact_payload({"aadhaar": "123456789012"})
         assert result["aadhaar"] == "***REDACTED***"

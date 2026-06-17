@@ -46,9 +46,8 @@ class TestServiceSupervisor:
         assert sup.record_failure("svc-a") is True  # only 1 failure
         assert sup.record_failure("svc-b") is False  # 3 failures > 2
 
-    def test_record_success_resets_failure_count(self) -> None:
+    def test_record_success_decrements_failure_count(self) -> None:
         sup = ServiceSupervisor(max_restarts=3)
-        sup.record_failure("svc-a")
         sup.record_failure("svc-a")
         sup.record_success("svc-a")
         health = sup.health()
@@ -141,12 +140,12 @@ class TestServiceSupervisor:
         sup = ServiceSupervisor(max_restarts=0)
         assert sup.record_failure("svc-a") is False  # count=1 > 0
 
-    def test_record_success_allows_restart_again(self) -> None:
+    def test_record_success_gradual_recovery(self) -> None:
         sup = ServiceSupervisor(max_restarts=2)
         sup.record_failure("svc-a")
         sup.record_failure("svc-a")
         assert sup.record_failure("svc-a") is False  # exceeded
-        sup.record_success("svc-a")
+        sup.reset("svc-a")
         assert sup.record_failure("svc-a") is True  # fresh start
 
     def test_should_restart_returns_true_within_limit(self) -> None:

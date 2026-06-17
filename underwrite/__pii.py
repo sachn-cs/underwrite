@@ -13,7 +13,9 @@ __all__ = [
     "PIISanitizer",
     "contains_pii_value",
     "is_pii_field",
+    "is_pii_value",
     "redact_payload",
+    "redact_text",
 ]
 
 import re
@@ -21,18 +23,30 @@ from typing import Any
 
 PII_FIELD_PATTERNS: list[str] = [
     "aadhaar",
+    "aadhaar_token",
+    "account_number",
+    "bank_account",
+    "bank_urn",
+    "cibil_score",
+    "ckyc_number",
+    "credit_report",
+    "demate_account",
+    "driving_license",
+    "email",
+    "esic",
+    "ifsc",
+    "mobile",
+    "mutual_folio",
     "pan",
+    "pan_number",
+    "passport",
+    "passport_number",
+    "phone",
     "ssn",
     "tax_id",
-    "passport",
-    "driving_license",
+    "uan",
+    "video_kyc_id",
     "voter_id",
-    "phone",
-    "mobile",
-    "email",
-    "account_number",
-    "ifsc",
-    "bank_account",
 ]
 
 PII_VALUE_PATTERNS: list[str] = [
@@ -41,6 +55,15 @@ PII_VALUE_PATTERNS: list[str] = [
     r"\b\d{3}-\d{2}-\d{4}\b",  # SSN-like (with dashes)
     r"\b\d{9}\b",  # SSN-like (undashed, 9 digits)
     r"\b[A-Z]{1,2}\d{6,9}\b",  # Passport-like
+    r"\b(?:\+91|91|0)?[6-9]\d{9}\b",  # Indian mobile
+    r"\b[1-9][0-9]{5}\b",  # Indian PIN code
+    r"\b[A-Z]{4}0[A-Z0-9]{6}\b",  # IFSC code
+    r"\b[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]\b",  # GSTIN
+    r"\b[A-Z]{3}[0-9]{7}\b",  # Voter ID
+    r"\b[A-Z][0-9]{7}\b",  # Passport (India)
+    r"\b[A-Z]{2}[0-9]{2}\s?[0-9]{11}\b",  # Driving license (India)
+    r"\bCKYC[0-9]{10,16}\b",  # CKYC number
+    r"\b[1-9][0-9]{11}\b",  # EPFO UAN (12-digit)
 ]
 
 PII_REDACTED: str = "***REDACTED***"
@@ -72,6 +95,20 @@ class PIISanitizer:
         return False
 
     @staticmethod
+    def redact_str(text: str) -> str:
+        """Redacts PII values within a larger string.
+
+        Args:
+            text: The source string.
+
+        Returns:
+            The string with any PII values replaced by ``PII_REDACTED``.
+        """
+        for pat in PII_VALUE_PATTERNS:
+            text = re.sub(pat, PII_REDACTED, text)
+        return text
+
+    @staticmethod
     def sanitize(payload: dict[str, Any]) -> dict[str, Any]:
         """Returns a deep copy of *payload* with PII fields and values redacted.
 
@@ -85,17 +122,17 @@ class PIISanitizer:
         for key, value in payload.items():
             if PIISanitizer.is_sensitive_field(key):
                 result[key] = PII_REDACTED
-            elif isinstance(
-                    value,
-                    str) and PIISanitizer.contains_sensitive_value(value):
+            elif isinstance(value, str) and PIISanitizer.contains_sensitive_value(value):
                 result[key] = PII_REDACTED
             elif isinstance(value, dict):
                 result[key] = PIISanitizer.sanitize(value)
             elif isinstance(value, list):
                 result[key] = [
-                    PIISanitizer.sanitize(item) if isinstance(
-                        item, dict) else PII_REDACTED if isinstance(item, str)
-                    and PIISanitizer.contains_sensitive_value(item) else item
+                    PIISanitizer.sanitize(item)
+                    if isinstance(item, dict)
+                    else PII_REDACTED
+                    if isinstance(item, str) and PIISanitizer.contains_sensitive_value(item)
+                    else item
                     for item in value
                 ]
             else:
@@ -118,3 +155,20 @@ def contains_pii_value(value: str) -> bool:
 
 def redact_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return PIISanitizer.sanitize(payload)
+
+
+def is_pii_value(value: str) -> bool:
+    """Returns True if the string is a PII value."""
+    return PIISanitizer.contains_sensitive_value(value)
+
+
+def redact_text(text: str) -> str:
+    """Redacts PII values within a larger string.
+
+    Args:
+        text: The source string.
+
+    Returns:
+        The string with any PII values replaced by ``PII_REDACTED``.
+    """
+    return PIISanitizer.redact_str(text)

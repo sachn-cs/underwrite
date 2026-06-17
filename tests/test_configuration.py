@@ -21,7 +21,6 @@ from underwrite.__exceptions__ import ConfigurationError
 
 
 class TestConfiguration:
-
     def test_default_has_all_services(self) -> None:
         config = Configuration.default()
         assert len(config.services) >= 18
@@ -50,20 +49,10 @@ class TestConfiguration:
 
     def test_merge_new_subsystem_fields(self, tmp_path: Path) -> None:
         data = {
-            "authz": {
-                "enabled": True,
-                "policy_file": "/tmp/policy.json"
-            },
-            "bus": {
-                "rate_limit": 50.0,
-                "max_workers": 4
-            },
-            "metrics": {
-                "enabled": False
-            },
-            "migration": {
-                "auto_migrate": False
-            },
+            "authz": {"enabled": True, "policy_file": "/tmp/policy.json"},
+            "bus": {"rate_limit": 50.0, "max_workers": 4},
+            "metrics": {"enabled": False},
+            "migration": {"auto_migrate": False},
             "store": {
                 "backend": "postgres",
                 "dsn": "host=localhost",
@@ -71,13 +60,8 @@ class TestConfiguration:
                 "read_backend": "filesystem",
                 "read_dsn": "/tmp/read",
             },
-            "tracing": {
-                "enabled": True,
-                "exporter": "console"
-            },
-            "saga": {
-                "enabled": False
-            },
+            "tracing": {"enabled": True, "exporter": "console"},
+            "saga": {"enabled": False},
         }
         p = tmp_path / "config.json"
         p.write_text(json.dumps(data))
@@ -131,24 +115,21 @@ class TestConfiguration:
             Configuration.load(str(p))
         assert "invalid_backend" in str(exc.value)
 
-    def test_schema_rejects_invalid_tracing_exporter(self,
-                                                     tmp_path: Path) -> None:
+    def test_schema_rejects_invalid_tracing_exporter(self, tmp_path: Path) -> None:
         p = tmp_path / "config.json"
         p.write_text(json.dumps({"tracing": {"exporter": "invalid_exporter"}}))
         with pytest.raises(ConfigurationError) as exc:
             Configuration.load(str(p))
         assert "invalid_exporter" in str(exc.value)
 
-    def test_schema_rejects_invalid_logging_level(self,
-                                                  tmp_path: Path) -> None:
+    def test_schema_rejects_invalid_logging_level(self, tmp_path: Path) -> None:
         p = tmp_path / "config.json"
         p.write_text(json.dumps({"logging": {"level": "INVALID_LEVEL"}}))
         with pytest.raises(ConfigurationError) as exc:
             Configuration.load(str(p))
         assert "INVALID_LEVEL" in str(exc.value)
 
-    def test_schema_rejects_invalid_logging_format(self,
-                                                   tmp_path: Path) -> None:
+    def test_schema_rejects_invalid_logging_format(self, tmp_path: Path) -> None:
         p = tmp_path / "config.json"
         p.write_text(json.dumps({"logging": {"format": "invalid_format"}}))
         with pytest.raises(ConfigurationError) as exc:
@@ -169,8 +150,7 @@ class TestConfiguration:
             Configuration.load(str(p))
         assert "rate_limit" in str(exc.value)
 
-    def test_schema_rejects_negative_export_interval(self,
-                                                     tmp_path: Path) -> None:
+    def test_schema_rejects_negative_export_interval(self, tmp_path: Path) -> None:
         p = tmp_path / "config.json"
         p.write_text(json.dumps({"metrics": {"export_interval": -1}}))
         with pytest.raises(ConfigurationError) as exc:
@@ -179,29 +159,12 @@ class TestConfiguration:
 
     def test_valid_config_passes_schema(self, tmp_path: Path) -> None:
         valid = {
-            "bus": {
-                "backend": "local",
-                "rate_limit": 100,
-                "max_workers": 4
-            },
-            "store": {
-                "backend": "filesystem"
-            },
-            "logging": {
-                "level": "INFO",
-                "format": "text"
-            },
-            "metrics": {
-                "enabled": True,
-                "export_interval": 60
-            },
-            "tracing": {
-                "enabled": False,
-                "exporter": "console"
-            },
-            "saga": {
-                "enabled": True
-            },
+            "bus": {"backend": "local", "rate_limit": 100, "max_workers": 4},
+            "store": {"backend": "filesystem"},
+            "logging": {"level": "INFO", "format": "text"},
+            "metrics": {"enabled": True, "export_interval": 60},
+            "tracing": {"enabled": False, "exporter": "console"},
+            "saga": {"enabled": True},
             "data_dir": "./data",
         }
         p = tmp_path / "config.json"
@@ -227,28 +190,24 @@ class TestConfiguration:
         assert d["secrets"]["url"] == "https://vault.example.com"
         assert d["secrets"]["region"] == "us-east-1"
 
-    def test_env_override_coerces_int(self,
-                                      monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_env_override_coerces_int(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("UNDERWRITE_BUS_MAX_WORKERS", "8")
         config = Configuration.load()
         assert isinstance(config.bus.max_workers, int)
         assert config.bus.max_workers == 8
 
-    def test_env_override_coerces_float(
-            self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_env_override_coerces_float(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("UNDERWRITE_BUS_RATE_LIMIT", "150.5")
         config = Configuration.load()
         assert isinstance(config.bus.rate_limit, float)
         assert config.bus.rate_limit == 150.5
 
-    def test_env_override_coerces_bool(
-            self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_env_override_coerces_bool(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("UNDERWRITE_AUTHZ_ENABLED", "true")
         config = Configuration.load()
         assert config.authz.enabled is True
 
-    def test_env_override_bool_false(self,
-                                     monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_env_override_bool_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("UNDERWRITE_AUTHZ_ENABLED", "false")
         config = Configuration.load()
         assert config.authz.enabled is False

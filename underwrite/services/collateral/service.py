@@ -16,12 +16,16 @@ class CollateralService(StatefulService):
     """Tracks posted collateral against active loans and triggers liquidation on default."""
 
     def __init__(self, **kwargs: Any) -> None:
+        """Initialize the collateral service with LTV tracking.
+
+        Args:
+            **kwargs: Forwarded to StatefulService.__init__.
+
+        """
         super().__init__(**kwargs)
         self.__ltv_ratio: float = 0.75
         self.__collateral: dict[str, dict[str, Any]] = {}
-        self.repo: TypedStoreRepository[dict[str, dict[str, Any]]] = self.store_repo(
-            "collateral", dict
-        )
+        self.repo: TypedStoreRepository[dict[str, dict[str, Any]]] = self.store_repo("collateral", dict)
         loaded = self.repo.load(default={})
         if loaded:
             self.__collateral = loaded
@@ -31,6 +35,7 @@ class CollateralService(StatefulService):
 
         Args:
             event: The incoming domain event.
+
         """
         if event.event_type == EventType.LOAN_ORIGINATED:
             self.on_loan_originated(event)
@@ -38,7 +43,13 @@ class CollateralService(StatefulService):
             self.on_default(event)
 
     def on_loan_originated(self, event: Event) -> None:
-        """Set collateral requirements for a new loan."""
+        """Set collateral requirements for a new loan.
+
+        Args:
+            event: The loan origination event with borrower and
+                principal payload.
+
+        """
         borrower: str = get_non_empty(event.payload, "borrower")
         principal: float = get_finite(event.payload, "principal")
         required: float = principal * self.__ltv_ratio
@@ -62,7 +73,12 @@ class CollateralService(StatefulService):
         )
 
     def on_default(self, event: Event) -> None:
-        """Liquidate collateral on default."""
+        """Liquidate collateral on default.
+
+        Args:
+            event: The default event containing the borrower identifier.
+
+        """
         borrower = event.payload.get("borrower", "")
         if not borrower:
             logger.warning("dropping DEFAULT_OCCURRED with missing borrower")
@@ -74,8 +90,7 @@ class CollateralService(StatefulService):
                     self.repo.save(self.__collateral)
                 except Exception:
                     logger.exception(
-                        "failed to persist collateral removal for %s, "
-                        "restoring in-memory state",
+                        "failed to persist collateral removal for %s, restoring in-memory state",
                         borrower,
                     )
                     self.__collateral[borrower] = col
@@ -99,6 +114,7 @@ class CollateralService(StatefulService):
 
         Returns:
             Collateral record dict or None if not found.
+
         """
         with self.state_lock:
             return self.__collateral.get(borrower)

@@ -6,7 +6,6 @@ from underwrite.__pii import PII_REDACTED, PIISanitizer
 
 
 class TestPIISanitizer:
-
     def test_sanitize_leaves_clean_payload(self) -> None:
         result = PIISanitizer.sanitize({"name": "John", "amount": 100})
         assert result == {"name": "John", "amount": 100}
@@ -24,10 +23,7 @@ class TestPIISanitizer:
         assert result["user"]["pan"] == PII_REDACTED
 
     def test_sanitize_redacts_nested_list(self) -> None:
-        result = PIISanitizer.sanitize(
-            {"items": [{
-                "aadhaar": "123456789012"
-            }]})
+        result = PIISanitizer.sanitize({"items": [{"aadhaar": "123456789012"}]})
         assert result["items"][0]["aadhaar"] == PII_REDACTED
 
     def test_sanitize_handles_empty_dict(self) -> None:

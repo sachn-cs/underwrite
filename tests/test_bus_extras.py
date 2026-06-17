@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import time
 
+import pytest
+
 from underwrite.__bus__ import DeadLetterQueue, DistributedRateLimiter, IdempotencyGuard, LocalBus, RateLimiter
 from underwrite.__events__ import Event
 from underwrite.__exceptions__ import RateLimitError
@@ -11,7 +13,6 @@ from underwrite.__store__ import MemoryStore
 
 
 class TestDeadLetterQueue:
-
     def test_empty_by_default(self) -> None:
         dlq = DeadLetterQueue()
         assert dlq.count == 0
@@ -31,8 +32,7 @@ class TestDeadLetterQueue:
     def test_replay(self) -> None:
         bus = LocalBus()
         dlq = DeadLetterQueue()
-        dlq.put(Event(event_type="t", source="s", payload={"k": "v"}), "err",
-                "s1")
+        dlq.put(Event(event_type="t", source="s", payload={"k": "v"}), "err", "s1")
         bus.start()
         n = dlq.replay(bus)
         assert n == 1
@@ -57,7 +57,6 @@ class TestDeadLetterQueue:
 
 
 class TestRateLimiter:
-
     def test_allows_first_call(self) -> None:
         rl = RateLimiter(max_rate=10)
         assert rl.check("key") is True
@@ -75,11 +74,8 @@ class TestRateLimiter:
     def test_assert_allowed_raises(self) -> None:
         rl = RateLimiter(max_rate=1000)
         rl.check("key")
-        try:
+        with pytest.raises(RateLimitError):
             rl.assert_allowed("key")
-            raise AssertionError("expected RateLimitError")
-        except RateLimitError:
-            pass
 
     def test_recovery_after_interval(self) -> None:
         rl = RateLimiter(max_rate=1000000, interval=0.001)
@@ -89,11 +85,9 @@ class TestRateLimiter:
 
 
 class TestLocalBusDLQ:
-
     def test_failed_handler_goes_to_dlq(self) -> None:
         bus = LocalBus()
-        bus.subscribe("test.fail", lambda e:
-                      (_ for _ in ()).throw(RuntimeError("fail")))
+        bus.subscribe("test.fail", lambda e: (_ for _ in ()).throw(RuntimeError("fail")))
         bus.start()
         bus.publish(Event(event_type="test.fail", source="s"))
         assert bus.dlq.count == 1
@@ -109,12 +103,10 @@ class TestLocalBusDLQ:
 
 
 class TestDeadLetterQueuePersistence:
-
     def test_put_persists_to_store(self) -> None:
         store = MemoryStore()
         dlq = DeadLetterQueue(store=store, sync_interval=1)
-        dlq.put(Event(event_type="t", source="s", payload={"k": "v"}), "err",
-                "sub1")
+        dlq.put(Event(event_type="t", source="s", payload={"k": "v"}), "err", "sub1")
         raw = store.get("bus:dlq")
         assert raw is not None
         assert isinstance(raw, list)
@@ -154,7 +146,6 @@ class TestDeadLetterQueuePersistence:
 
 
 class TestDistributedRateLimiter:
-
     def test_falls_back_to_in_memory_without_store(self) -> None:
         rl = DistributedRateLimiter(max_rate=1000)
         assert rl.check("key") is True
@@ -173,12 +164,8 @@ class TestDistributedRateLimiter:
 
     def test_store_backed_shares_state(self) -> None:
         store = MemoryStore()
-        rl1 = DistributedRateLimiter(max_rate=1000,
-                                     store=store,
-                                     prefix="shared")
-        rl2 = DistributedRateLimiter(max_rate=1000,
-                                     store=store,
-                                     prefix="shared")
+        rl1 = DistributedRateLimiter(max_rate=1000, store=store, prefix="shared")
+        rl2 = DistributedRateLimiter(max_rate=1000, store=store, prefix="shared")
         rl1.check("k")
         # rl2 sees the same rate-limit state from the store
         allowed = [rl2.check("k") for _ in range(10)]
@@ -194,7 +181,6 @@ class TestDistributedRateLimiter:
 
 
 class TestIdempotencyGuard:
-
     def test_new_event_not_duplicate(self) -> None:
         guard = IdempotencyGuard()
         assert guard.is_duplicate("h1", "e1") is False

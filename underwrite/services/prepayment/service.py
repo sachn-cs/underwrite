@@ -26,11 +26,17 @@ class PrepaymentService(NanoService):
     """Computes foreclosure quotes and processes prepayment requests."""
 
     def handlers(self) -> dict[str, Any]:
+        """Return event type to handler mapping."""
         return {
             EventType.PREPAYMENT_REQUEST: self.__on_prepayment_request,
         }
 
     def handle(self, event: Event) -> None:
+        """Dispatch an event to the appropriate handler.
+
+        Args:
+            event: The incoming domain event.
+        """
         handler = self.handlers().get(event.event_type)
         if handler is not None:
             handler(event)
@@ -57,7 +63,7 @@ class PrepaymentService(NanoService):
             try:
                 as_of = date.fromisoformat(as_of_str)
             except (ValueError, TypeError):
-                pass
+                logger.debug("invalid as_of date '%s', using None", as_of_str)
 
         payments_raw: list[dict[str, Any]] = p.get("payments", [])
         payments: list[tuple[date, Decimal]] = []

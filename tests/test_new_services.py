@@ -12,7 +12,6 @@ from underwrite.services.underwriter.service import UnderwriterService
 
 
 class TestUnderwriterService:
-
     def test_ignores_unrelated_event(self) -> None:
         svc = UnderwriterService(service_id="underwriter")
         svc.handle(Event(event_type="other", source="test", payload={}))
@@ -28,7 +27,8 @@ class TestUnderwriterService:
                     "principal": 50000.0,
                     "default_probability": 0.5,
                 },
-            ))
+            )
+        )
 
     def test_approves_low_risk_loan(self) -> None:
         svc = UnderwriterService(service_id="underwriter")
@@ -41,11 +41,11 @@ class TestUnderwriterService:
                     "principal": 10000.0,
                     "default_probability": 0.1,
                 },
-            ))
+            )
+        )
 
 
 class TestPricingService:
-
     def test_ignores_unrelated_event(self) -> None:
         svc = PricingService(service_id="pricing")
         svc.handle(Event(event_type="other", source="test", payload={}))
@@ -61,11 +61,11 @@ class TestPricingService:
                     "principal": 10000.0,
                     "default_probability": 0.1,
                 },
-            ))
+            )
+        )
 
 
 class TestDocumentService:
-
     def test_ignores_unrelated_event(self) -> None:
         svc = DocumentService(service_id="document")
         svc.handle(Event(event_type="other", source="test", payload={}))
@@ -76,11 +76,9 @@ class TestDocumentService:
             Event(
                 event_type=EventType.UNDERWRITER_APPROVED,
                 source="test",
-                payload={
-                    "borrower": "alice",
-                    "principal": 10000.0
-                },
-            ))
+                payload={"borrower": "alice", "principal": 10000.0},
+            )
+        )
         docs = svc.documents_for("alice")
         assert len(docs) == 1
         assert docs[0]["borrower"] == "alice"
@@ -93,16 +91,13 @@ class TestDocumentService:
                 Event(
                     event_type=EventType.UNDERWRITER_APPROVED,
                     source="test",
-                    payload={
-                        "borrower": "bob",
-                        "principal": 5000.0
-                    },
-                ))
+                    payload={"borrower": "bob", "principal": 5000.0},
+                )
+            )
         assert len(svc.documents_for("bob")) == 3
 
 
 class TestDisbursementService:
-
     def test_ignores_unrelated_event(self) -> None:
         svc = DisbursementService(service_id="disbursement")
         svc.handle(Event(event_type="other", source="test", payload={}))
@@ -113,12 +108,9 @@ class TestDisbursementService:
             Event(
                 event_type=EventType.DOCUMENT_GENERATED,
                 source="test",
-                payload={
-                    "borrower": "alice",
-                    "principal": 10000.0,
-                    "doc_id": "doc123"
-                },
-            ))
+                payload={"borrower": "alice", "principal": 10000.0, "doc_id": "doc123"},
+            )
+        )
         record = svc.get("alice")
         assert record is not None
         assert record["borrower"] == "alice"
@@ -126,7 +118,6 @@ class TestDisbursementService:
 
 
 class TestCollectionService:
-
     def test_ignores_unrelated_event(self) -> None:
         svc = CollectionService(service_id="collection")
         svc.handle(Event(event_type="other", source="test", payload={}))
@@ -142,7 +133,8 @@ class TestCollectionService:
                     "principal": 12000.0,
                     "term": 12.0,
                 },
-            ))
+            )
+        )
         loan = svc.get("alice")
         assert loan is not None
         assert loan["principal"] == 12000.0
@@ -160,23 +152,21 @@ class TestCollectionService:
                     "principal": 1000.0,
                     "term": 1.0,
                 },
-            ))
+            )
+        )
         svc.handle(
             Event(
                 event_type=EventType.REPAID,
                 source="test",
-                payload={
-                    "user": "bob",
-                    "delta_earned": 1000.0
-                },
-            ))
+                payload={"user": "bob", "delta_earned": 1000.0},
+            )
+        )
         loan = svc.get("bob")
         assert loan is not None
         assert loan["status"] == "closed"
 
 
 class TestSettlementService:
-
     def test_ignores_unrelated_event(self) -> None:
         svc = SettlementService(service_id="settlement")
         svc.handle(Event(event_type="other", source="test", payload={}))
@@ -187,11 +177,9 @@ class TestSettlementService:
             Event(
                 event_type=EventType.DEFAULT_OCCURRED,
                 source="test",
-                payload={
-                    "borrower": "alice",
-                    "principal": 10000.0
-                },
-            ))
+                payload={"borrower": "alice", "principal": 10000.0},
+            )
+        )
         assert len(svc.settlements) == 1
         assert svc.settlements[0]["borrower"] == "alice"
         assert svc.settlements[0]["loss"] == 10000.0
@@ -204,9 +192,7 @@ class TestSettlementService:
                 Event(
                     event_type=EventType.DEFAULT_OCCURRED,
                     source="test",
-                    payload={
-                        "borrower": borrower,
-                        "principal": 5000.0
-                    },
-                ))
+                    payload={"borrower": borrower, "principal": 5000.0},
+                )
+            )
         assert len(svc.settlements) == 2

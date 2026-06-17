@@ -9,8 +9,6 @@ from __future__ import annotations
 import threading
 from typing import Any
 
-import pytest
-
 from underwrite.__bus__ import Event, LocalBus
 from underwrite.__circuit__ import CircuitBreaker
 from underwrite.__health__ import HealthRegistry
@@ -18,13 +16,23 @@ from underwrite.__metrics__ import MetricsCollector
 from underwrite.__saga__ import SagaOrchestrator, SagaStep
 from underwrite.__store__ import FileStore, MemoryStore
 from underwrite.__tracer__ import Tracer
+from underwrite.services.mechanism.service import MechanismService
 
 NUM_THREADS: int = 10
 OPS_PER_THREAD: int = 100
 
 
-class TestBusConcurrency:
+def _mechanism_cmd(svc: MechanismService, cmd: str, payload: dict[str, Any]) -> None:
+    svc.handle(
+        Event(
+            event_type="mechanism",
+            source="test",
+            payload={"command": cmd, **payload},
+        )
+    )
 
+
+class TestBusConcurrency:
     def test_concurrent_publish(self) -> None:
         bus = LocalBus(max_workers=4)
         bus.start()
@@ -42,17 +50,12 @@ class TestBusConcurrency:
         def publish_many() -> None:
             try:
                 for i in range(OPS_PER_THREAD):
-                    bus.publish(
-                        Event(event_type="test.event",
-                              source="test",
-                              payload={"i": i}))
+                    bus.publish(Event(event_type="test.event", source="test", payload={"i": i}))
             except Exception as exc:
                 with counter_lock:
                     errors.append(exc)
 
-        threads = [
-            threading.Thread(target=publish_many) for _ in range(NUM_THREADS)
-        ]
+        threads = [threading.Thread(target=publish_many) for _ in range(NUM_THREADS)]
         for t in threads:
             t.start()
         for t in threads:
@@ -65,22 +68,21 @@ class TestBusConcurrency:
         bus = LocalBus(max_workers=4)
         bus.start()
         errors: list[Exception] = []
+        ops_lock = threading.Lock()
 
         def dlq_ops() -> None:
             try:
                 for i in range(OPS_PER_THREAD):
-                    ev = Event(event_type="dlq.test",
-                               source="t",
-                               payload={"i": i})
+                    ev = Event(event_type="dlq.test", source="t", payload={"i": i})
                     bus.publish(ev)
-                _ = bus.dlq.count
-                _ = bus.dlq.records
+                with ops_lock:
+                    _ = bus.dlq.count
+                    _ = bus.dlq.records
             except Exception as exc:
-                errors.append(exc)
+                with ops_lock:
+                    errors.append(exc)
 
-        threads = [
-            threading.Thread(target=dlq_ops) for _ in range(NUM_THREADS)
-        ]
+        threads = [threading.Thread(target=dlq_ops) for _ in range(NUM_THREADS)]
         for t in threads:
             t.start()
         for t in threads:
@@ -90,7 +92,6 @@ class TestBusConcurrency:
 
 
 class TestStoreConcurrency:
-
     def test_concurrent_filestore_set_get(self, tmp_path: Any) -> None:
         store = FileStore(str(tmp_path))
         errors: list[Exception] = []
@@ -99,19 +100,14 @@ class TestStoreConcurrency:
             try:
                 for i in range(OPS_PER_THREAD):
                     key = f"k_{threading.get_ident()}_{i}"
-                    store.set(key, {
-                        "value": i,
-                        "thread": threading.get_ident()
-                    })
+                    store.set(key, {"value": i, "thread": threading.get_ident()})
                     val = store.get(key)
                     assert val is not None, f"missing key {key}"
                     assert val["value"] == i
             except Exception as exc:
                 errors.append(exc)
 
-        threads = [
-            threading.Thread(target=set_get) for _ in range(NUM_THREADS)
-        ]
+        threads = [threading.Thread(target=set_get) for _ in range(NUM_THREADS)]
         for t in threads:
             t.start()
         for t in threads:
@@ -132,9 +128,7 @@ class TestStoreConcurrency:
             except Exception as exc:
                 errors.append(exc)
 
-        threads = [
-            threading.Thread(target=set_get) for _ in range(NUM_THREADS)
-        ]
+        threads = [threading.Thread(target=set_get) for _ in range(NUM_THREADS)]
         for t in threads:
             t.start()
         for t in threads:
@@ -143,7 +137,6 @@ class TestStoreConcurrency:
 
 
 class TestCircuitBreakerConcurrency:
-
     def test_concurrent_state_transitions(self) -> None:
         cb = CircuitBreaker(failure_threshold=3, recovery_timeout=0.01)
         errors: list[Exception] = []
@@ -152,8 +145,7 @@ class TestCircuitBreakerConcurrency:
             try:
                 for _ in range(OPS_PER_THREAD):
                     try:
-                        cb.call(lambda:
-                                (_ for _ in ()).throw(ValueError("bad")))
+                        cb.call(lambda: (_ for _ in ()).throw(ValueError("bad")))
                     except (ValueError, Exception):
                         pass
                     try:
@@ -172,7 +164,6 @@ class TestCircuitBreakerConcurrency:
 
 
 class TestMetricsConcurrency:
-
     def test_concurrent_increment_gauge_timer(self) -> None:
         mc = MetricsCollector(max_metrics=50000)
         errors: list[Exception] = []
@@ -186,10 +177,7 @@ class TestMetricsConcurrency:
             except Exception as exc:
                 errors.append(exc)
 
-        threads = [
-            threading.Thread(target=ops, args=(i, ))
-            for i in range(NUM_THREADS)
-        ]
+        threads = [threading.Thread(target=ops, args=(i,)) for i in range(NUM_THREADS)]
         for t in threads:
             t.start()
         for t in threads:
@@ -203,7 +191,6 @@ class TestMetricsConcurrency:
 
 
 class TestTracerConcurrency:
-
     def test_concurrent_span_creation(self) -> None:
         tracer = Tracer(service_id="concurrency-test", max_spans=50000)
         errors: list[Exception] = []
@@ -213,18 +200,13 @@ class TestTracerConcurrency:
                 for i in range(OPS_PER_THREAD):
                     span = tracer.start_span(
                         "op",
-                        tags={
-                            "i": str(i),
-                            "t": str(threading.get_ident())
-                        },
+                        tags={"i": str(i), "t": str(threading.get_ident())},
                     )
                     tracer.end_span(span)
             except Exception as exc:
                 errors.append(exc)
 
-        threads = [
-            threading.Thread(target=create_spans) for _ in range(NUM_THREADS)
-        ]
+        threads = [threading.Thread(target=create_spans) for _ in range(NUM_THREADS)]
         for t in threads:
             t.start()
         for t in threads:
@@ -234,7 +216,6 @@ class TestTracerConcurrency:
 
 
 class TestSagaConcurrency:
-
     def test_concurrent_execute_all(self) -> None:
         orchestrator = SagaOrchestrator()
         errors: list[Exception] = []
@@ -242,16 +223,10 @@ class TestSagaConcurrency:
         emit_lock = threading.Lock()
 
         class DummyEmitter:
-
-            def emit(self,
-                     event_type: str,
-                     payload: dict[str, Any],
-                     correlation_id: str = "") -> Event:
+            def emit(self, event_type: str, payload: dict[str, Any], correlation_id: str = "") -> Event:
                 with emit_lock:
                     emitted.append(event_type)
-                return Event(event_type=event_type,
-                             source="dummy",
-                             payload=payload)
+                return Event(event_type=event_type, source="dummy", payload=payload)
 
         orchestrator.register_emitter("test_saga", DummyEmitter())
 
@@ -266,9 +241,7 @@ class TestSagaConcurrency:
             except Exception as exc:
                 errors.append(exc)
 
-        threads = [
-            threading.Thread(target=run_saga) for _ in range(NUM_THREADS)
-        ]
+        threads = [threading.Thread(target=run_saga) for _ in range(NUM_THREADS)]
         for t in threads:
             t.start()
         for t in threads:
@@ -277,7 +250,6 @@ class TestSagaConcurrency:
 
 
 class TestHealthConcurrency:
-
     def test_concurrent_register_and_status(self) -> None:
         hr = HealthRegistry()
         errors: list[Exception] = []
@@ -292,10 +264,7 @@ class TestHealthConcurrency:
             except Exception as exc:
                 errors.append(exc)
 
-        threads = [
-            threading.Thread(target=register_and_check)
-            for _ in range(NUM_THREADS)
-        ]
+        threads = [threading.Thread(target=register_and_check) for _ in range(NUM_THREADS)]
         for t in threads:
             t.start()
         for t in threads:
@@ -305,6 +274,107 @@ class TestHealthConcurrency:
         assert status["ok"] is True
 
 
-@pytest.mark.skip("requires mechanism service setup")
 class TestMechanismConcurrency:
-    pass
+    """Stress tests for MechanismService thread safety."""
+
+    def test_concurrent_add_user(self) -> None:
+        svc = MechanismService(service_id="test-mech", store=MemoryStore())
+        errors: list[Exception] = []
+        err_lock = threading.Lock()
+
+        _mechanism_cmd(svc, "add_seed", {"user": "bank", "base_budget": 100000.0})
+
+        def add_users() -> None:
+            try:
+                for i in range(100):
+                    uid = f"u_{threading.get_ident()}_{i}"
+                    _mechanism_cmd(svc, "add_user", {"sponsor": "bank", "user": uid, "delegation_amount": 100.0})
+            except Exception as exc:
+                with err_lock:
+                    errors.append(exc)
+
+        threads = [threading.Thread(target=add_users) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        assert not errors, f"concurrent add_user raised: {errors[0]}"
+        assert "bank" in svc.seeds
+
+    def test_concurrent_mixed_operations(self) -> None:
+        svc = MechanismService(service_id="test-mech", store=MemoryStore())
+        errors: list[Exception] = []
+        err_lock = threading.Lock()
+
+        _mechanism_cmd(svc, "add_seed", {"user": "seed_0", "base_budget": 50000.0})
+        _mechanism_cmd(svc, "add_seed", {"user": "seed_1", "base_budget": 50000.0})
+
+        def add_and_repay(seed_name: str) -> None:
+            try:
+                for i in range(100):
+                    uid = f"u_{seed_name}_{i}"
+                    _mechanism_cmd(
+                        svc,
+                        "add_user",
+                        {
+                            "sponsor": seed_name,
+                            "user": uid,
+                            "delegation_amount": 50.0,
+                        },
+                    )
+                    _mechanism_cmd(
+                        svc,
+                        "originate",
+                        {
+                            "borrower": uid,
+                            "principal": 10.0,
+                            "term": 12.0,
+                            "default_probability": 0.02,
+                            "protocol_rate": 0.05,
+                            "max_delegation_rate": 0.1,
+                        },
+                    )
+                    _mechanism_cmd(svc, "repay", {"user": uid, "delta_earned": 5.0})
+            except Exception as exc:
+                with err_lock:
+                    errors.append(exc)
+
+        threads = [threading.Thread(target=add_and_repay, args=(f"seed_{i}",)) for i in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        assert not errors, f"concurrent mixed ops raised: {errors[0]}"
+        assert len(svc.loans) == 200
+
+    def test_concurrent_quote_queries(self) -> None:
+        """Quote is read-only — safe to call concurrently from many threads."""
+        svc = MechanismService(service_id="test-mech", store=MemoryStore())
+        errors: list[Exception] = []
+        err_lock = threading.Lock()
+
+        def generate_quotes() -> None:
+            try:
+                for i in range(100):
+                    uid = f"q_{threading.get_ident()}_{i}"
+                    _mechanism_cmd(
+                        svc,
+                        "quote",
+                        {
+                            "borrower": uid,
+                            "principal": 10000.0,
+                            "term": 12.0,
+                            "default_probability": 0.02,
+                            "protocol_rate": 0.05,
+                        },
+                    )
+            except Exception as exc:
+                with err_lock:
+                    errors.append(exc)
+
+        threads = [threading.Thread(target=generate_quotes) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=15)
+        assert not errors, f"concurrent quote raised: {errors[0]}"

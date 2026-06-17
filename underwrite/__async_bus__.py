@@ -42,13 +42,11 @@ class AsyncLocalBus(AsyncEventBus):
     ) -> None:
         self.__queue: asyncio.Queue[Event] = asyncio.Queue(maxsize=maxsize)
         self.__subscribers: dict[str, list[Callable[[Event], Any]]] = {}
-        self.__subscription_ids: dict[str, tuple[str, Callable[[Event],
-                                                               Any]]] = {}
+        self.__subscription_ids: dict[str, tuple[str, Callable[[Event], Any]]] = {}
         self.__subscription_lock: asyncio.Lock = asyncio.Lock()
         self.__task: asyncio.Task[None] | None = None
         self.__running: bool = False
-        self.__semaphore: asyncio.Semaphore | None = asyncio.Semaphore(
-            max_workers) if max_workers > 0 else None
+        self.__semaphore: asyncio.Semaphore | None = asyncio.Semaphore(max_workers) if max_workers > 0 else None
         self.__dlq: DeadLetterQueue = DeadLetterQueue(store=store)
         self.__idempotency: IdempotencyGuard = IdempotencyGuard()
 
@@ -91,8 +89,7 @@ class AsyncLocalBus(AsyncEventBus):
         await self.__queue.put(event)
         return event.event_id
 
-    async def subscribe(self, event_type: str, handler: Callable[[Event],
-                                                                 Any]) -> str:
+    async def subscribe(self, event_type: str, handler: Callable[[Event], Any]) -> str:
         sid = str(uuid.uuid4())
         async with self.__subscription_lock:
             self.__subscribers.setdefault(event_type, []).append(handler)
@@ -117,17 +114,14 @@ class AsyncLocalBus(AsyncEventBus):
             except asyncio.CancelledError:
                 break
             except Exception:
-                logger.exception(
-                    "dispatch loop: unexpected error dequeuing event")
+                logger.exception("dispatch loop: unexpected error dequeuing event")
                 continue
             try:
                 await self.__dispatch(event)
             except asyncio.CancelledError:
                 break
             except Exception:
-                logger.exception(
-                    "dispatch loop: unexpected error processing %s",
-                    event.event_id)
+                logger.exception("dispatch loop: unexpected error processing %s", event.event_id)
 
     async def __dispatch(self, event: Event) -> None:
         async with self.__subscription_lock:
@@ -150,23 +144,17 @@ class AsyncLocalBus(AsyncEventBus):
         )
         for handler, result in zip(handlers, results, strict=False):
             if isinstance(result, Exception):
-                logger.warning("async handler %s failed: %s",
-                               getattr(handler, "__name__", str(handler)),
-                               result)
+                logger.warning("async handler %s failed: %s", getattr(handler, "__name__", str(handler)), result)
 
-    async def __safe_dispatch(self, handler: Callable[[Event], Any],
-                              event: Event) -> None:
+    async def __safe_dispatch(self, handler: Callable[[Event], Any], event: Event) -> None:
         try:
             result = handler(event)
             if result is not None and hasattr(result, "__await__"):
-                result = await asyncio.wait_for(result,
-                                                timeout=HANDLER_TIMEOUT)
+                result = await asyncio.wait_for(result, timeout=HANDLER_TIMEOUT)
         except asyncio.TimeoutError:
             msg = f"handler timed out after {HANDLER_TIMEOUT}s"
-            logger.warning("async handler timed out for %s: %s",
-                           event.event_id, handler.__name__)
+            logger.warning("async handler timed out for %s: %s", event.event_id, handler.__name__)
             self.__dlq.put(event, msg, handler.__name__)
         except Exception as exc:
             logger.exception("async handler failed for %s", event.event_id)
-            self.__dlq.put(event, f"{type(exc).__name__}: {exc}",
-                           handler.__name__)
+            self.__dlq.put(event, f"{type(exc).__name__}: {exc}", handler.__name__)

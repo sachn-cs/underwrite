@@ -8,14 +8,10 @@ from underwrite.__schema__ import EventSchema, SchemaRegistry, SchemaValidationE
 
 
 class TestEventSchema:
-
     def test_validates_required_fields(self) -> None:
         schema = EventSchema(
             version=1,
-            fields={
-                "borrower": str,
-                "principal": float
-            },
+            fields={"borrower": str, "principal": float},
             required={"borrower"},
         )
         schema.validate({"borrower": "alice", "principal": 10000.0})
@@ -51,7 +47,6 @@ class TestEventSchema:
 
 
 class TestSchemaRegistry:
-
     def test_register_and_get(self) -> None:
         registry = SchemaRegistry()
         schema = EventSchema(version=1, fields={"amount": float})
@@ -94,10 +89,7 @@ class TestSchemaRegistry:
         )
         registry.register(
             "test.event",
-            EventSchema(version=2, fields={
-                "a": str,
-                "b": float
-            }),
+            EventSchema(version=2, fields={"a": str, "b": float}),
         )
         result = registry.get("test.event")
         assert result is not None

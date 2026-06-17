@@ -17,6 +17,7 @@ class GraphService(NanoService):
     """
 
     def __init__(self, **kwargs: Any) -> None:
+        """Initialize the graph service query handlers."""
         super().__init__(**kwargs)
         self.handlers: dict[str, Any] = {
             EventType.GRAPH_PATH: self.__on_graph_path,
@@ -35,13 +36,15 @@ class GraphService(NanoService):
             handler(event)
 
     def __on_graph_path(self, event: Event) -> None:
-        """Compute the delegation path from a user to a seed."""
+        """Compute the delegation path from a user to a seed.
+
+        Args:
+            event: The graph path query event.
+        """
         user: str = event.payload.get("user", "")
         state: dict[str, Any] | None = self.safe_store_get("protocol:state")
         if state is None:
-            logger.warning(
-                "graph path query for %s: protocol state not available", user
-            )
+            logger.warning("graph path query for %s: protocol state not available", user)
             state = {}
         parent: dict[str, str] = state.get("parent", {})
         seeds: list[str] = state.get("seeds", [])
@@ -65,13 +68,15 @@ class GraphService(NanoService):
         )
 
     def __on_graph_credit_limit(self, event: Event) -> None:
-        """Compute the available credit limit for a user."""
+        """Compute the available credit limit for a user.
+
+        Args:
+            event: The credit limit query event.
+        """
         user: str = event.payload.get("user", "")
         state: dict[str, Any] | None = self.safe_store_get("protocol:state")
         if state is None:
-            logger.warning(
-                "graph credit-limit query for %s: protocol state not available", user
-            )
+            logger.warning("graph credit-limit query for %s: protocol state not available", user)
             state = {}
         earned: dict[str, float] = state.get("earned", {})
         base_budget: dict[str, float] = state.get("base_budget", {})
@@ -85,10 +90,7 @@ class GraphService(NanoService):
             sponsor: str = parent[user]
             edge_key: str = f"{sponsor}->{user}"
             budget = delegation_raw.get(edge_key, 0.0) + earned.get(user, 0.0)
-        outgoing: float = sum(
-            delegation_raw.get(f"{user}->{child}", 0.0)
-            for child in children_raw.get(user, [])
-        )
+        outgoing: float = sum(delegation_raw.get(f"{user}->{child}", 0.0) for child in children_raw.get(user, []))
         self.emit(
             EventType.GRAPH_CREDIT_LIMIT_RESULT,
             {
@@ -99,7 +101,11 @@ class GraphService(NanoService):
         )
 
     def __on_graph_users(self, event: Event) -> None:
-        """Return the sorted list of all known users."""
+        """Return the sorted list of all known users.
+
+        Args:
+            event: The graph users query event.
+        """
         state: dict[str, Any] | None = self.safe_store_get("protocol:state")
         if state is None:
             state = {}

@@ -12,16 +12,11 @@ def svc(**kw) -> DataSubjectRightsService:
 
 
 class TestDsrRequestCreation:
-
     def test_creates_access_request(self) -> None:
         s = svc()
         s.handle(
-            Event(event_type=EventType.DSR_REQUEST,
-                  source="test",
-                  payload={
-                      "user_id": "u1",
-                      "request_type": "access"
-                  }))
+            Event(event_type=EventType.DSR_REQUEST, source="test", payload={"user_id": "u1", "request_type": "access"})
+        )
         reqs = s.get_requests("u1")
         assert len(reqs) == 1
         assert reqs[0]["request_type"] == "access"
@@ -30,44 +25,35 @@ class TestDsrRequestCreation:
     def test_creates_correction_request(self) -> None:
         s = svc()
         s.handle(
-            Event(event_type=EventType.DSR_REQUEST,
-                  source="test",
-                  payload={
-                      "user_id": "u2",
-                      "request_type": "correction"
-                  }))
+            Event(
+                event_type=EventType.DSR_REQUEST, source="test", payload={"user_id": "u2", "request_type": "correction"}
+            )
+        )
         reqs = s.get_requests("u2")
         assert len(reqs) == 1
 
     def test_creates_erasure_request(self) -> None:
         s = svc()
         s.handle(
-            Event(event_type=EventType.DSR_REQUEST,
-                  source="test",
-                  payload={
-                      "user_id": "u3",
-                      "request_type": "erasure"
-                  }))
+            Event(event_type=EventType.DSR_REQUEST, source="test", payload={"user_id": "u3", "request_type": "erasure"})
+        )
         reqs = s.get_requests("u3")
         assert len(reqs) == 1
 
     def test_rejects_invalid_request_type(self) -> None:
         s = svc()
         s.handle(
-            Event(event_type=EventType.DSR_REQUEST,
-                  source="test",
-                  payload={
-                      "user_id": "u4",
-                      "request_type": "invalid_type"
-                  }))
+            Event(
+                event_type=EventType.DSR_REQUEST,
+                source="test",
+                payload={"user_id": "u4", "request_type": "invalid_type"},
+            )
+        )
         assert s.get_requests("u4") == []
 
     def test_requires_user_id(self) -> None:
         s = svc()
-        s.handle(
-            Event(event_type=EventType.DSR_REQUEST,
-                  source="test",
-                  payload={"request_type": "access"}))
+        s.handle(Event(event_type=EventType.DSR_REQUEST, source="test", payload={"request_type": "access"}))
         assert s.get_requests("") == []
 
     def test_emits_dsr_requested_event(self) -> None:
@@ -77,27 +63,18 @@ class TestDsrRequestCreation:
         s = DataSubjectRightsService(service_id="dsr", bus=bus)
         bus.start()
         s.handle(
-            Event(event_type=EventType.DSR_REQUEST,
-                  source="test",
-                  payload={
-                      "user_id": "u5",
-                      "request_type": "access"
-                  }))
+            Event(event_type=EventType.DSR_REQUEST, source="test", payload={"user_id": "u5", "request_type": "access"})
+        )
         assert len(received) == 1
         assert received[0].payload["request_type"] == "access"
 
 
 class TestDsrFulfillment:
-
     def test_fulfill_request(self) -> None:
         s = svc()
         s.handle(
-            Event(event_type=EventType.DSR_REQUEST,
-                  source="test",
-                  payload={
-                      "user_id": "u10",
-                      "request_type": "access"
-                  }))
+            Event(event_type=EventType.DSR_REQUEST, source="test", payload={"user_id": "u10", "request_type": "access"})
+        )
         reqs = s.get_requests("u10")
         req_id = reqs[0]["request_id"]
         s.fulfill_request(req_id)
@@ -107,12 +84,10 @@ class TestDsrFulfillment:
     def test_reject_request(self) -> None:
         s = svc()
         s.handle(
-            Event(event_type=EventType.DSR_REQUEST,
-                  source="test",
-                  payload={
-                      "user_id": "u11",
-                      "request_type": "erasure"
-                  }))
+            Event(
+                event_type=EventType.DSR_REQUEST, source="test", payload={"user_id": "u11", "request_type": "erasure"}
+            )
+        )
         reqs = s.get_requests("u11")
         req_id = reqs[0]["request_id"]
         s.reject_request(req_id, "legal obligation")
@@ -127,12 +102,8 @@ class TestDsrFulfillment:
     def test_double_fulfill_noop(self) -> None:
         s = svc()
         s.handle(
-            Event(event_type=EventType.DSR_REQUEST,
-                  source="test",
-                  payload={
-                      "user_id": "u12",
-                      "request_type": "access"
-                  }))
+            Event(event_type=EventType.DSR_REQUEST, source="test", payload={"user_id": "u12", "request_type": "access"})
+        )
         reqs = s.get_requests("u12")
         req_id = reqs[0]["request_id"]
         s.fulfill_request(req_id)
@@ -142,17 +113,19 @@ class TestDsrFulfillment:
 
 
 class TestGrievance:
-
     def test_logs_grievance(self) -> None:
         s = svc()
         s.handle(
-            Event(event_type=EventType.GRIEVANCE_LOGGED,
-                  source="test",
-                  payload={
-                      "user_id": "u20",
-                      "subject": "Missing payment credit",
-                      "description": "Paid on 1st but not reflected",
-                  }))
+            Event(
+                event_type=EventType.GRIEVANCE_LOGGED,
+                source="test",
+                payload={
+                    "user_id": "u20",
+                    "subject": "Missing payment credit",
+                    "description": "Paid on 1st but not reflected",
+                },
+            )
+        )
         grievances = s.get_grievances("u20")
         assert len(grievances) == 1
         assert grievances[0]["subject"] == "Missing payment credit"
@@ -161,12 +134,15 @@ class TestGrievance:
     def test_resolves_grievance(self) -> None:
         s = svc()
         s.handle(
-            Event(event_type=EventType.GRIEVANCE_LOGGED,
-                  source="test",
-                  payload={
-                      "user_id": "u21",
-                      "subject": "Wrong late fee",
-                  }))
+            Event(
+                event_type=EventType.GRIEVANCE_LOGGED,
+                source="test",
+                payload={
+                    "user_id": "u21",
+                    "subject": "Wrong late fee",
+                },
+            )
+        )
         grievances = s.get_grievances("u21")
         gid = grievances[0]["grievance_id"]
         s.resolve_grievance(gid, "Fee waived as goodwill")
@@ -176,14 +152,8 @@ class TestGrievance:
 
     def test_grievance_requires_user_id_and_subject(self) -> None:
         s = svc()
-        s.handle(
-            Event(event_type=EventType.GRIEVANCE_LOGGED,
-                  source="test",
-                  payload={"user_id": "u22"}))
-        s.handle(
-            Event(event_type=EventType.GRIEVANCE_LOGGED,
-                  source="test",
-                  payload={"subject": "no user"}))
+        s.handle(Event(event_type=EventType.GRIEVANCE_LOGGED, source="test", payload={"user_id": "u22"}))
+        s.handle(Event(event_type=EventType.GRIEVANCE_LOGGED, source="test", payload={"subject": "no user"}))
         assert s.get_grievances("u22") == []
         assert s.get_grievances("") == []
 

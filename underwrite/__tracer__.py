@@ -49,17 +49,13 @@ class SpanExporter:
             spans: Completed spans to export.
         """
         if spans:
-            logger.debug("exporting %d spans (no-op base exporter)",
-                         len(spans))
+            logger.debug("exporting %d spans (no-op base exporter)", len(spans))
 
 
 class Tracer:
     """Creates and manages spans for a service."""
 
-    def __init__(self,
-                 service_id: str,
-                 exporter: SpanExporter | None = None,
-                 max_spans: int = 10000) -> None:
+    def __init__(self, service_id: str, exporter: SpanExporter | None = None, max_spans: int = 10000) -> None:
         self.__service_id: str = service_id
         self.__exporter: SpanExporter = exporter or SpanExporter()
         self.__lock: threading.Lock = threading.Lock()
@@ -82,11 +78,9 @@ class Tracer:
         with self.__lock:
             self.__exporter = exporter
 
-    def start_span(self,
-                   operation: str,
-                   trace_id: str = "",
-                   parent_span_id: str = "",
-                   tags: dict[str, str] | None = None) -> Span:
+    def start_span(
+        self, operation: str, trace_id: str = "", parent_span_id: str = "", tags: dict[str, str] | None = None
+    ) -> Span:
         """Creates and returns a new span without ending it.
 
         Args:
@@ -118,21 +112,17 @@ class Tracer:
         """
         span.end_ms = time.perf_counter() * 1000.0
         span.error = error
-        overflow: list[Span] = []
         with self.__lock:
             self.__spans.append(span)
             if len(self.__spans) > self.__max_spans:
-                overflow = self.__spans[:-self.__max_spans]
-                self.__spans = self.__spans[-self.__max_spans:]
+                overflow = self.__spans[: -self.__max_spans]
+                self.__spans = self.__spans[-self.__max_spans :]
+                logger.warning("tracer span overflow: dropping %d spans", len(overflow))
         self.__exporter.export([span])
-        if overflow:
-            self.__exporter.export(overflow)
 
-    def trace(self,
-              operation: str,
-              trace_id: str = "",
-              parent_span_id: str = "",
-              tags: dict[str, str] | None = None) -> SpanContext:
+    def trace(
+        self, operation: str, trace_id: str = "", parent_span_id: str = "", tags: dict[str, str] | None = None
+    ) -> SpanContext:
         """Returns a context manager that starts/ends a span automatically.
 
         Args:
@@ -144,15 +134,15 @@ class Tracer:
         Returns:
             A ``SpanContext`` context manager.
         """
-        return SpanContext(self, operation, trace_id, parent_span_id, tags
-                           or {})
+        return SpanContext(self, operation, trace_id, parent_span_id, tags or {})
 
 
 class SpanContext:
     """Context manager that starts a span on enter and ends it on exit."""
 
-    def __init__(self, tracer: Tracer, operation: str, trace_id: str,
-                 parent_span_id: str, tags: dict[str, str]) -> None:
+    def __init__(
+        self, tracer: Tracer, operation: str, trace_id: str, parent_span_id: str, tags: dict[str, str]
+    ) -> None:
         self.__tracer = tracer
         self.__operation = operation
         self.__trace_id = trace_id
@@ -210,9 +200,7 @@ class OtlpSpanExporter(SpanExporter):
     ``opentelemetry-sdk``, ``opentelemetry-exporter-otlp``).
     """
 
-    def __init__(self,
-                 endpoint: str = "http://localhost:4317",
-                 service_name: str = "underwrite") -> None:
+    def __init__(self, endpoint: str = "http://localhost:4317", service_name: str = "underwrite") -> None:
         self.__endpoint = endpoint
         self.__service_name = service_name
         self.__provider: Any = None
@@ -224,14 +212,13 @@ class OtlpSpanExporter(SpanExporter):
             return True
         try:
             from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-                OTLPSpanExporter, )
+                OTLPSpanExporter,
+            )
             from opentelemetry.sdk.resources import Resource
             from opentelemetry.sdk.trace import TracerProvider as SdkTracerProvider
             from opentelemetry.sdk.trace.export import BatchSpanProcessor
         except ImportError:
-            logger.warning(
-                "OTLP exporter not available; install with: pip install underwrite[otlp]"
-            )
+            logger.warning("OTLP exporter not available; install with: pip install underwrite[otlp]")
             return False
 
         resource = Resource.create({"service.name": self.__service_name})
@@ -260,8 +247,7 @@ class OtlpSpanExporter(SpanExporter):
             if span.error:
                 from opentelemetry import trace
 
-                sdk_span.set_status(
-                    trace.Status(trace.StatusCode.ERROR, span.error))
+                sdk_span.set_status(trace.Status(trace.StatusCode.ERROR, span.error))
             sdk_span.end()
 
         self.__processor.force_flush()

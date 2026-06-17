@@ -21,9 +21,7 @@ class DocumentService(StatefulService):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.__documents: dict[str, list[dict[str, Any]]] = {}
-        self.repo: TypedStoreRepository[dict[str, list[dict[str, Any]]]] = (
-            self.store_repo("documents", dict)
-        )
+        self.repo: TypedStoreRepository[dict[str, list[dict[str, Any]]]] = self.store_repo("documents", dict)
         loaded = self.repo.load(default={})
         if loaded:
             self.__documents = loaded

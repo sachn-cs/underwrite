@@ -35,8 +35,7 @@ class Event:
     event_type: str = ""
     source: str = ""
     source_key: str = ""
-    timestamp: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     payload: dict[str, Any] = field(default_factory=dict)
     correlation_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     signature: str = ""
@@ -47,18 +46,19 @@ class Event:
         payload_size: int = 0
         if len(self.payload) > 1000:
             from underwrite.__exceptions__ import ProtocolError
-            raise ProtocolError(f"event payload has too many keys "
-                                f"({len(self.payload)} > 1000)")
+
+            raise ProtocolError(f"event payload has too many keys ({len(self.payload)} > 1000)")
         try:
             import json as json_mod
+
             payload_str = json_mod.dumps(self.payload, default=str)
             payload_size = len(payload_str.encode("utf-8"))
         except (TypeError, ValueError):
             payload_size = MAX_PAYLOAD_SIZE + 1
         if payload_size > MAX_PAYLOAD_SIZE:
             from underwrite.__exceptions__ import ProtocolError
-            raise ProtocolError(f"event payload exceeds MAX_PAYLOAD_SIZE "
-                                f"({payload_size} > {MAX_PAYLOAD_SIZE})")
+
+            raise ProtocolError(f"event payload exceeds MAX_PAYLOAD_SIZE ({payload_size} > {MAX_PAYLOAD_SIZE})")
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {}
@@ -71,8 +71,7 @@ class Event:
         known = {f.name for f in fields(cls)}
         extra = set(data) - known
         if extra:
-            logger.warning("Event.from_dict dropping unknown field(s): %s",
-                           sorted(extra))
+            logger.warning("Event.from_dict dropping unknown field(s): %s", sorted(extra))
         return cls(**{k: data[k] for k in known if k in data})
 
 

@@ -38,15 +38,12 @@ FILE_TIMEOUT_MSG: str = "store operation timed out after %.1fs on %s"
 class Connection(Protocol):
     """Minimal protocol for a DB-API 2.0 connection."""
 
-    def cursor(self) -> Any:
-        ...
+    def cursor(self) -> Any: ...
 
     @property
-    def closed(self) -> bool:
-        ...
+    def closed(self) -> bool: ...
 
-    def close(self) -> None:
-        ...
+    def close(self) -> None: ...
 
 
 class Store(ABC):
@@ -69,10 +66,7 @@ class Store(ABC):
         """Returns ``True`` if *key* is present."""
 
     @abstractmethod
-    def keys(self,
-             pattern: str | None = None,
-             limit: int = 0,
-             offset: int = 0) -> list[str]:
+    def keys(self, pattern: str | None = None, limit: int = 0, offset: int = 0) -> list[str]:
         """Returns all keys, optionally filtered by a simple substring pattern.
 
         Args:
@@ -81,16 +75,17 @@ class Store(ABC):
             offset: Number of results to skip.
         """
 
-    def shutdown(self) -> None:  # noqa: B027
+    def shutdown(self) -> None:
         """Release any resources held by the store.  No-op in base class."""
+        return None
 
     def health(self) -> dict[str, Any]:
         """Returns a health-check dict.  Subclasses may override."""
         return {"ok": True}
 
-    def migrate(self, plan: MigrationPlan) -> None:  # noqa: B027
+    def migrate(self, plan: MigrationPlan) -> None:
         """Applies pending schema migrations.  No-op in base class."""
-        pass
+        return None
 
 
 class ReadStore(ABC):
@@ -109,14 +104,12 @@ class ReadStore(ABC):
         """Removes *key*.  Returns ``True`` if it existed."""
 
     @abstractmethod
-    def keys(self,
-             pattern: str | None = None,
-             limit: int = 0,
-             offset: int = 0) -> list[str]:
+    def keys(self, pattern: str | None = None, limit: int = 0, offset: int = 0) -> list[str]:
         """Returns all keys, optionally filtered by a substring pattern."""
 
-    def shutdown(self) -> None:  # noqa: B027
+    def shutdown(self) -> None:
         """Release any resources held by the store.  No-op in base class."""
+        return None
 
     def health(self) -> dict[str, Any]:
         """Returns a health-check dict.  Subclasses may override."""
@@ -162,16 +155,10 @@ class MemoryStore(Store):
         with self.__lock:
             return key in self.__data
 
-    def keys(self,
-             pattern: str | None = None,
-             limit: int = 0,
-             offset: int = 0) -> list[str]:
+    def keys(self, pattern: str | None = None, limit: int = 0, offset: int = 0) -> list[str]:
         """Returns all keys, optionally filtered by a substring pattern."""
         with self.__lock:
-            all_keys = [
-                k for k in self.__data
-                if pattern is None or pattern.rstrip("*") in k
-            ]
+            all_keys = [k for k in self.__data if pattern is None or pattern.rstrip("*") in k]
             if offset > 0:
                 all_keys = all_keys[offset:]
             if limit > 0:
@@ -203,12 +190,13 @@ class FileStore(Store):
         self.__lock: threading.Lock = threading.Lock()
         self.__operation_timeout: float = operation_timeout
         self.__executor: concurrent.futures.ThreadPoolExecutor | None = (
-            concurrent.futures.ThreadPoolExecutor(
-                max_workers=1) if operation_timeout > 0 else None)
-        self.__circuit: CircuitBreaker | None = (CircuitBreaker(
-            failure_threshold=failure_threshold,
-            recovery_timeout=30.0,
-            name="filestore") if use_circuit_breaker else None)
+            concurrent.futures.ThreadPoolExecutor(max_workers=1) if operation_timeout > 0 else None
+        )
+        self.__circuit: CircuitBreaker | None = (
+            CircuitBreaker(failure_threshold=failure_threshold, recovery_timeout=30.0, name="filestore")
+            if use_circuit_breaker
+            else None
+        )
         self.__fsync: bool = fsync
         self.__metrics: Any | None = metrics_collector
 
@@ -219,7 +207,10 @@ class FileStore(Store):
             self.__executor = None
 
     def __del__(self) -> None:
-        pass
+        try:
+            self.shutdown(wait=False)
+        except Exception:
+            pass
 
     def __timeout(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
         """Runs *fn* with the configured timeout via the executor."""
@@ -229,9 +220,7 @@ class FileStore(Store):
         try:
             return fut.result(timeout=self.__operation_timeout)
         except concurrent.futures.TimeoutError:
-            raise TimeoutError(
-                FILE_TIMEOUT_MSG %
-                (self.__operation_timeout, fn.__name__)) from None
+            raise TimeoutError(FILE_TIMEOUT_MSG % (self.__operation_timeout, fn.__name__)) from None
 
     def __circuit_call(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
         if self.__circuit is None:
@@ -255,14 +244,12 @@ class FileStore(Store):
             except json.JSONDecodeError as e:
                 logger.exception("corrupted store file %s", path)
                 if self.__metrics:
-                    self.__metrics.increment("store.corruption",
-                                             {"path": path.name})
+                    self.__metrics.increment("store.corruption", {"path": path.name})
                 raise StoreError(f"corrupted store file for key {key}") from e
             except OSError as e:
                 logger.exception("I/O error reading store file %s", path)
                 if self.__metrics:
-                    self.__metrics.increment("store.io_error",
-                                             {"path": path.name})
+                    self.__metrics.increment("store.io_error", {"path": path.name})
                 raise StoreError(f"I/O error reading store key {key}") from e
 
         return self.__circuit_call(read)
@@ -305,10 +292,7 @@ class FileStore(Store):
 
         return self.__circuit_call(exists)
 
-    def keys(self,
-             pattern: str | None = None,
-             limit: int = 0,
-             offset: int = 0) -> list[str]:
+    def keys(self, pattern: str | None = None, limit: int = 0, offset: int = 0) -> list[str]:
         """Returns all keys, optionally filtered by a substring pattern.
 
         Args:
@@ -343,16 +327,13 @@ class FileStore(Store):
         try:
             full.relative_to(data_dir)
         except ValueError as e:
-            raise StoreError(
-                f"key {key} resolves outside data directory") from e
+            raise StoreError(f"key {key} resolves outside data directory") from e
         if full.is_symlink():
             resolved = full.resolve()
             try:
                 resolved.relative_to(data_dir)
             except ValueError as e:
-                raise StoreError(
-                    f"key {key} resolves to symlink outside data directory"
-                ) from e
+                raise StoreError(f"key {key} resolves to symlink outside data directory") from e
         return full
 
 
@@ -366,11 +347,9 @@ class PostgresStore(Store):
     Requires the ``postgres`` extra (``psycopg2-binary``).
     """
 
-    def __init__(self,
-                 dsn: str = "",
-                 table: str = "store",
-                 pool_size: int = 5,
-                 operation_timeout: float = 30.0) -> None:
+    def __init__(
+        self, dsn: str = "", table: str = "store", pool_size: int = 5, operation_timeout: float = 30.0
+    ) -> None:
         self.__dsn: str = dsn
         import re as re_mod
 
@@ -387,25 +366,23 @@ class PostgresStore(Store):
         )
         self.__retry: RetryPolicy = RetryPolicy(max_retries=2, base_delay=0.05)
         self.__lock: threading.Lock = threading.Lock()
-        self.__sql_get: str = "SELECT value FROM %s WHERE key = %%s" % table  # nosec B608: table validated ^[a-zA-Z_][a-zA-Z0-9_]*$
+        self.__sql_get: str = f"SELECT value FROM {table} WHERE key = %s"
         self.__sql_set: str = (
-            "INSERT INTO %s (key, value, updated_at) "
-            "VALUES (%%s, %%s, NOW()) "
+            f"INSERT INTO {table} (key, value, updated_at) "
+            "VALUES (%s, %s, NOW()) "
             "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"
-        ) % table  # nosec B608: table validated ^[a-zA-Z_][a-zA-Z0-9_]*$
-        self.__sql_delete: str = "DELETE FROM %s WHERE key = %%s RETURNING *" % table  # nosec B608: table validated ^[a-zA-Z_][a-zA-Z0-9_]*$
-        self.__sql_exists: str = "SELECT 1 FROM %s WHERE key = %%s" % table  # nosec B608: table validated ^[a-zA-Z_][a-zA-Z0-9_]*$
-        self.__sql_keys_all: str = "SELECT key FROM %s" % table  # nosec B608: table validated ^[a-zA-Z_][a-zA-Z0-9_]*$
-        self.__sql_keys_pattern: str = "SELECT key FROM %s WHERE key LIKE %%s" % table  # nosec B608: table validated ^[a-zA-Z_][a-zA-Z0-9_]*$
-        self.__timeout_sql: str = "SET statement_timeout = %d" % int(
-            operation_timeout *
-            1000)  # nosec B608: integer literal, no injection vector
+        )
+        self.__sql_delete: str = f"DELETE FROM {table} WHERE key = %s RETURNING *"
+        self.__sql_exists: str = f"SELECT 1 FROM {table} WHERE key = %s"
+        self.__sql_keys_all: str = f"SELECT key FROM {table}"
+        self.__sql_keys_pattern: str = f"SELECT key FROM {table} WHERE key LIKE %s"
+        self.__timeout_sql: str = f"SET statement_timeout = {int(operation_timeout * 1000)}"
 
     def _get_pool(self) -> Any:
         if self.__pool is not None:
             return self.__pool
         try:
-            from psycopg2 import pool as pgpool  # noqa: F811
+            from psycopg2 import pool as pgpool
         except ImportError:
             raise StoreError(
                 "PostgresStore requires psycopg2-binary; install with: pip install underwrite[postgres]"
@@ -430,6 +407,7 @@ class PostgresStore(Store):
     def __connection(self) -> Generator[Connection, None, None]:
         pool = self._get_pool()
         conn = pool.getconn()
+        close_conn = False
         try:
             conn.autocommit = True
             if self.__operation_timeout > 0:
@@ -437,22 +415,20 @@ class PostgresStore(Store):
                     cur.execute(self.__timeout_sql)
             yield conn
         except Exception:
-            try:
-                pool.putconn(conn, close=True)
-            except Exception:
-                logger.warning("failed to close and return broken connection",
-                               exc_info=True)
+            close_conn = True
             raise
         else:
+            close_conn = False
+        finally:
             try:
-                pool.putconn(conn)
+                if close_conn:
+                    pool.putconn(conn, close=True)
+                else:
+                    pool.putconn(conn)
             except Exception:
-                logger.warning("failed to return connection to pool",
-                               exc_info=True)
+                logger.warning("failed to return connection to pool", exc_info=True)
 
-    def __execute(
-        self, query: str,
-        params: tuple[Any, ...] = ()) -> list[tuple[Any, ...]] | None:
+    def __execute(self, query: str, params: tuple[Any, ...] = ()) -> list[tuple[Any, ...]] | None:
 
         def run() -> Any:
             with self.__connection() as conn:
@@ -466,7 +442,7 @@ class PostgresStore(Store):
 
     def get(self, key: str) -> Any | None:
         """Returns the value for *key*, or ``None``."""
-        rows = self.__execute(self.__sql_get, (key, ))
+        rows = self.__execute(self.__sql_get, (key,))
         if not rows:
             return None
         return json.loads(rows[0][0])
@@ -480,23 +456,20 @@ class PostgresStore(Store):
 
     def delete(self, key: str) -> bool:
         """Removes *key*.  Returns ``True`` if it existed."""
-        rows = self.__execute(self.__sql_delete, (key, ))
+        rows = self.__execute(self.__sql_delete, (key,))
         return rows is not None and len(rows) > 0
 
     def exists(self, key: str) -> bool:
         """Returns ``True`` if *key* is present."""
-        rows = self.__execute(self.__sql_exists, (key, ))
+        rows = self.__execute(self.__sql_exists, (key,))
         return bool(rows)
 
-    def keys(self,
-             pattern: str | None = None,
-             limit: int = 0,
-             offset: int = 0) -> list[str]:
+    def keys(self, pattern: str | None = None, limit: int = 0, offset: int = 0) -> list[str]:
         """Returns all keys, optionally filtered by a LIKE pattern."""
         if pattern:
             like = f"%{pattern.rstrip('*')}%"
             sql: str = self.__sql_keys_pattern
-            params: tuple[Any, ...] = (like, )
+            params: tuple[Any, ...] = (like,)
         else:
             sql = self.__sql_keys_all
             params = ()
@@ -514,11 +487,7 @@ class PostgresStore(Store):
             return {"ok": True, "circuit": self.__circuit.state.value}
         except Exception as e:
             logger.warning("PostgresStore health check failed: %s", e)
-            return {
-                "ok": False,
-                "detail": "Postgres health check failed",
-                "circuit": self.__circuit.state.value
-            }
+            return {"ok": False, "detail": "Postgres health check failed", "circuit": self.__circuit.state.value}
 
     def migrate(self, plan: MigrationPlan) -> None:
         """Applies pending schema migrations to the Postgres store.
@@ -543,7 +512,8 @@ class PostgresStore(Store):
                     "version INTEGER PRIMARY KEY,"
                     "description TEXT NOT NULL,"
                     "applied_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()"
-                    ")")
+                    ")"
+                )
             conn.commit()
 
             with conn.cursor() as cur:
@@ -605,10 +575,7 @@ class CQRSStore(Store):
         """Checks the read store for *key*."""
         return self.__read.exists(key)
 
-    def keys(self,
-             pattern: str | None = None,
-             limit: int = 0,
-             offset: int = 0) -> list[str]:
+    def keys(self, pattern: str | None = None, limit: int = 0, offset: int = 0) -> list[str]:
         """Returns keys from the read store, optionally filtered."""
         return self.__read.keys(pattern, limit=limit, offset=offset)
 
@@ -619,8 +586,7 @@ class CQRSStore(Store):
             write_health = self.__write.health()
         except Exception as exc:
             write_health = {"ok": False, "detail": str(exc)}
-        combined_ok = read_health.get("ok", False) and write_health.get(
-            "ok", False)
+        combined_ok = read_health.get("ok", False) and write_health.get("ok", False)
         return {
             "ok": combined_ok,
             "read_store": read_health,

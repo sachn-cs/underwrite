@@ -24,6 +24,7 @@ class PaymentService(StatefulService):
     """Manages payment scheduling, receipt tracking, and delinquency detection."""
 
     def __init__(self, **kwargs: Any) -> None:
+        """Initialize the payment service."""
         super().__init__(**kwargs)
         self.handlers: dict[str, Any] = {
             EventType.PAYMENT_RECEIVE: self.__on_payment_receive,
@@ -35,6 +36,11 @@ class PaymentService(StatefulService):
         }
 
     def handle(self, event: Event) -> None:
+        """Dispatch an event to the appropriate handler.
+
+        Args:
+            event: The incoming domain event.
+        """
         handler = self.handlers.get(event.event_type)
         if handler is not None:
             handler(event)

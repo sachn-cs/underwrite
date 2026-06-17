@@ -8,9 +8,12 @@ bureau, fraud, risk, compliance signals) to produce a decision.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
+
+from underwrite.__logger__ import logger
 
 
 class RuleCategory(str, Enum):
@@ -139,7 +142,10 @@ class Policy:
 
     def __post_init__(self) -> None:
         if not isinstance(self.rule_ids, frozenset):
-            self.rule_ids = frozenset(self.rule_ids)
+            try:
+                self.rule_ids = frozenset(self.rule_ids)
+            except TypeError:
+                self.rule_ids = frozenset([self.rule_ids])
 
 
 @dataclass
@@ -248,7 +254,8 @@ class RuleEngine:
             )
         try:
             passed = op_fn(actual, rule.value)
-        except (TypeError, ValueError, IndexError):
+        except (TypeError, ValueError, IndexError) as e:
+            logger.warning("rule %s evaluation error: %s", rule.rule_id, e)
             passed = True
 
         msg = rule.message
@@ -385,7 +392,7 @@ class RuleEngine:
                 reasons.append(f"[{r.rule_id}] {r.message}")
 
         for r in medium:
-            if len(reasons) == 0 and len(conditions) <= 3:
+            if len(conditions) <= 5:
                 conditions.append(f"[{r.rule_id}] {r.message}")
 
         for r in low:

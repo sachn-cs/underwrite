@@ -34,6 +34,7 @@ class MechanismService(NanoService):
     """
 
     def __init__(self, **kwargs: Any) -> None:
+        """Initialize the mechanism service and load persisted state."""
         super().__init__(**kwargs)
         self.__graph: DelegationGraph = DelegationGraph()
         self.__command_handlers: dict[str, CommandHandler] = {
@@ -197,7 +198,7 @@ class MechanismService(NanoService):
     def __default(self, event: Event) -> None:
         """Process a default, propagating the loss up the chain."""
         v = PayloadValidator()
-        p = dict(event.payload)
+        p = event.payload.copy()
         borrower: str = v.non_empty(p, "borrower")
         with self.state_lock:
             snap = self.__graph.snapshot()

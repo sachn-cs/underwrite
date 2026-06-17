@@ -28,19 +28,21 @@ class CreditBureauService(StatefulService):
     """
 
     def __init__(self, **kwargs: Any) -> None:
+        """Initialize the credit bureau service with client and store.
+
+        Args:
+            **kwargs: May include ``cibil_api_key``. Forwarded to
+                StatefulService.__init__.
+
+        """
         super().__init__(**kwargs)
-        self.client: CreditBureauClient = self.build_client(**kwargs)
+        self._client: CreditBureauClient = self.build_client(**kwargs)
         self.reports: dict[str, CreditReport] = {}
         self.ckyc_records: dict[str, dict[str, Any]] = {}
-        self.repo: TypedStoreRepository[dict[str, Any]] = self.store_repo(
-            "credit_bureau", dict
-        )
+        self.repo: TypedStoreRepository[dict[str, Any]] = self.store_repo("credit_bureau", dict)
         loaded = self.repo.load(default={})
         if loaded:
-            self.reports = {
-                k: CreditBureauService.dict_to_report(v)
-                for k, v in loaded.get("reports", {}).items()
-            }
+            self.reports = {k: CreditBureauService.dict_to_report(v) for k, v in loaded.get("reports", {}).items()}
             self.ckyc_records = loaded.get("ckyc", {})
 
     @staticmethod
@@ -52,6 +54,7 @@ class CreditBureauService(StatefulService):
 
         Returns:
             A CreditReport instance.
+
         """
         from underwrite.services.credit_bureau.client import (
             BureauAccount,
@@ -87,6 +90,7 @@ class CreditBureauService(StatefulService):
         Returns:
             An HttpCreditBureauClient if credentials are available,
             otherwise a MockCreditBureauClient.
+
         """
         api_key = kwargs.get("cibil_api_key", "")
         if api_key:
@@ -99,6 +103,7 @@ class CreditBureauService(StatefulService):
 
         Args:
             event: The incoming domain event.
+
         """
         if event.event_type == EventType.CREDIT_BUREAU_CHECK:
             self.check_bureau(event)
@@ -106,14 +111,20 @@ class CreditBureauService(StatefulService):
             self.verify_ckyc(event)
 
     def check_bureau(self, event: Event) -> None:
-        """Fetch a credit report and emit the result."""
+        """Fetch a credit report and emit the result.
+
+        Args:
+            event: The CREDIT_BUREAU_CHECK event with pan and
+                optional bureau payload.
+
+        """
         pan: str = event.payload.get("pan", "")
         bureau: str = event.payload.get("bureau", "cibil")
         if not pan:
             logger.warning("credit_bureau.check missing pan")
             return
         try:
-            report = self.client.fetch_credit_report(pan, bureau)
+            report = self._client.fetch_credit_report(pan, bureau)
         except Exception as exc:
             logger.error("credit_bureau.check failed for %s: %s", pan, exc)
             self.emit(
@@ -145,14 +156,19 @@ class CreditBureauService(StatefulService):
         )
 
     def verify_ckyc(self, event: Event) -> None:
-        """Verify CKYC identity and emit the result."""
+        """Verify CKYC identity and emit the result.
+
+        Args:
+            event: The CKYC_VERIFY event with ckyc_number and aadhaar.
+
+        """
         ckyc_number: str = event.payload.get("ckyc_number", "")
         aadhaar: str = event.payload.get("aadhaar", "")
         if not ckyc_number or not aadhaar:
             logger.warning("ckyc.verify missing ckyc_number or aadhaar")
             return
         try:
-            response = self.client.verify_ckyc(ckyc_number, aadhaar)
+            response = self._client.verify_ckyc(ckyc_number, aadhaar)
         except Exception as exc:
             logger.error("ckyc.verify failed for %s: %s", ckyc_number, exc)
             self.emit(
@@ -195,6 +211,7 @@ class CreditBureauService(StatefulService):
 
         Returns:
             CreditReport or None.
+
         """
         with self.state_lock:
             return self.reports.get(pan)
@@ -207,12 +224,19 @@ class CreditBureauService(StatefulService):
 
         Returns:
             CKYC record dict or None.
+
         """
         with self.state_lock:
             return self.ckyc_records.get(ckyc_number)
 
     def health_check(self) -> dict[str, Any]:
-        """Bureau-specific health: reports cached report and CKYC counts."""
+        """Bureau-specific health: reports cached report and CKYC counts.
+
+        Returns:
+            Health dict extended with reports_cached and ckyc_records
+            counts.
+
+        """
         base = super().health_check()
         base["reports_cached"] = len(self.reports)
         base["ckyc_records"] = len(self.ckyc_records)
@@ -220,9 +244,7 @@ class CreditBureauService(StatefulService):
 
     def sync(self) -> None:
         """Persist both reports and CKYC records to the store."""
-        reports_dict = {
-            k: CreditBureauService.report_to_dict(v) for k, v in self.reports.items()
-        }
+        reports_dict = {k: CreditBureauService.report_to_dict(v) for k, v in self.reports.items()}
         self.repo.save(
             {
                 "reports": reports_dict,
@@ -239,6 +261,7 @@ class CreditBureauService(StatefulService):
 
         Returns:
             Dict representation suitable for store persistence.
+
         """
         return {
             "bureau": r.bureau,

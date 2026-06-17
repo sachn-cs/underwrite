@@ -32,9 +32,8 @@ class ModalBus(EventBus):
     ) -> None:
         self.__queue_name: str = queue_name
         self.__poll_interval: float = max(0.1, poll_interval)
-        self.__modal_queue: Any = None
-        self.__handlers: dict[str, list[tuple[str, Callable[[Event],
-                                                            None]]]] = {}
+        self.__modal_queue = None
+        self.__handlers: dict[str, list[tuple[str, Callable[[Event], None]]]] = {}
         self.__running: bool = False
         self.__poll_thread: threading.Thread | None = None
         self.__lock: threading.Lock = threading.Lock()
@@ -48,23 +47,21 @@ class ModalBus(EventBus):
 
     def __import_modal(self) -> None:
         try:
-            import modal  # type: ignore[import-untyped]
-            self.__modal = modal
-            self.__modal_queue = modal.Queue(
-                self.__queue_name)  # type: ignore[call-arg]
+            import importlib
+
+            self.__modal = importlib.import_module("modal")
+            self.__modal_queue = self.__modal.Queue(self.__queue_name)
         except ImportError:
-            self.__modal = None  # type: ignore[assignment]
+            self.__modal = None
 
     def publish(self, event: Event) -> str:
         if self.__modal is None:
-            raise RuntimeError(
-                "modal is not installed; install underwrite[modal]")
+            raise RuntimeError("modal is not installed; install underwrite[modal]")
         body: str = json.dumps(event.to_dict())
         self.__modal_queue.put(body)
         return event.event_id
 
-    def subscribe(self, event_type: str, handler: Callable[[Event],
-                                                           None]) -> str:
+    def subscribe(self, event_type: str, handler: Callable[[Event], None]) -> str:
         sid: str = uuid.uuid4().hex
         with self.__lock:
             self.__handlers.setdefault(event_type, []).append((sid, handler))
@@ -73,18 +70,16 @@ class ModalBus(EventBus):
     def unsubscribe(self, subscription_id: str) -> None:
         with self.__lock:
             for handlers in self.__handlers.values():
-                for i, (sid, _) in enumerate(handlers):
-                    if sid == subscription_id:
-                        handlers.pop(i)
-                        return
+                idx = next((i for i, (sid, _) in enumerate(handlers) if sid == subscription_id), None)
+                if idx is not None:
+                    handlers.pop(idx)
+                    return
 
     def start(self) -> None:
         if self.__running:
             return
         self.__running = True
-        self.__poll_thread = threading.Thread(target=self.__poll_loop,
-                                              daemon=True,
-                                              name="modal-poll")
+        self.__poll_thread = threading.Thread(target=self.__poll_loop, daemon=True, name="modal-poll")
         self.__poll_thread.start()
 
     def stop(self) -> None:
@@ -112,25 +107,21 @@ class ModalBus(EventBus):
                     event: Event = Event.from_dict(data)
                     self.__dispatch(event)
                     raw = self.__modal_queue.get(block=False)
-            except Exception:
+            except (json.JSONDecodeError, KeyError) as exc:
+                logger.warning("modal poll message parse error: %s", exc)
+            except Exception as exc:
                 if self.__running:
-                    logger.debug(
-                        "modal poll got no message (expected during idle)")
-                pass
+                    logger.warning("modal poll error: %s", exc)
             if self.__running:
                 time.sleep(self.__poll_interval)
 
     def __dispatch(self, event: Event) -> None:
         with self.__lock:
-            wildcards: list[tuple[str, Callable[[Event], None]]] = \
-                self.__handlers.get("*", [])
-            specific: list[tuple[str, Callable[[Event], None]]] = \
-                self.__handlers.get(event.event_type, [])
+            wildcards: list[tuple[str, Callable[[Event], None]]] = self.__handlers.get("*", [])
+            specific: list[tuple[str, Callable[[Event], None]]] = self.__handlers.get(event.event_type, [])
         for sid, handler in wildcards + specific:
             if not self.__circuit_breaker.allow_request(sid):
-                logger.warning(
-                    "circuit open for subscriber %s, sending %s to DLQ", sid,
-                    event.event_type)
+                logger.warning("circuit open for subscriber %s, sending %s to DLQ", sid, event.event_type)
                 self.__dlq.put(event, "circuit_open", sid)
                 continue
             try:

@@ -9,7 +9,6 @@ from underwrite.__runtime__ import Runtime
 
 
 class TestRuntimeOtlpTracer:
-
     def test_build_tracer_otlp_creates_tracer(self) -> None:
         config = config_with_otlp()
         rt = Runtime(config)
@@ -48,6 +47,7 @@ class TestRuntimeOtlpTracer:
 
 def config_with_otlp() -> Any:
     from underwrite.__config__ import Configuration
+
     config = Configuration.default()
     config.tracing.enabled = True
     config.tracing.exporter = "otlp"
@@ -55,9 +55,9 @@ def config_with_otlp() -> Any:
 
 
 class TestRuntimeRestartFailingServices:
-
     def test_restart_no_supervisor_returns_empty(self) -> None:
         from underwrite.__config__ import Configuration
+
         config = Configuration.default()
         config.recovery.auto_restart = False
         rt = Runtime(config)
@@ -65,6 +65,7 @@ class TestRuntimeRestartFailingServices:
 
     def test_restart_returns_empty_when_no_failures(self) -> None:
         from underwrite.__config__ import Configuration
+
         config = Configuration.default()
         rt = Runtime(config)
         if rt.supervisor is not None:

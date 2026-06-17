@@ -26,9 +26,7 @@ class DecisionService(StatefulService):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.__signals: dict[str, list[dict[str, Any]]] = {}
-        self.repo: TypedStoreRepository[dict[str, list[dict[str, Any]]]] = (
-            self.store_repo("signals", dict)
-        )
+        self.repo: TypedStoreRepository[dict[str, list[dict[str, Any]]]] = self.store_repo("signals", dict)
         loaded = self.repo.load(default={})
         if loaded:
             self.__signals = loaded
@@ -39,9 +37,7 @@ class DecisionService(StatefulService):
         Args:
             event: The incoming domain event.
         """
-        entity_id: str = event.payload.get("application_id", "") or event.payload.get(
-            "loan_id", ""
-        )
+        entity_id: str = event.payload.get("application_id", "") or event.payload.get("loan_id", "")
         if not entity_id:
             return
 
@@ -78,7 +74,12 @@ class DecisionService(StatefulService):
             self.evaluate(entity_id, event.correlation_id)
 
     def evaluate(self, entity_id: str, correlation_id: str) -> None:
-        """Evaluate accumulated signals and emit a decision."""
+        """Evaluate accumulated signals and emit a decision.
+
+        Args:
+            entity_id: The entity identifier to evaluate.
+            correlation_id: Correlation ID for tracing.
+        """
         with self.state_lock:
             signals = list(self.__signals.get(entity_id, []))
         if not signals:

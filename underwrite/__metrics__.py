@@ -83,10 +83,7 @@ class MetricsCollector:
             parts.append(f"{k}={v}")
         return ":".join(parts)
 
-    def increment(self,
-                  name: str,
-                  tags: dict[str, str] | None = None,
-                  delta: int = 1) -> None:
+    def increment(self, name: str, tags: dict[str, str] | None = None, delta: int = 1) -> None:
         """Increments a counter metric.
 
         Args:
@@ -102,10 +99,7 @@ class MetricsCollector:
             self.__counters[key].value += delta
             self.__evict()
 
-    def gauge(self,
-              name: str,
-              value: float,
-              tags: dict[str, str] | None = None) -> None:
+    def gauge(self, name: str, value: float, tags: dict[str, str] | None = None) -> None:
         """Sets a gauge metric to a specific value.
 
         Args:
@@ -119,10 +113,7 @@ class MetricsCollector:
             self.__gauges[key] = Gauge(name=name, tags=dict(tags), value=value)
             self.__evict()
 
-    def timer(self,
-              name: str,
-              duration_ms: float,
-              tags: dict[str, str] | None = None) -> None:
+    def timer(self, name: str, duration_ms: float, tags: dict[str, str] | None = None) -> None:
         """Records a timer observation.
 
         Args:
@@ -144,9 +135,7 @@ class MetricsCollector:
                 t.max_ms = duration_ms
             self.__evict()
 
-    def time(self,
-             name: str,
-             tags: dict[str, str] | None = None) -> TimerContext:
+    def time(self, name: str, tags: dict[str, str] | None = None) -> TimerContext:
         """Returns a context manager that records duration on exit.
 
         Args:
@@ -166,30 +155,18 @@ class MetricsCollector:
         """
         with self.__lock:
             return {
-                "counters": {
-                    k: {
-                        "value": c.value,
-                        "tags": c.tags
-                    }
-                    for k, c in self.__counters.items()
-                },
+                "counters": {k: {"value": c.value, "tags": c.tags} for k, c in self.__counters.items()},
                 "timers": {
                     k: {
                         "count": t.count,
                         "avg_ms": t.total_ms / max(t.count, 1),
                         "min_ms": t.min_ms if t.count else 0,
                         "max_ms": t.max_ms,
-                        "tags": t.tags
+                        "tags": t.tags,
                     }
                     for k, t in self.__timers.items()
                 },
-                "gauges": {
-                    k: {
-                        "value": g.value,
-                        "tags": g.tags
-                    }
-                    for k, g in self.__gauges.items()
-                },
+                "gauges": {k: {"value": g.value, "tags": g.tags} for k, g in self.__gauges.items()},
             }
 
     def reset(self) -> None:
@@ -203,8 +180,7 @@ class MetricsCollector:
 class TimerContext:
     """Context manager that records elapsed time to a MetricsCollector."""
 
-    def __init__(self, collector: MetricsCollector, name: str,
-                 tags: dict[str, str]) -> None:
+    def __init__(self, collector: MetricsCollector, name: str, tags: dict[str, str]) -> None:
         self.__collector = collector
         self.__name = name
         self.__tags = tags

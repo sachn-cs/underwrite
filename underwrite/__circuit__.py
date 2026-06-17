@@ -12,6 +12,7 @@ __all__ = [
     "RetryPolicy",
 ]
 
+import random
 import threading
 import time
 from collections.abc import Callable
@@ -33,10 +34,7 @@ class CircuitState(Enum):
 class CircuitBreaker:
     """Thread-safe circuit breaker with configurable thresholds."""
 
-    def __init__(self,
-                 failure_threshold: int = 5,
-                 recovery_timeout: float = 30.0,
-                 name: str = "") -> None:
+    def __init__(self, failure_threshold: int = 5, recovery_timeout: float = 30.0, name: str = "") -> None:
         """Initializes a circuit breaker.
 
         Args:
@@ -92,12 +90,9 @@ class CircuitBreaker:
     def __get_state(self) -> CircuitState:
         with self.__lock:
             if self.__state == CircuitState.OPEN:
-                if time.monotonic(
-                ) - self.__last_failure_time >= self.__recovery_timeout:
+                if time.monotonic() - self.__last_failure_time >= self.__recovery_timeout:
                     self.__state = CircuitState.HALF_OPEN
-                    logger.info(
-                        "circuit %s half-open (recovery timeout elapsed)",
-                        self.__name)
+                    logger.info("circuit %s half-open (recovery timeout elapsed)", self.__name)
             return self.__state
 
     def __on_success(self) -> None:
@@ -106,8 +101,7 @@ class CircuitBreaker:
             self.__failure_count = 0
             self.__state = CircuitState.CLOSED
         if prev != CircuitState.CLOSED:
-            logger.info("circuit %s recovered (%s -> closed)", self.__name,
-                        prev.value)
+            logger.info("circuit %s recovered (%s -> closed)", self.__name, prev.value)
 
     def __on_failure(self) -> None:
         tripped = False
@@ -119,11 +113,9 @@ class CircuitBreaker:
                     tripped = True
                 self.__state = CircuitState.OPEN
         count: int = self.__failure_count
-        logger.warning("circuit %s failure %d/%d", self.__name, count,
-                       self.__failure_threshold)
+        logger.warning("circuit %s failure %d/%d", self.__name, count, self.__failure_threshold)
         if tripped:
-            logger.warning("circuit %s tripped open (%d failures)",
-                           self.__name, self.__failure_threshold)
+            logger.warning("circuit %s tripped open (%d failures)", self.__name, self.__failure_threshold)
 
 
 class RetryPolicy:
@@ -152,12 +144,9 @@ class RetryPolicy:
         self.__max_retries: int = max_retries
         self.__base_delay: float = base_delay
         self.__max_delay: float = max_delay
-        self.__retryable_exceptions: tuple[type[Exception],
-                                           ...] = retryable_exceptions or (
-                                               Exception, )
+        self.__retryable_exceptions: tuple[type[Exception], ...] = retryable_exceptions or (Exception,)
 
-    def execute(self, fn: Callable[..., Any], *args: Any,
-                **kwargs: Any) -> Any:
+    def execute(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Executes a callable with exponential-backoff retry.
 
         Args:
@@ -178,9 +167,7 @@ class RetryPolicy:
             except self.__retryable_exceptions as exc:
                 last_exc = exc
                 if attempt < self.__max_retries:
-                    delay = min(self.__base_delay * (2**attempt) +
-                                (attempt + 1) * 0.01, self.__max_delay
-                                )  # nosec: retry jitter, not cryptographic
+                    delay = min(self.__base_delay * (2**attempt) + random.uniform(0, 0.05), self.__max_delay)
                     time.sleep(delay)
         if last_exc is not None:
             raise last_exc

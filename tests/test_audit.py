@@ -23,26 +23,15 @@ def audit_capped() -> AuditService:
 
 
 class TestAuditService:
-
     def test_records_all_event_types(self) -> None:
         svc = audit()
-        svc.handle(
-            Event(event_type="seed.added",
-                  source="test",
-                  payload={"user": "bank"}))
-        svc.handle(
-            Event(event_type="loan.originated",
-                  source="test",
-                  payload={"borrower": "a"}))
+        svc.handle(Event(event_type="seed.added", source="test", payload={"user": "bank"}))
+        svc.handle(Event(event_type="loan.originated", source="test", payload={"borrower": "a"}))
         assert len(svc.ledger) == 2
 
     def test_ledger_records_all_fields(self) -> None:
         svc = audit()
-        svc.handle(
-            Event(event_type="test.event",
-                  source="src",
-                  payload={"k": "v"},
-                  correlation_id="corr-1"))
+        svc.handle(Event(event_type="test.event", source="src", payload={"k": "v"}, correlation_id="corr-1"))
         rec = svc.ledger[0]
         assert rec["event_type"] == "test.event"
         assert rec["source"] == "src"
@@ -139,27 +128,22 @@ class TestAuditService:
         put_called = [False]
 
         mock_s3 = MagicMock()
-        mock_s3.put_object = MagicMock(
-            side_effect=lambda **kw: put_called.__setitem__(0, True))
+        mock_s3.put_object = MagicMock(side_effect=lambda **kw: put_called.__setitem__(0, True))
 
         mock_boto3_mod = MagicMock()
         mock_boto3_mod.client = MagicMock(return_value=mock_s3)
 
         with patch.dict("sys.modules", {"boto3": mock_boto3_mod}):
-            if "underwrite.services.audit.service" in __import__(
-                    "sys").modules:
-                __import__("sys").modules.pop(
-                    "underwrite.services.audit.service", None)
+            if "underwrite.services.audit.service" in __import__("sys").modules:
+                __import__("sys").modules.pop("underwrite.services.audit.service", None)
             from underwrite.services.audit.service import AuditService as AuditSvc2
 
-            svc2 = AuditSvc2(service_id="audit",
-                             export_url="s3://bucket/path.jsonl")
+            svc2 = AuditSvc2(service_id="audit", export_url="s3://bucket/path.jsonl")
             svc2.handle(Event(event_type="ev", source="s"))
             svc2.export()
         assert put_called[0]
 
     def test_export_gcs_noop_without_library(self) -> None:
-        svc = AuditService(service_id="audit",
-                           export_url="gs://bucket/path.jsonl")
+        svc = AuditService(service_id="audit", export_url="gs://bucket/path.jsonl")
         svc.handle(Event(event_type="ev", source="s"))
         svc.export()  # should log warning, not raise

@@ -50,15 +50,11 @@ class GovernanceService(StatefulService):
                 if isinstance(v, (list, tuple)) and len(v) == 2
             }
             if raw_ranges
-            else dict(DEFAULT_PARAM_RANGES)
+            else DEFAULT_PARAM_RANGES
         )
         super().__init__(**kwargs)
-        self.__params: dict[str, float] = (
-            dict(raw_defaults) if raw_defaults else dict(DEFAULT_PARAM_DEFAULTS)
-        )
-        self.repo: TypedStoreRepository[dict[str, float]] = self.store_repo(
-            "params", dict
-        )
+        self.__params: dict[str, float] = raw_defaults.copy() if raw_defaults else DEFAULT_PARAM_DEFAULTS.copy()
+        self.repo: TypedStoreRepository[dict[str, float]] = self.store_repo("params", dict)
         loaded = self.repo.load(default={})
         if loaded:
             self.__params = loaded
@@ -113,7 +109,11 @@ class GovernanceService(StatefulService):
             return dict(self.__params)
 
     def health_check(self) -> dict[str, Any]:
-        """Governance-specific health: reports active param count."""
+        """Run governance-specific health checks.
+
+        Returns:
+            Health dict with active param count.
+        """
         with self.state_lock:
             return {
                 **super().health_check(),

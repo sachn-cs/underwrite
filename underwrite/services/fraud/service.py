@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict, deque
+from collections import deque
 from datetime import datetime, timezone
 from typing import Any
 
@@ -25,22 +25,23 @@ class FraudService(StatefulService):
             **kwargs: Forwarded to NanoService.__init__.
         """
         super().__init__(**kwargs)
-        self.__records: OrderedDict[str, deque[dict[str, Any]]] = OrderedDict()
-        self.repo: BatchedStoreRepository[dict[str, list[dict[str, Any]]]] = (
-            self.batched_repo("records", dict, sync_interval=self.SYNC_INTERVAL)
+        self.__records: dict[str, deque[dict[str, Any]]] = {}
+        self.repo: BatchedStoreRepository[dict[str, list[dict[str, Any]]]] = self.batched_repo(
+            "records", dict, sync_interval=self.SYNC_INTERVAL
         )
         loaded = self.repo.load(default={})
         if loaded:
             self.__records = self.__deserialize_records(loaded)
 
     @property
-    def records(self) -> OrderedDict[str, deque[dict[str, Any]]]:
-        """Return a snapshot of the internal records dict (test-accessible hook)."""
+    def records(self) -> dict[str, deque[dict[str, Any]]]:
+        """Return a snapshot of the internal records dict (test-accessible hook).
+
+        Returns:
+            Dict mapping borrower IDs to their activity deques.
+        """
         with self.state_lock:
-            result: OrderedDict[str, deque[dict[str, Any]]] = OrderedDict()
-            for k, v in self.__records.items():
-                result[k] = deque(v, maxlen=v.maxlen)
-            return result
+            return {k: deque(v, maxlen=v.maxlen) for k, v in self.__records.items()}
 
     def handle(self, event: Event) -> None:
         """Check loan origination and repayment events against fraud rules.
@@ -76,13 +77,20 @@ class FraudService(StatefulService):
                 self.__check_wash(user, event.correlation_id)
 
     def __record(self, borrower: str, event_type: str, amount: float) -> None:
-        """Record an activity event for a borrower."""
+        """Record an activity event for a borrower.
+
+        Args:
+            borrower: The borrower identifier.
+            event_type: Type of event (origination or repayment).
+            amount: Transaction amount.
+        """
         if borrower not in self.__records:
             if len(self.__records) >= self.MAX_BORROWERS:
-                self.__records.popitem(last=False)
+                self.__records.pop(next(iter(self.__records)))
             self.__records[borrower] = deque(maxlen=1000)
         else:
-            self.__records.move_to_end(borrower)
+            records = self.__records.pop(borrower)
+            self.__records[borrower] = records
         records = self.__records[borrower]
         records.append(
             {
@@ -94,7 +102,12 @@ class FraudService(StatefulService):
         self.repo.incr_and_maybe_sync(self.__serialize_records())
 
     def __check_wash(self, borrower: str, correlation_id: str) -> None:
-        """Check for wash lending cycles (alternating origination/repayment)."""
+        """Check for wash lending cycles (alternating origination/repayment).
+
+        Args:
+            borrower: The borrower identifier.
+            correlation_id: Correlation ID for tracing.
+        """
         records = self.__records.get(borrower, deque(maxlen=1000))
         if len(records) < 2:
             return
@@ -104,10 +117,7 @@ class FraudService(StatefulService):
         cycles: int = 0
         i: int = 0
         while i < len(records) - 1:
-            if (
-                records[i]["event_type"] == "origination"
-                and records[i + 1]["event_type"] == "repayment"
-            ):
+            if records[i]["event_type"] == "origination" and records[i + 1]["event_type"] == "repayment":
                 cycles += 1
                 i += 2
             else:
@@ -124,7 +134,12 @@ class FraudService(StatefulService):
             )
 
     def __check_burst(self, borrower: str, correlation_id: str) -> None:
-        """Check for velocity bursts (multiple rapid originations)."""
+        """Check for velocity bursts (multiple rapid originations).
+
+        Args:
+            borrower: The borrower identifier.
+            correlation_id: Correlation ID for tracing.
+        """
         records = self.__records.get(borrower, deque(maxlen=1000))
         recent = [r for r in records if r["event_type"] == "origination"]
         if len(recent) > 3:
@@ -138,16 +153,23 @@ class FraudService(StatefulService):
             )
 
     def __serialize_records(self) -> dict[str, list[dict[str, Any]]]:
-        """Convert internal OrderedDict[deque] to store-friendly dict[list]."""
+        """Convert internal records dict to store-friendly dict of lists.
+
+        Returns:
+            Serialized records suitable for storage.
+        """
         return {k: list(v) for k, v in self.__records.items()}
 
     @staticmethod
     def __deserialize_records(
         raw: dict[str, list[dict[str, Any]]],
-    ) -> OrderedDict[str, deque[dict[str, Any]]]:
-        """Restore internal format from store-friendly dict[list]."""
-        result: OrderedDict[str, deque[dict[str, Any]]] = OrderedDict()
-        for k, v in raw.items():
-            if isinstance(v, list):
-                result[k] = deque(v, maxlen=1000)
-        return result
+    ) -> dict[str, deque[dict[str, Any]]]:
+        """Restore internal dict of deques from store-friendly dict of lists.
+
+        Args:
+            raw: Store-friendly dict of lists.
+
+        Returns:
+            Restored dict of deques.
+        """
+        return {k: deque(v, maxlen=1000) for k, v in raw.items() if isinstance(v, list)}

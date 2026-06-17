@@ -39,17 +39,13 @@ class FeeService(StatefulService):
     """
 
     def __init__(self, **kwargs: Any) -> None:
-        self.__schedules: dict[str, float] = kwargs.pop(
-            "fee_schedules", dict(DEFAULT_FEE_SCHEDULES)
-        )
+        self.__schedules: dict[str, float] = kwargs.pop("fee_schedules", DEFAULT_FEE_SCHEDULES)
         self.__penal_daily_rate: float = kwargs.pop("penal_interest_daily_rate", 0.0)
         self.__late_percent: float = kwargs.pop("late_payment_percent", 0.0)
         self.__max_penal: float = kwargs.pop("max_penal_interest_per_loan", 0.0)
         super().__init__(**kwargs)
         self.__fees: dict[str, dict[str, Any]] = {}
-        self.repo: BatchedStoreRepository[dict[str, dict[str, Any]]] = (
-            self.batched_repo("fees", dict, sync_interval=10)
-        )
+        self.repo: BatchedStoreRepository[dict[str, dict[str, Any]]] = self.batched_repo("fees", dict, sync_interval=10)
         loaded = self.repo.load(default={})
         if loaded:
             self.__fees = loaded
@@ -87,33 +83,23 @@ class FeeService(StatefulService):
             )
             if total_assessed >= MAX_FEE_PER_LOAN:
                 logger.warning(
-                    "fee cap reached for loan %s (total %.2f >= %.2f), "
-                    "skipping fee assessment",
+                    "fee cap reached for loan %s (total %.2f >= %.2f), skipping fee assessment",
                     loan_id,
                     total_assessed,
                     MAX_FEE_PER_LOAN,
                 )
                 return
 
-            amount = self.__compute_amount(
-                fee_type, principal, overdue_days, overdue_amount
-            )
+            amount = self.__compute_amount(fee_type, principal, overdue_days, overdue_amount)
             if not math.isfinite(amount):
-                logger.error(
-                    "non-finite fee amount %s for loan %s, skipping", amount, loan_id
-                )
+                logger.error("non-finite fee amount %s for loan %s, skipping", amount, loan_id)
                 return
 
             if amount <= 0:
-                logger.debug(
-                    "zero/negative fee amount %s for loan %s, skipped", amount, loan_id
-                )
+                logger.debug("zero/negative fee amount %s for loan %s, skipped", amount, loan_id)
                 return
 
-            fee_id: str = (
-                f"fee_{loan_id}_{fee_type}_"
-                f"{int(datetime.now(timezone.utc).timestamp())}"
-            )
+            fee_id: str = f"fee_{loan_id}_{fee_type}_{int(datetime.now(timezone.utc).timestamp())}"
             fee_record = {
                 "fee_id": fee_id,
                 "loan_id": loan_id,
@@ -136,9 +122,7 @@ class FeeService(StatefulService):
                 correlation_id=correlation_id,
             )
 
-    def __compute_amount(
-        self, fee_type: str, principal: float, overdue_days: int, overdue_amount: float
-    ) -> float:
+    def __compute_amount(self, fee_type: str, principal: float, overdue_days: int, overdue_amount: float) -> float:
         """Compute the fee amount based on type and parameters.
 
         Args:
@@ -192,7 +176,7 @@ class FeeService(StatefulService):
                     record["paid"] = True
                     record["paid_at"] = datetime.now(timezone.utc).isoformat()
                     self.store.set(f"fee:{fee_id}", record)
-                    self.__fees[f"fee:{fee_id}"] = dict(record)
+                    self.__fees[f"fee:{fee_id}"] = record.copy()
                     self.repo.incr_and_maybe_sync(self.__fees)
 
         elif event.event_type == EventType.PAYMENT_OVERDUE:
@@ -202,9 +186,7 @@ class FeeService(StatefulService):
                 return
             existing = self.store.keys(f"fee:fee_{loan_id}_late_payment")
             if existing:
-                logger.debug(
-                    "late_payment fee already assessed for loan %s, skipping", loan_id
-                )
+                logger.debug("late_payment fee already assessed for loan %s, skipping", loan_id)
                 return
             self.__assess(
                 loan_id=loan_id,
