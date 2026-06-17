@@ -242,7 +242,7 @@ class HttpRazorpayClient(RazorpayClient):
         self,
         key_id: str,
         key_secret: str,
-        webhook_secret: str = "",
+        webhook_secret: str | None = None,
         api_base_url: str = "https://api.razorpay.com/v1",
         timeout_seconds: int = 30,
     ) -> None:

@@ -122,7 +122,7 @@ class TestEvent:
     def test_frozen_dataclass(self) -> None:
         event: Event = Event(event_type="a", source="s")
         with pytest.raises(AttributeError):
-            event.event_type = "changed"  # type: ignore[misc]
+            event.__setattr__("event_type", "changed")
 
     def test_payload_round_trip(self) -> None:
         event: Event = Event(event_type="x", source="s", payload={"a": 1})

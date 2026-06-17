@@ -351,5 +351,7 @@ class TestSagaFileStorePersistence:
             result = so2.replay_saga(sid)
             assert result is True
             assert so2.get_saga(sid) is not None
-            assert so2.get_saga(sid).status == "completed"  # type: ignore[union-attr]
+            saga = so2.get_saga(sid)
+            assert saga is not None
+            assert saga.status == "completed"
             assert len(emitter.emitted) == 2

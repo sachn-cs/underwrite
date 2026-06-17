@@ -210,7 +210,9 @@ class FileStore(Store):
         try:
             self.shutdown(wait=False)
         except Exception:
-            pass
+            from underwrite.__logger__ import logger
+
+            logger.warning("FileStore.__del__: shutdown failed", exc_info=True)
 
     def __timeout(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
         """Runs *fn* with the configured timeout via the executor."""
@@ -366,17 +368,17 @@ class PostgresStore(Store):
         )
         self.__retry: RetryPolicy = RetryPolicy(max_retries=2, base_delay=0.05)
         self.__lock: threading.Lock = threading.Lock()
-        self.__sql_get: str = f"SELECT value FROM {table} WHERE key = %s"
-        self.__sql_set: str = (
-            f"INSERT INTO {table} (key, value, updated_at) "
-            "VALUES (%s, %s, NOW()) "
-            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"
+        self.__sql_get: str = self._build_sql("SELECT value FROM {} WHERE key = %s", table)
+        self.__sql_set: str = self._build_sql(
+            "INSERT INTO {} (key, value, updated_at) VALUES (%s, %s, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
+            table,
         )
-        self.__sql_delete: str = f"DELETE FROM {table} WHERE key = %s RETURNING *"
-        self.__sql_exists: str = f"SELECT 1 FROM {table} WHERE key = %s"
-        self.__sql_keys_all: str = f"SELECT key FROM {table}"
-        self.__sql_keys_pattern: str = f"SELECT key FROM {table} WHERE key LIKE %s"
-        self.__timeout_sql: str = f"SET statement_timeout = {int(operation_timeout * 1000)}"
+        self.__sql_delete: str = self._build_sql("DELETE FROM {} WHERE key = %s RETURNING *", table)
+        self.__sql_exists: str = self._build_sql("SELECT 1 FROM {} WHERE key = %s", table)
+        self.__sql_keys_all: str = self._build_sql("SELECT key FROM {}", table)
+        self.__sql_keys_pattern: str = self._build_sql("SELECT key FROM {} WHERE key LIKE %s", table)
+        self.__timeout_sql: str = self._build_sql("SET statement_timeout = {}", str(int(operation_timeout * 1000)))
 
     def _get_pool(self) -> Any:
         if self.__pool is not None:
@@ -488,6 +490,19 @@ class PostgresStore(Store):
         except Exception as e:
             logger.warning("PostgresStore health check failed: %s", e)
             return {"ok": False, "detail": "Postgres health check failed", "circuit": self.__circuit.state.value}
+
+    @staticmethod
+    def _build_sql(template: str, table: str) -> str:
+        """Build a parameterised SQL statement from a template and a validated table name.
+
+        Args:
+            template: SQL template with ``{}`` placeholder for the table name.
+            table: The validated table name (alphanumeric + underscore only).
+
+        Returns:
+            A safe parameterised SQL string.
+        """
+        return template.replace("{}", table)
 
     def migrate(self, plan: MigrationPlan) -> None:
         """Applies pending schema migrations to the Postgres store.

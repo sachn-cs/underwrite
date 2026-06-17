@@ -22,7 +22,7 @@ class NotificationService(NanoService):
     def __init__(self, **kwargs: Any) -> None:
         """Initialize the notification service with a thread pool executor."""
         super().__init__(**kwargs)
-        self.__executor: concurrent.futures.ThreadPoolExecutor | None = concurrent.futures.ThreadPoolExecutor(
+        self._executor: concurrent.futures.ThreadPoolExecutor | None = concurrent.futures.ThreadPoolExecutor(
             max_workers=4
         )
         self.handlers: dict[str, Any] = {
@@ -36,9 +36,9 @@ class NotificationService(NanoService):
 
     def stop(self) -> None:
         """Shut down the thread pool executor."""
-        if self.__executor is not None:
-            self.__executor.shutdown(wait=True)
-            self.__executor = None
+        if self._executor is not None:
+            self._executor.shutdown(wait=True)
+            self._executor = None
         super().stop()
 
     def handle(self, event: Event) -> None:
@@ -57,11 +57,11 @@ class NotificationService(NanoService):
         Args:
             event: The event to notify about.
         """
-        if self.__executor is None:
+        if self._executor is None:
             logger.warning("notification executor not available, dispatching synchronously")
             self.__dispatch_notification(event)
             return
-        self.__executor.submit(self.__dispatch_notification, event)
+        self._executor.submit(self.__dispatch_notification, event)
         self.emit(
             EventType.NOTIFICATION_SENT,
             {

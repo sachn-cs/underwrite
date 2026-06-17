@@ -177,10 +177,14 @@ class TestCircuitBreakerHalfOpenTransition:
         cb = CircuitBreaker(failure_threshold=2, recovery_timeout=0.05, name="test")
 
         assert cb.state == CircuitState.CLOSED
+
+        def _raise_value_error() -> Any:
+            raise ValueError("fail")
+
         with pytest.raises(ValueError):
-            cb.call(lambda: (_ for _ in ()).throw(ValueError("fail")))  # type: ignore[misc]
+            cb.call(_raise_value_error)
         with pytest.raises(ValueError):
-            cb.call(lambda: (_ for _ in ()).throw(ValueError("fail")))  # type: ignore[misc]
+            cb.call(_raise_value_error)
 
         import time
 
@@ -196,9 +200,12 @@ class TestCircuitBreakerHalfOpenTransition:
 
         cb = CircuitBreaker(failure_threshold=2, recovery_timeout=0.05, name="test")
 
+        def _raise_value_error() -> Any:
+            raise ValueError("fail")
+
         for _ in range(2):
             with pytest.raises(ValueError):
-                cb.call(lambda: (_ for _ in ()).throw(ValueError("fail")))  # type: ignore[misc]
+                cb.call(_raise_value_error)
 
         import time
 

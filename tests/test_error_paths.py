@@ -28,13 +28,13 @@ from underwrite.services.risk.model import RiskModel
 class TestSafeStoreGet:
     def test_returns_default_on_exception(self) -> None:
         svc = ConcreteService(service_id="test_svc_get")
-        svc._NanoService__store = BrokenStore()  # type: ignore[attr-defined]
+        svc._store = BrokenStore()  # type: ignore[assignment]
         result = svc.safe_store_get("some_key", default="fallback")
         assert result == "fallback"
 
     def test_returns_store_result_for_missing_key(self) -> None:
         svc = ConcreteService(service_id="test_svc_get_missing")
-        svc._NanoService__store = MemoryStore()  # type: ignore[attr-defined]
+        svc._store = MemoryStore()  # type: ignore[assignment]
         result = svc.safe_store_get("missing", default=42)
         assert result is None
 
@@ -47,7 +47,7 @@ class TestSafeStoreGet:
 class TestSafeStoreSet:
     def test_returns_false_on_exception(self) -> None:
         svc = ConcreteService(service_id="test_svc_set")
-        svc._NanoService__store = BrokenStore()  # type: ignore[attr-defined]
+        svc._store = BrokenStore()  # type: ignore[assignment]
         result = svc.safe_store_set("some_key", "value")
         assert result is False
 
@@ -227,7 +227,7 @@ class TestAuditLoadJsonl:
         ledger_file.write_text('{"valid": true}\nnot json\n{"also_valid": 42}\n')
         svc = AuditService(service_id="audit")
         svc.load_jsonl(str(ledger_file))
-        records = svc._AuditService__ledger  # type: ignore[attr-defined]
+        records = svc._ledger
         assert len(records) == 2
         assert records[0] == {"valid": True}
         assert records[1] == {"also_valid": 42}
@@ -237,13 +237,13 @@ class TestAuditLoadJsonl:
         ledger_file.write_text("")
         svc = AuditService(service_id="audit")
         svc.load_jsonl(str(ledger_file))
-        records = svc._AuditService__ledger  # type: ignore[attr-defined]
+        records = svc._ledger
         assert len(records) == 0
 
     def test_handles_missing_file(self) -> None:
         svc = AuditService(service_id="audit")
         svc.load_jsonl("/nonexistent/audit.jsonl")
-        records = svc._AuditService__ledger  # type: ignore[attr-defined]
+        records = svc._ledger
         assert len(records) == 0
 
 

@@ -590,13 +590,14 @@ class TestMechanismStateOrdering:
     def test_add_seed_emits_after_persist(self) -> None:
         captured: dict[str, Any] = {}
 
-        def spy(event_type: str, payload: dict[str, Any], correlation_id: str = "") -> None:
+        def spy(event_type: str, payload: dict[str, Any], correlation_id: str = "") -> Event:
             if event_type == EventType.SEED_ADDED:
                 captured["emit_seen"] = True
                 captured["user_in_earned_at_emit"] = payload["user"] in svc.earned
+            return Event(event_type=event_type, source="test", payload=payload)
 
         svc = make_svc()
-        svc.emit = spy  # type: ignore[assignment]
+        svc.emit = spy  # type: ignore[method-assign]
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
         assert captured.get("emit_seen") is True
@@ -606,13 +607,14 @@ class TestMechanismStateOrdering:
     def test_originate_emits_after_persist(self) -> None:
         captured: dict[str, Any] = {}
 
-        def spy(event_type: str, payload: dict[str, Any], correlation_id: str = "") -> None:
+        def spy(event_type: str, payload: dict[str, Any], correlation_id: str = "") -> Event:
             if event_type == EventType.LOAN_ORIGINATED:
                 captured["emit_seen"] = True
                 captured["loans_at_emit"] = len(svc.loans.get("bank", []))
+            return Event(event_type=event_type, source="test", payload=payload)
 
         svc = make_svc()
-        svc.emit = spy  # type: ignore[assignment]
+        svc.emit = spy  # type: ignore[method-assign]
         svc.start()
         command(svc, "add_seed", {"user": "bank", "base_budget": 100_000})
         command(

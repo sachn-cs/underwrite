@@ -11,10 +11,17 @@ from underwrite.services.risk.model import RiskModel
 from underwrite.services.risk.service import RiskService
 
 
+class EmitSpy:
+    def __init__(self) -> None:
+        self.captured: list[tuple[str | EventType, dict[str, Any]]] = []
+
+    def __call__(self, event_type: str | EventType, payload: dict[str, Any], correlation_id: str = "") -> Event:
+        self.captured.append((event_type, payload))
+        return Event(event_type=str(event_type), source="test", payload=payload)
+
+
 class TestRiskServiceFaults:
     def test_model_failure_emits_sentinel_score(self) -> None:
-        emitted: list = []
-
         class FaultyModel:
             def predict(self, principal: float, term: float) -> float:
                 raise RuntimeError("model crashed")
@@ -22,10 +29,8 @@ class TestRiskServiceFaults:
         svc = RiskService(service_id="risk")
         svc.set_model(FaultyModel())
 
-        def capture(event_type: str, payload: dict[str, Any], correlation_id: str = "") -> None:
-            emitted.append((event_type, payload))
-
-        svc.emit = capture  # type: ignore[assignment]
+        spy = EmitSpy()
+        svc.emit = spy  # type: ignore[method-assign]
         event = Event(
             event_type=EventType.LOAN_ORIGINATED,
             source="test",
@@ -37,19 +42,15 @@ class TestRiskServiceFaults:
             },
         )
         svc.handle(event)
-        risk_scored = [e for e in emitted if e[0] == EventType.RISK_SCORED]
+        risk_scored = [e for e in spy.captured if e[0] == EventType.RISK_SCORED]
         assert len(risk_scored) == 1
         assert risk_scored[0][1]["score"] == -1.0
 
     def test_early_warning_emitted_for_high_dp(self) -> None:
-        emitted: list = []
-
         svc = RiskService(service_id="risk")
 
-        def capture(event_type: str, payload: dict[str, Any], correlation_id: str = "") -> None:
-            emitted.append((event_type, payload))
-
-        svc.emit = capture  # type: ignore[assignment]
+        spy = EmitSpy()
+        svc.emit = spy  # type: ignore[method-assign]
         event = Event(
             event_type=EventType.LOAN_ORIGINATED,
             source="test",
@@ -61,7 +62,7 @@ class TestRiskServiceFaults:
             },
         )
         svc.handle(event)
-        warnings = [e for e in emitted if e[0] == EventType.RISK_EARLY_WARNING]
+        warnings = [e for e in spy.captured if e[0] == EventType.RISK_EARLY_WARNING]
         assert len(warnings) == 1
 
 

@@ -95,7 +95,7 @@ class NanoService(ABC):
         self.__service_id: str = service_id
         self.__identity: Identity = identity or Identity.create(service_id)
         self.__bus: EventBus = bus or LocalBus()
-        self.__store: Store = store or MemoryStore()
+        self._store: Store = store or MemoryStore()
         self.__metrics: MetricsCollector | None = metrics
         self.__health: HealthRegistry | None = health
         self.__authz: AccessControl | None = authz
@@ -141,7 +141,7 @@ class NanoService(ABC):
     @property
     def store(self) -> Store:
         """Return the state persistence backend for this service."""
-        return self.__store
+        return self._store
 
     @property
     def metrics_collector(self) -> MetricsCollector | None:
@@ -166,7 +166,7 @@ class NanoService(ABC):
             exception occurs.
         """
         try:
-            return self.__store.get(key)
+            return self._store.get(key)
         except Exception:
             logger.exception("store get failed for %s in service %s", key, self.__service_id)
             return default
@@ -182,7 +182,7 @@ class NanoService(ABC):
             True if the write succeeded, False otherwise.
         """
         try:
-            self.__store.set(key, value)
+            self._store.set(key, value)
             return True
         except Exception:
             logger.exception("store set failed for %s in service %s", key, self.__service_id)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from underwrite.__tracer__ import ConsoleSpanExporter, Span, Tracer
+from underwrite.__tracer__ import ConsoleSpanExporter, Span, SpanExporter, Tracer
 
 
 class TestTracer:
@@ -45,11 +45,11 @@ class TestTracer:
     def test_exporter_called_on_end(self) -> None:
         exported: list = []
 
-        class CaptureExporter:
+        class CaptureExporter(SpanExporter):
             def export(self, spans: list) -> None:
                 exported.extend(spans)
 
-        t = Tracer(service_id="test", exporter=CaptureExporter())  # type: ignore[arg-type]
+        t = Tracer(service_id="test", exporter=CaptureExporter())
         span = t.start_span("op1")
         t.end_span(span)
         assert len(exported) == 1
@@ -78,13 +78,13 @@ class TestTracer:
     def test_overflow_spans_exported(self) -> None:
         exported: list = []
 
-        class CaptureExporter:
+        class CaptureExporter(SpanExporter):
             def export(self, spans: list) -> None:
                 exported.append(len(spans))
 
         t = Tracer(
             service_id="test",
-            exporter=CaptureExporter(),  # type: ignore[arg-type]
+            exporter=CaptureExporter(),
             max_spans=2,
         )
         for i in range(4):

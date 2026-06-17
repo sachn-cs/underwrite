@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from underwrite.services.risk.model import (
@@ -25,7 +27,7 @@ class TestStrategyRegistry:
     def test_register_rejects_non_strategy(self) -> None:
         registry = StrategyRegistry()
         with pytest.raises(TypeError):
-            registry.register("bad", object)  # type: ignore[arg-type]
+            registry.register("bad", cast(Any, object))
 
     def test_register_double_allowed(self) -> None:
         registry = StrategyRegistry()

@@ -12,7 +12,7 @@ __all__ = [
     "RetryPolicy",
 ]
 
-import random
+import secrets
 import threading
 import time
 from collections.abc import Callable
@@ -167,7 +167,8 @@ class RetryPolicy:
             except self.__retryable_exceptions as exc:
                 last_exc = exc
                 if attempt < self.__max_retries:
-                    delay = min(self.__base_delay * (2**attempt) + random.uniform(0, 0.05), self.__max_delay)
+                    jitter = secrets.SystemRandom().uniform(0, 0.05)
+                    delay = min(self.__base_delay * (2**attempt) + jitter, self.__max_delay)
                     time.sleep(delay)
         if last_exc is not None:
             raise last_exc

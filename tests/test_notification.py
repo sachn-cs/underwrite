@@ -76,7 +76,11 @@ class TestNotificationService:
         for at in alert_types:
             bus = LocalBus()
             received: list[Event] = []
-            bus.subscribe(EventType.NOTIFICATION_SENT, lambda e, r=received: r.append(e))  # type: ignore[misc]
+
+            def record(e: Event, _r: list[Event] = received) -> None:
+                _r.append(e)
+
+            bus.subscribe(EventType.NOTIFICATION_SENT, record)
             svc = notify(bus=bus)
             bus.start()
             svc.handle(Event(event_type=at, source="test", payload={"k": "v"}))
@@ -90,7 +94,7 @@ class TestNotificationService:
         svc = notify()
         event = Event(event_type=EventType.FRAUD_ALERT, source="test", payload={"borrower": "alice"})
         with patch.object(
-            svc._NotificationService__executor,  # type: ignore[attr-defined]
+            svc._executor,
             "submit",
         ) as mock_submit:
             svc.handle(event)
@@ -100,7 +104,7 @@ class TestNotificationService:
         svc = notify()
         event = Event(event_type=EventType.FRAUD_ALERT, source="test", payload={"user": "bob"})
         with patch.object(
-            svc._NotificationService__executor,  # type: ignore[attr-defined]
+            svc._executor,
             "submit",
         ) as mock_submit:
             svc.handle(event)
@@ -110,7 +114,7 @@ class TestNotificationService:
         svc = notify()
         event = Event(event_type=EventType.WASH_FLAG, source="test", payload={"borrower": "carol", "cycles": 5})
         with patch.object(
-            svc._NotificationService__executor,  # type: ignore[attr-defined]
+            svc._executor,
             "submit",
         ) as mock_submit:
             svc.handle(event)
@@ -123,14 +127,15 @@ class TestNotificationService:
         svc = notify(bus=bus)
         bus.start()
         dispatched: list[bool] = []
-        original_submit = svc._NotificationService__executor.submit  # type: ignore[attr-defined]
+        assert svc._executor is not None
+        original_submit = svc._executor.submit
 
         def delayed_submit(fn, *args, **kwargs):
             result = original_submit(fn, *args, **kwargs)
             dispatched.append(True)
             return result
 
-        svc._NotificationService__executor.submit = delayed_submit  # type: ignore[attr-defined]
+        svc._executor.submit = delayed_submit  # type: ignore[assignment]
         svc.handle(Event(event_type=EventType.DLG_TRIGGERED, source="test", payload={"loan_id": "L1", "amount": 5000}))
         assert len(received) == 1
         import time
@@ -140,10 +145,10 @@ class TestNotificationService:
 
     def test_stop_shuts_down_executor(self) -> None:
         svc = notify()
-        executor = svc._NotificationService__executor  # type: ignore[attr-defined]
+        executor = svc._executor
         assert executor is not None
         svc.stop()
-        assert svc._NotificationService__executor is None  # type: ignore[attr-defined]
+        assert svc._executor is None
 
     def test_handle_passes_payload_to_notification_sent(self) -> None:
         bus = LocalBus()
