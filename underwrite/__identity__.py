@@ -43,9 +43,7 @@ class Identity:
     __private_key: str = ""
     encrypted: bool = False
     created_at: float = 0.0
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "_Identity__sign_lock", threading.Lock())
+    __sign_lock: threading.Lock = threading.Lock()
 
     @classmethod
     def create(
@@ -95,6 +93,7 @@ class Identity:
             alg = serialization.BestAvailableEncryption(pass_bytes) if pass_bytes else serialization.NoEncryption()
             enc = serialization.Encoding.DER if pass_bytes else serialization.Encoding.Raw
             fmt = serialization.PrivateFormat.PKCS8 if pass_bytes else serialization.PrivateFormat.Raw
+            object.__setattr__(identity, "_Identity__sign_lock", threading.Lock())
             object.__setattr__(
                 identity,
                 "_Identity__private_key",

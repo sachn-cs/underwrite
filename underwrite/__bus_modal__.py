@@ -6,11 +6,13 @@ in a background thread.  Requires ``modal`` (install ``underwrite[modal]``).
 
 from __future__ import annotations
 
+import importlib
 import json
 import threading
 import time
 import uuid
 from collections.abc import Callable
+from types import ModuleType
 from typing import Any
 
 from underwrite.__bus__ import DeadLetterQueue, EventBus, IdempotencyGuard, PerSubscriberCircuitBreaker
@@ -32,7 +34,8 @@ class ModalBus(EventBus):
     ) -> None:
         self.__queue_name: str = queue_name
         self.__poll_interval: float = max(0.1, poll_interval)
-        self.__modal_queue = None
+        self.__modal: ModuleType | None = None
+        self.__modal_queue: Any = None
         self.__handlers: dict[str, list[tuple[str, Callable[[Event], None]]]] = {}
         self.__running: bool = False
         self.__poll_thread: threading.Thread | None = None
@@ -47,8 +50,6 @@ class ModalBus(EventBus):
 
     def __import_modal(self) -> None:
         try:
-            import importlib
-
             self.__modal = importlib.import_module("modal")
             self.__modal_queue = self.__modal.Queue(self.__queue_name)
         except ImportError:
@@ -57,6 +58,7 @@ class ModalBus(EventBus):
     def publish(self, event: Event) -> str:
         if self.__modal is None:
             raise RuntimeError("modal is not installed; install underwrite[modal]")
+        assert self.__modal_queue is not None
         body: str = json.dumps(event.to_dict())
         self.__modal_queue.put(body)
         return event.event_id
@@ -101,6 +103,9 @@ class ModalBus(EventBus):
     def __poll_loop(self) -> None:
         while self.__running:
             try:
+                if self.__modal_queue is None:
+                    time.sleep(self.__poll_interval)
+                    continue
                 raw = self.__modal_queue.get(block=False)
                 while raw is not None and self.__running:
                     data: dict[str, Any] = json.loads(raw)

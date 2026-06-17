@@ -374,7 +374,8 @@ class PayloadValidator:
             raise ProtocolError(f"{name} must be a valid number, got {type(value).__name__}") from e
         if v < 0:
             raise ProtocolError(f"{name} must be >= 0 (got {v})")
-        if v.as_tuple().exponent < -2:
+        exp = v.as_tuple().exponent
+        if isinstance(exp, int) and exp < -2:
             raise ProtocolError(f"{name} must have at most 2 decimal places")
         return v
 

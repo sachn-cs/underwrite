@@ -76,7 +76,7 @@ class TestNotificationService:
         for at in alert_types:
             bus = LocalBus()
             received: list[Event] = []
-            bus.subscribe(EventType.NOTIFICATION_SENT, lambda e, r=received: r.append(e))
+            bus.subscribe(EventType.NOTIFICATION_SENT, lambda e, r=received: r.append(e))  # type: ignore[misc]
             svc = notify(bus=bus)
             bus.start()
             svc.handle(Event(event_type=at, source="test", payload={"k": "v"}))

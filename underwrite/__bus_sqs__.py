@@ -6,11 +6,13 @@ background thread.  Requires ``boto3`` (install ``underwrite[aws]``).
 
 from __future__ import annotations
 
+import importlib
 import json
 import threading
 import time
 import uuid
 from collections.abc import Callable
+from types import ModuleType
 from typing import Any
 
 from underwrite.__bus__ import DeadLetterQueue, EventBus, IdempotencyGuard, PerSubscriberCircuitBreaker
@@ -36,6 +38,7 @@ class SqsBus(EventBus):
         self.__region: str = region
         self.__max_messages: int = max(1, min(max_messages, 10))
         self.__wait_time: int = max(0, min(wait_time, 20))
+        self.__boto3: ModuleType | None = None
         self.__client: Any = None
         self.__handlers: dict[str, list[tuple[str, Callable[[Event], None]]]] = {}
         self.__running: bool = False
@@ -51,8 +54,6 @@ class SqsBus(EventBus):
 
     def __import_boto3(self) -> None:
         try:
-            import importlib
-
             self.__boto3 = importlib.import_module("boto3")
         except ImportError:
             self.__boto3 = None
